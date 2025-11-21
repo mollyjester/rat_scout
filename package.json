@@ -1,0 +1,41 @@
+{
+  "name": "rat_scout",
+  "author": "SL homebrews",
+  "version": "1.0.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "Rat scout",
+    "uuid": "00000000-0000-0000-0000-000000000001",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery"
+    ],
+    "watchapp": {
+      "watchface": true
+    },
+    "messageKeys": [
+      "dummy"
+    ],
+    "resources": {
+      "media": [
+        {
+          "type": "font",
+          "name": "FONT_HUMAROID_48",
+          "file": "fonts/Humaroid.ttf"
+        },
+        {
+          "type": "font",
+          "name": "FONT_HUMAROID_20",
+          "file": "fonts/Humaroid.ttf"
+        }
+      ]
+    }
+  }
+}
