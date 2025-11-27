@@ -15,19 +15,47 @@ Pebble.addEventListener('appmessage',
 );
 
 function getScoutReading() {
+    console.log('Getting a reading');
     var url = 'https://daf9.ns.gluroo.com/pebble?token=daf9b6a4-05d6-4603-91fd-07cb5ac5f8a5&count=1';
         //pos.coords.latitude + '&lon=' + pos.coords.longitude + '&appid=' + myAPIKey;
-    
+    /*
     xhrRequest(url, 'GET', 
         function(responseText) {
-        // responseText contains a JSON object with weather info
-        var json = JSON.parse(responseText);
+          // responseText contains a JSON object with weather info
+          var json = JSON.parse(responseText);
 
-        var reading = Math.round(json.bgs[0].sgv / 18);
-        console.log('Glocose is ' + reading);
+          var reading = Math.round(json.bgs[0].sgv / 18);
+          console.log('Glocose is ' + reading);
 
-        var delta = Math.round(json.bgs[0].bgdelta / 18);
-        console.log('Delta is ' + delta);
-        }      
-  );
-}
+          var delta = Math.round(json.bgs[0].bgdelta / 18);
+          console.log('Delta is ' + delta);
+        }   
+          */
+    
+    var req = new XMLHttpRequest();
+
+    req.open('GET', url, true);
+    req.onload = 
+      function(e) 
+      {
+        if (req.readyState == 4) 
+        {
+          if (req.status == 200) 
+          {
+            var response = JSON.parse(req.responseText);
+
+            if (response) 
+            {
+              var reading = Math.round(response.bgs[0].sgv / 18);
+              console.log('Glucose is ' + reading);
+            }
+          } 
+          else 
+          {
+            console.log('Error fetching reading');
+          }
+      }
+    }
+
+    req.send(null);
+};
