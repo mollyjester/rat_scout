@@ -1,6 +1,6 @@
 {
-  "name": "rat_scout",
-  "author": "SL homebrews",
+  "name": "BG Scout",
+  "author": "Sergei Likharev",
   "version": "1.0.0",
   "keywords": ["pebble-app"],
   "private": true,
@@ -21,7 +21,13 @@
       "watchface": true
     },
     "messageKeys": [
-      "dummy"
+      "SGV",
+      "TREND",
+      "DIRECTION",
+      "DATETIME",
+      "BGDELTA",
+      "COB",
+      "IOB"
     ],
     "resources": {
       "media": [

@@ -11,27 +11,14 @@ Pebble.addEventListener('ready',
 Pebble.addEventListener('appmessage',
   function(e) {
     console.log('AppMessage received!');
+
+    getScoutReading();
   }                     
 );
 
 function getScoutReading() {
     console.log('Getting a reading');
     var url = 'https://daf9.ns.gluroo.com/pebble?token=daf9b6a4-05d6-4603-91fd-07cb5ac5f8a5&count=1';
-        //pos.coords.latitude + '&lon=' + pos.coords.longitude + '&appid=' + myAPIKey;
-    /*
-    xhrRequest(url, 'GET', 
-        function(responseText) {
-          // responseText contains a JSON object with weather info
-          var json = JSON.parse(responseText);
-
-          var reading = Math.round(json.bgs[0].sgv / 18);
-          console.log('Glocose is ' + reading);
-
-          var delta = Math.round(json.bgs[0].bgdelta / 18);
-          console.log('Delta is ' + delta);
-        }   
-          */
-    
     var req = new XMLHttpRequest();
 
     req.open('GET', url, true);
@@ -46,8 +33,30 @@ function getScoutReading() {
 
             if (response) 
             {
-              var reading = Math.round(response.bgs[0].sgv / 18);
-              console.log('Glucose is ' + reading);
+              var sgv = response.bgs[0].sgv;
+              console.log('SGV: ' + sgv);
+
+              var bgdelta = response.bgs[0].bgdelta;
+              console.log('BGDELTA: ' + bgdelta);
+
+              var dictionary = {
+                'SGV': sgv,
+                'TREND': 0,
+                'DIRECTION': '',
+                'DATETIME': 0,
+                'BGDELTA': bgdelta,
+                'COB': 0,
+                'IOB': 0
+              };
+
+              Pebbble.sendAppMessage(dictionary,
+                function(e) {
+                  console.log('BG data sent to Pebble successfullly.');
+                },
+                function(e) {
+                  console.log('Error sending BG data to Pebble.');
+                }
+              )
             }
           } 
           else 

@@ -6,6 +6,10 @@ static GFont s_glucose_font;
 static TextLayer *s_time_layer;
 static TextLayer *s_glucose_layer;
 
+static char sgv_buffer[8];
+static char bgdelta_buffer[8];
+static char bg_buffer[16];
+
 static void update_time()
 {
   // Get a tm structure
@@ -71,6 +75,18 @@ static void main_window_unload(Window *window)
 
 static void inbox_received_callback(DictionaryIterator *iterator, void *context)
 {
+  Tuple *sgv_tuple = dict_find(iterator, MESSAGE_KEY_SGV);
+  Tuple *bgdelta_tuple = dict_find(iterator, MESSAGE_KEY_BGDELTTA);
+
+  if (sgv_tuple && bgdelta_tuple)
+  {
+    snprintf(sgv_buffer, sizeof(sgv_buffer), "%d mmol/l", (int)sgv_tuple->value->int32 / 18);
+    snprintf(bgdelta_buffer, sizeof(bgdelta_buffer), "(%d)", (int)bgdelta_tuple->value->int32 / 18);
+
+    snprintf(bg_buffer, sizeof(bg_buffer), "(%s %s)", sgv_buffer, bgdelta_buffer);
+
+    text_layer_set_text(s_glucose_layer, bg_buffer);
+  }
 }
 
 static void inbox_dropped_callback(AppMessageResult reason, void *context)
