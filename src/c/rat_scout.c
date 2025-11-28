@@ -6,9 +6,10 @@ static GFont s_glucose_font;
 static TextLayer *s_time_layer;
 static TextLayer *s_glucose_layer;
 
-static char sgv_buffer[8];
-static char bgdelta_buffer[8];
-static char bg_buffer[16];
+/* Increase buffers a bit to accommodate floating-point formatted strings */
+static char sgv_buffer[16];
+static char bgdelta_buffer[12];
+static char bg_buffer[32];
 
 static void update_time()
 {
@@ -86,8 +87,38 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
 
   if (sgv_tuple && bgdelta_tuple)
   {
-    snprintf(sgv_buffer, sizeof(sgv_buffer), "%d mmol/l", (int)sgv_tuple->value->int32 / 18);
-    snprintf(bgdelta_buffer, sizeof(bgdelta_buffer), "(%d)", (int)bgdelta_tuple->value->int32 / 18);
+    /* Convert mg/dL to mmol/L without using floating-point since Pebble's
+      snprintf doesn't support %f. We'll use fixed-point (tenths) so we
+      can format using integers. Example: 100 mg/dL -> 5.6 mmol/L (56 tenths).
+    */
+    int32_t sgv_mgdl = sgv_tuple->value->int32;
+    int32_t bgdelta_mgdl = bgdelta_tuple->value->int32;
+
+    /* Compute tenths of mmol/L with rounding: (abs(mgdl) * 10 + 9) / 18
+      The +9 performs proper rounding (half-up) for positive numbers; we
+      convert using absolute values and reapply sign to keep negatives correct. */
+    int sgv_sign = (sgv_mgdl < 0) ? -1 : 1;
+    int bgdelta_sign = (bgdelta_mgdl < 0) ? -1 : 1;
+
+    int32_t sgv_abs = sgv_mgdl < 0 ? -sgv_mgdl : sgv_mgdl;
+    int32_t bgdelta_abs = bgdelta_mgdl < 0 ? -bgdelta_mgdl : bgdelta_mgdl;
+
+    int32_t sgv_tenths = (sgv_abs * 10 + 9) / 18;
+    int32_t bgdelta_tenths = (bgdelta_abs * 10 + 9) / 18;
+
+    sgv_tenths *= sgv_sign; /* reapply sign */
+    bgdelta_tenths *= bgdelta_sign;
+
+    /* Break into integer part and 1 decimal digit for display */
+    int sgv_int = (int)(sgv_tenths / 10);
+    int sgv_frac = abs((int)(sgv_tenths % 10));
+
+    int bgdelta_int = (int)(bgdelta_tenths / 10);
+    int bgdelta_frac = abs((int)(bgdelta_tenths % 10));
+
+    /* Format with one decimal place using integer formatting */
+    snprintf(sgv_buffer, sizeof(sgv_buffer), "%d.%d mmol/l", sgv_int, sgv_frac);
+    snprintf(bgdelta_buffer, sizeof(bgdelta_buffer), "(%d.%d)", bgdelta_int, bgdelta_frac);
 
     snprintf(bg_buffer, sizeof(bg_buffer), "(%s %s)", sgv_buffer, bgdelta_buffer);
 
