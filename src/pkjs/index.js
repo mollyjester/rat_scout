@@ -49,7 +49,7 @@ function getScoutReading() {
                 'IOB': 0
               };
 
-              Pebbble.sendAppMessage(dictionary,
+              Pebble.sendAppMessage(dictionary,
                 function(e) {
                   console.log('BG data sent to Pebble successfullly.');
                 },

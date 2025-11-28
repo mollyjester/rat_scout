@@ -76,7 +76,7 @@ static void main_window_unload(Window *window)
 static void inbox_received_callback(DictionaryIterator *iterator, void *context)
 {
   Tuple *sgv_tuple = dict_find(iterator, MESSAGE_KEY_SGV);
-  Tuple *bgdelta_tuple = dict_find(iterator, MESSAGE_KEY_BGDELTTA);
+  Tuple *bgdelta_tuple = dict_find(iterator, MESSAGE_KEY_BGDELTA);
 
   if (sgv_tuple && bgdelta_tuple)
   {
