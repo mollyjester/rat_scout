@@ -117,10 +117,10 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
     int bgdelta_frac = abs((int)(bgdelta_tenths % 10));
 
     /* Format with one decimal place using integer formatting */
-    snprintf(sgv_buffer, sizeof(sgv_buffer), "%d.%d mmol/l", sgv_int, sgv_frac);
-    snprintf(bgdelta_buffer, sizeof(bgdelta_buffer), "(%d.%d)", bgdelta_int, bgdelta_frac);
+    snprintf(sgv_buffer, sizeof(sgv_buffer), "%d.%d", sgv_int, sgv_frac);
+    snprintf(bgdelta_buffer, sizeof(bgdelta_buffer), "[%s%d.%d]", bgdelta_sign > 0 ? "+" : "-", bgdelta_int, bgdelta_frac);
 
-    snprintf(bg_buffer, sizeof(bg_buffer), "(%s %s)", sgv_buffer, bgdelta_buffer);
+    snprintf(bg_buffer, sizeof(bg_buffer), "%s %s", sgv_buffer, bgdelta_buffer);
 
     text_layer_set_text(s_glucose_layer, bg_buffer);
   }
