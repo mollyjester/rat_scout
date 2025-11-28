@@ -27,6 +27,12 @@ static void update_time()
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed)
 {
   update_time();
+
+  DictionaryIterator *iter;
+  app_message_outbox_begin(&iter);
+
+  dict_write_uint8(iter, 0, 0);
+  app_message_outbox_send();
 }
 
 static void main_window_load(Window *window)
