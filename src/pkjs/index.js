@@ -1,3 +1,14 @@
+const DEXCOM_APPLICATION_ID_OUS = "d89443d2-327c-4a6f-89e5-496bbb0317db"
+const DEXCOM_BASE_URL_OUS = "https://shareous1.dexcom.com/ShareWebServices/Services/"
+const DEXCOM_AUTHENTICATE_ENDPOINT = "General/AuthenticatePublisherAccount"
+const DEXCOM_LOGIN_ID_ENDPOINT = "General/LoginPublisherAccountById"
+const DEXCOM_GLUCOSE_READINGS_ENDPOINT = "Publisher/ReadPublisherLatestGlucoseValues"
+
+var accountId = "";
+var sessionId = "";
+var username = "";
+var password = "";
+
 // Listen for when the watchface is opened
 Pebble.addEventListener('ready', 
   function(e) {
@@ -15,6 +26,26 @@ Pebble.addEventListener('appmessage',
     getScoutReading();
   }                     
 );
+
+function dexcomGetReading() {
+  console.log('Getting a Dexcom AccountId');
+  var url = DEXCOM_BASE_URL_OUS + DEXCOM_AUTHENTICATE_ENDPOINT;
+  var req = new XMLHttpRequest();
+
+  req.open('POST', url);
+  req.onload =
+    function(e) {
+      if (req.readyState == 4) {
+          if (req.status == 200) {
+            accountId = req.responseText;
+
+            console.log('AccountId: ' + response);
+          }
+        }
+    }
+
+  req.send(null);
+}
 
 function getScoutReading() {
     console.log('Getting a reading');
