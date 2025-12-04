@@ -1,13 +1,4 @@
-const DEXCOM_APPLICATION_ID_OUS = "d89443d2-327c-4a6f-89e5-496bbb0317db"
-const DEXCOM_BASE_URL_OUS = "https://shareous1.dexcom.com/ShareWebServices/Services/"
-const DEXCOM_AUTHENTICATE_ENDPOINT = "General/AuthenticatePublisherAccount"
-const DEXCOM_LOGIN_ID_ENDPOINT = "General/LoginPublisherAccountById"
-const DEXCOM_GLUCOSE_READINGS_ENDPOINT = "Publisher/ReadPublisherLatestGlucoseValues"
-
-var accountId = "";
-var sessionId = "";
-var username = "";
-var password = "";
+import Dexcom from "./dexcom";
 
 // Listen for when the watchface is opened
 Pebble.addEventListener('ready', 
@@ -27,28 +18,24 @@ Pebble.addEventListener('appmessage',
   }                     
 );
 
-function dexcomGetReading() {
-  console.log('Getting a Dexcom AccountId');
-  var url = DEXCOM_BASE_URL_OUS + DEXCOM_AUTHENTICATE_ENDPOINT;
-  var req = new XMLHttpRequest();
-
-  req.open('POST', url);
-  req.onload =
-    function(e) {
-      if (req.readyState == 4) {
-          if (req.status == 200) {
-            accountId = req.responseText;
-
-            console.log('AccountId: ' + response);
-          }
-        }
-    }
-
-  req.send(null);
-}
-
 function getScoutReading() {
     console.log('Getting a reading');
+
+    const dex = new Dexcom('+35679255488', 'tFah$D8ZSOvzmpd');
+
+    try {
+        const result = dex.getLatestGlucoseWithDelta();
+
+        console.log(`Current: ${result.current._value} mg/dL ${result.current._trend_arrow}`);
+        console.log(`Change: ${result.current._delta} mg/dL`);
+        console.log(`Trend: ${result.current._trend_description}`);
+        console.log(`Rate: ${result.current._rate_of_change.toFixed(2)} mg/dL/min`);
+        console.log(`Status: ${result.current._status}`);
+
+    } catch (error) {
+        console.error('Error:', error.message);
+    }
+    /*
     var url = 'https://daf9.ns.gluroo.com/pebble?token=daf9b6a4-05d6-4603-91fd-07cb5ac5f8a5&count=1';
     var req = new XMLHttpRequest();
 
@@ -98,4 +85,5 @@ function getScoutReading() {
     }
 
     req.send(null);
+    */
 };
