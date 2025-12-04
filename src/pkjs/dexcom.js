@@ -1,8 +1,6 @@
 //Credits: https://github.com/gagebenne/pydexcom
 //Credits: https://github.com/faymaz/jsdexcom
 
-import https from 'https';
-
 class Dexcom {
     static DEXCOM_APPLICATION_ID_US = 'd89443d2-327c-4a6f-89e5-496bbb0317db';
     static DEXCOM_APPLICATION_ID_OUS = DEXCOM_APPLICATION_ID_US;
@@ -38,7 +36,7 @@ class Dexcom {
         this.username = username;
         this.password = password;
         this.region = region.toLowerCase();
-        this.baseUrl = Dexcom.BaseUrls[this.region] || Dexcom.BaseUrls.ous;
+        this.baseUrl = Dexcom.BaseURLs[this.region] || Dexcom.BaseURLs.ous;
         this.applicationId = Dexcom.AppIDs[this.region] || Dexcom.AppIDs.ous;
         this.sessionId = null;
         this.accountId = null;
@@ -46,48 +44,73 @@ class Dexcom {
 
     makeRequest(options, data = null) {
         return new Promise((resolve, reject) => {
-            const req = https.request(options, (res) => {
-                let responseData = '';
+            let url;
+            let method = 'GET';
+            let headers = {};
 
-                res.on('data', (chunk) => {
-                    responseData += chunk;
-                });
-
-                res.on('end', () => {
-                    const response = {
-                        status: res.statusCode,
-                        ok: res.statusCode >= 200 && res.statusCode < 300,
-                        json: () => JSON.parse(responseData),
-                        text: () => responseData
-                    };
-                    resolve(response);
-                });
-            });
-
-            req.on('error', (error) => {
-                reject(error);
-            });
-
-            if (data) {
-                req.write(JSON.stringify(data));
+            if (typeof options === 'string') {
+                url = options;
+            } else if (options && options.url) {
+                url = options.url;
+                method = options.method || method;
+                headers = options.headers || {};
+            } else if (options && options.hostname && options.path) {
+                const protocol = options.port === 443 ? 'https:' : 'http:';
+                url = `${protocol}//${options.hostname}${options.path}`;
+                method = options.method || method;
+                headers = options.headers || {};
+            } else {
+                return reject(new Error('Invalid request options'));
             }
 
-            req.end();
+            try {
+                const xhr = new XMLHttpRequest();
+                xhr.open(method, url);
+
+                Object.keys(headers).forEach((k) => {
+                    try { xhr.setRequestHeader(k, headers[k]); } catch (e) {}
+                });
+
+                xhr.onreadystatechange = function () {
+                    if (xhr.readyState === 4) {
+                        const responseText = xhr.responseText || '';
+                        const status = xhr.status || 0;
+                        const response = {
+                            status,
+                            ok: status >= 200 && status < 300,
+                            json: () => JSON.parse(responseText),
+                            text: () => responseText
+                        };
+                        resolve(response);
+                    }
+                };
+
+                xhr.onerror = function () {
+                    reject(new Error('Network request failed'));
+                };
+
+                if (data) {
+                    const payload = typeof data === 'string' ? data : JSON.stringify(data);
+                    xhr.send(payload);
+                } else {
+                    xhr.send();
+                }
+            } catch (err) {
+                reject(err);
+            }
         });
     }
 
     parseUrl(url, method = 'GET', extraHeaders = {}) {
         const parsedUrl = new URL(url);
         return {
-            hostname: parsedUrl.hostname,
-            path: parsedUrl.pathname + parsedUrl.search,
-            port: 443,
+            url: parsedUrl.href,
             method,
             headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'User-Agent': 'Dexcom Share/3.0.2.11',
-            ...extraHeaders
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'User-Agent': 'Dexcom Share/3.0.2.11',
+                ...extraHeaders
             }
         };
     }
@@ -153,7 +176,7 @@ class Dexcom {
         try {
             console.log('Fetching glucose readings...');
 
-            const url = `${this.baseUrl}/ShareWebServices/Services/Publisher/ReadPublisherLatestGlucoseValues?sessionId=${this.sessionId}&minutes=10&maxCount=2`;
+            const url = `${this.baseUrl}${Dexcom.DEXCOM_GLUCOSE_READINGS_ENDPOINT}?sessionId=${this.sessionId}&minutes=10&maxCount=2`;
             const options = this.parseUrl(url, 'POST');
             const response = await this.makeRequest(options);
 
@@ -218,7 +241,7 @@ class Dexcom {
         }
 
         try {
-            const url = `${this.baseUrl}/ShareWebServices/Services/Publisher/ReadPublisherLatestGlucoseValues?sessionId=${this.sessionId}&minutes=10&maxCount=1`;
+            const url = `${this.baseUrl}${Dexcom.DEXCOM_GLUCOSE_READINGS_ENDPOINT}?sessionId=${this.sessionId}&minutes=10&maxCount=1`;
             const options = this.parseUrl(url, 'POST');
             const response = await this.makeRequest(options);
 

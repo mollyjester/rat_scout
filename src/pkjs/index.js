@@ -1,4 +1,4 @@
-import Dexcom from "./dexcom";
+var dexcom = require("./dexcom");
 
 // Listen for when the watchface is opened
 Pebble.addEventListener('ready', 
@@ -19,23 +19,23 @@ Pebble.addEventListener('appmessage',
 );
 
 function getScoutReading() {
-    console.log('Getting a reading');
+  console.log('Getting a reading');
+  
+  const dex = new dexcom.Dexcom('+35679255488', 'tFah$D8ZSOvzmpd');
 
-    const dex = new Dexcom('+35679255488', 'tFah$D8ZSOvzmpd');
+  try {
+    const result = dex.getLatestGlucoseWithDelta();
 
-    try {
-        const result = dex.getLatestGlucoseWithDelta();
+    console.log(`Current: ${result.current._value} mg/dL ${result.current._trend_arrow}`);
+    console.log(`Change: ${result.current._delta} mg/dL`);
+    console.log(`Trend: ${result.current._trend_description}`);
+    console.log(`Rate: ${result.current._rate_of_change ? result.current._rate_of_change.toFixed(2) : 'N/A'} mg/dL/min`);
+    console.log(`Status: ${result.current._status}`);
 
-        console.log(`Current: ${result.current._value} mg/dL ${result.current._trend_arrow}`);
-        console.log(`Change: ${result.current._delta} mg/dL`);
-        console.log(`Trend: ${result.current._trend_description}`);
-        console.log(`Rate: ${result.current._rate_of_change.toFixed(2)} mg/dL/min`);
-        console.log(`Status: ${result.current._status}`);
-
-    } catch (error) {
-        console.error('Error:', error.message);
-    }
-    /*
+  } catch (error) {
+    console.error('Error:', error && error.message ? error.message : error);
+  }
+  /*
     var url = 'https://daf9.ns.gluroo.com/pebble?token=daf9b6a4-05d6-4603-91fd-07cb5ac5f8a5&count=1';
     var req = new XMLHttpRequest();
 
