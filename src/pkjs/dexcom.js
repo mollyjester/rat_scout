@@ -1,36 +1,282 @@
 //Credits: https://github.com/gagebenne/pydexcom
-//Credits: https://github.com/faymaz/jsdexcom
+// ES5 compatible version
+var DEXCOM_APPLICATION_ID_US = 'd89443d2-327c-4a6f-89e5-496bbb0317db';
+var DEXCOM_APPLICATION_ID_OUS = DEXCOM_APPLICATION_ID_US;
+var DEXCOM_APPLICATION_ID_JP = 'd8665ade-9673-4e27-9ff6-92db4ce13d13'
 
-const DEXCOM_APPLICATION_ID_US = 'd89443d2-327c-4a6f-89e5-496bbb0317db';
-const DEXCOM_APPLICATION_ID_OUS = DEXCOM_APPLICATION_ID_US;
-const DEXCOM_APPLICATION_ID_JP = 'd8665ade-9673-4e27-9ff6-92db4ce13d13'
+var DEXCOM_BASE_URL = 'https://share2.dexcom.com/ShareWebServices/Services/'
+var DEXCOM_BASE_URL_OUS = 'https://shareous1.dexcom.com/ShareWebServices/Services/'
+var DEXCOM_BASE_URL_JP = 'https://share.dexcom.jp/ShareWebServices/Services/'
 
-const DEXCOM_BASE_URL = 'https://share2.dexcom.com/ShareWebServices/Services/'
-const DEXCOM_BASE_URL_OUS = 'https://shareous1.dexcom.com/ShareWebServices/Services/'
-const DEXCOM_BASE_URL_JP = 'https://share.dexcom.jp/ShareWebServices/Services/'
+var DEXCOM_AUTHENTICATE_ENDPOINT = "General/AuthenticatePublisherAccount"
+var DEXCOM_LOGIN_ID_ENDPOINT = "General/LoginPublisherAccountById"
+var DEXCOM_GLUCOSE_READINGS_ENDPOINT = "Publisher/ReadPublisherLatestGlucoseValues"
 
-const DEXCOM_AUTHENTICATE_ENDPOINT = "General/AuthenticatePublisherAccount"
-const DEXCOM_LOGIN_ID_ENDPOINT = "General/LoginPublisherAccountById"
-const DEXCOM_GLUCOSE_READINGS_ENDPOINT = "Publisher/ReadPublisherLatestGlucoseValues"
-
-const Regions = {
+var Regions = {
     US: 'us',
     OUS: 'ous',
     JP: 'jp'
 };
 
-const BaseURLs = {
+var BaseURLs = {
     us: DEXCOM_BASE_URL,
     ous: DEXCOM_BASE_URL_OUS,
     jp: DEXCOM_BASE_URL_JP
 };
 
-const AppIDs = {
+var AppIDs = {
     us: DEXCOM_APPLICATION_ID_US,
     ous: DEXCOM_APPLICATION_ID_OUS,
     jp: DEXCOM_APPLICATION_ID_JP
 }
 
+function Dexcom(_username, _password, _onResults, _region) {
+    this.username = _username;
+    this.password = _password;
+    this.region = (_region || Regions.OUS).toLowerCase();
+    this.baseUrl = BaseURLs[this.region] || BaseURLs.ous;
+    this.applicationId = AppIDs[this.region] || AppIDs.ous;
+    this.sessionId = null;
+    this.accountId = null;
+    this.xhr = xhr;
+    this.formatReading = formatReading;
+    this.getGlucoseStatus = getGlucoseStatus;
+    this.getTrendDescription = getTrendDescription;
+    this.authenticate = authenticate;
+    this.getLatestGlucoseWithDelta = getLatestGlucoseWithDelta;
+    this._fetchGlucoseReadings = _fetchGlucoseReadings;
+    this.onResults = _onResults;
+}
+
+function xhr(_method, _url) {
+    var req = new XMLHttpRequest();
+    req.open(_method, _url, true);
+    req.setRequestHeader('Content-Type', 'application/json');
+    req.setRequestHeader('Accept', 'application/json');
+    req.setRequestHeader('User-Agent', 'Dexcom Share/3.0.2.11');
+    return req;
+}
+
+function formatReading(reading, dexcom) {
+    var TREND_ARROWS = {
+        None: '→',          
+        DoubleUp: '↑↑',     
+        SingleUp: '↑',      
+        FortyFiveUp: '↗',   
+        Flat: '→',          
+        FortyFiveDown: '↘', 
+        SingleDown: '↓',    
+        DoubleDown: '↓↓',   
+        NotComputable: '?', 
+        RateOutOfRange: '⚠️'
+    };
+
+    return {
+        _json: {
+            WT: reading.WT,
+            ST: reading.ST,
+            DT: reading.DT,
+            Value: reading.Value,
+            Trend: reading.Trend
+        },
+        _value: reading.Value,
+        _trend_direction: reading.Trend,
+        _trend_arrow: TREND_ARROWS[reading.Trend] || '?',
+        _datetime: new Date(parseInt(reading.WT.match(/\d+/)[0])),
+        _status: dexcom.getGlucoseStatus(reading.Value)
+    };
+}
+
+function getGlucoseStatus(value) {
+    /*TODO: Make thresholds configurable*/
+    if (value < 70) return 'LOW';     
+    if (value > 180) return 'HIGH';   
+    return 'IN RANGE';                
+}
+
+function getTrendDescription(delta) {
+    if (delta === null) return 'Unknown';
+    if (delta > 15) return 'Rising quickly';    
+    if (delta > 7) return 'Rising';             
+    if (delta > 3) return 'Rising slowly';      
+    if (delta >= -3) return 'Stable';           
+    if (delta >= -7) return 'Dropping slowly';  
+    if (delta >= -15) return 'Dropping';        
+    return 'Dropping quickly';                  
+}
+
+function authenticate(_callback) {
+    var self = this;
+    try {
+        if (!this.accountId) {
+            console.log('Getting account ID...');
+            var authUrl = this.baseUrl + DEXCOM_AUTHENTICATE_ENDPOINT; 
+            var req = this.xhr('POST', authUrl);
+
+            req.onload = 
+                function(e) {
+                    if (req.readyState == 4) 
+                    {
+                        if (req.status == 200) 
+                        {
+                            self.accountId = (req.responseText).replace(/"/g, '');
+
+                            console.log('Account ID: ' + self.accountId);
+            
+                            if (self.accountId === '00000000-0000-0000-0000-000000000000') {
+                                throw new Error('Invalid credentials');
+                            }
+
+                            if (!self.sessionId) {
+                                console.log('Getting session ID...');
+                                var loginUrl = self.baseUrl + DEXCOM_LOGIN_ID_ENDPOINT;
+                                var loginReq = self.xhr('POST', loginUrl);
+                                
+                                loginReq.onload = 
+                                    function(e) {
+                                        if (loginReq.readyState == 4) 
+                                        {
+                                            if (loginReq.status == 200) 
+                                            {
+                                                self.sessionId = (loginReq.responseText).replace(/"/g, '');
+                                                console.log('Session ID: ' + self.sessionId);
+                                
+                                                if (self.sessionId === '00000000-0000-0000-0000-000000000000') {
+                                                    throw new Error('Login failed');
+                                                }
+
+                                                _callback.call(self);
+                                            } 
+                                            else 
+                                            {
+                                                console.log('Error fetching session ID');
+                                            }
+                                        }
+                                    };
+
+                                loginReq.send(JSON.stringify({
+                                    accountId: self.accountId,
+                                    password: self.password,
+                                    applicationId: self.applicationId
+                                }));
+                            }
+                            else {
+                                _callback.call(self);
+                            }
+                        } 
+                        else 
+                        {
+                          console.log('Error fetching reading');
+                        }
+                    }
+                };
+
+            req.send(JSON.stringify({
+                accountName: self.username,
+                password: self.password,
+                applicationId: self.applicationId
+            }));
+        }
+        else {
+            _callback.call(self);
+        }
+    }
+    catch (error) {
+        throw new Error('Authentication error: '+ error.message);
+    }
+}
+
+function getLatestGlucoseWithDelta() {
+    if (!this.sessionId) {
+        this.authenticate(this.getLatestGlucoseWithDelta);
+        return;
+    }
+
+    this._fetchGlucoseReadings();
+}
+
+function _fetchGlucoseReadings() {
+    try {
+        console.log('Fetching glucose readings...');
+
+        var self = this;
+        var url = this.baseUrl + DEXCOM_GLUCOSE_READINGS_ENDPOINT;
+        var req = this.xhr('POST', url);
+
+        req.onload = 
+            function(e) {
+                if (req.readyState == 4) {
+                    if (req.status == 200) 
+                    {
+                        var readings = JSON.parse(req.responseText);
+
+                        if (!Array.isArray(readings) || readings.length === 0) {
+                            throw new Error('No readings available');
+                        }
+
+                        var current = self.formatReading(readings[0], self);
+                        var previous = readings.length > 1 ? self.formatReading(readings[1], self) : null;
+                        var delta = previous ? current._value - previous._value : null;
+                        var deltaTime = previous ? 
+                            (current._datetime.getTime() - previous._datetime.getTime()) / (1000 * 60) :
+                            null;
+                        
+                        var currentObj = {
+                            _json: current._json,
+                            _value: current._value,
+                            _trend_direction: current._trend_direction,
+                            _trend_arrow: current._trend_arrow,
+                            _datetime: current._datetime,
+                            _status: current._status,
+                            _delta: delta,
+                            _delta_time: deltaTime,
+                            _previous_value: previous ? previous._value : null,
+                            _rate_of_change: deltaTime ? (delta / deltaTime) : null,
+                            _trend_description: self.getTrendDescription(delta)
+                        };
+
+                        self.onResults({
+                            current: currentObj,
+                            previous: previous 
+                        });
+                    } 
+                    else if (req.status == 500) 
+                    {
+                        var error = JSON.parse(req.responseText);
+
+                        if (error.Code === 'SessionIdNotFound') {
+                            self.sessionId = null;
+                            self.authenticate(self.getLatestGlucoseWithDelta);
+                        }
+                        else {
+                            throw new Error('Server error: ' + error.Message);
+                        }
+                    }
+                    else 
+                    {
+                        throw new Error('Failed to get readings: ' + req.status);
+                    }
+                }
+            };
+
+        req.send(JSON.stringify({
+                sessionId: this.sessionId,
+                minutes: 10,
+                maxCount: 2
+            }));
+    } 
+    catch (error) {
+        if (error.message.includes('SessionIdNotFound')) {
+            this.sessionId = null;
+            this.accountId = null;
+            this.authenticate(this.getLatestGlucoseWithDelta);
+        }
+        else {
+            throw error;
+        }
+    }
+}
+/*
 var username = null;
 var password = null;
 var region = null;
@@ -335,3 +581,5 @@ function getTrendDescription(delta) {
     if (delta >= -15) return 'Dropping';        
     return 'Dropping quickly';                  
 }
+*/
+module.exports = Dexcom;
