@@ -1,0 +1,72 @@
+[
+    {
+        "type": "heading",
+        "defaultValue": "BG Scout Settings"
+    },
+    {
+        "type": "text",
+        "defaultValue": "Configure your Dexcom account credentials and display preferences."
+    },
+    {
+        "type": "section",
+        "items": [
+            {
+                "type": "heading",
+                "defaultValue": "Dexcom Account"
+            },
+            {
+                "type": "input",
+                "messageKey": "DEX_LOGIN",
+                "defaultValue": "",
+                "label": "Dexcom Login"
+            },
+            {
+                "type": "input",
+                "messageKey": "DEX_PASSWORD",
+                "defaultValue": "",
+                "label": "Dexcom Password"
+            }
+        ]
+    },
+    {
+        "type": "section",
+        "items": [
+            {
+                "type": "heading",
+                "defaultValue": "Display Settings"
+            },
+            {
+                "type": "select",
+                "messageKey": "BG_UNITS",
+                "defaultValue": "mg/dL",
+                "label": "Blood Glucose Units",
+                "options": [
+                    {
+                        "label": "mg/dL",
+                        "value": "mg/dL"
+                    },
+                    {
+                        "label": "mmol/L",
+                        "value": "mmol/L"
+                    }
+                ]
+            },
+            {
+                "type": "toggle",
+                "messageKey": "BG_SHOW_DELTA",
+                "defaultValue": true,
+                "label": "Show BG Delta"
+            },
+            {
+                "type": "toggle",
+                "messageKey": "BG_SHOW_TIMEDELTA",
+                "defaultValue": true,
+                "label": "Show Time Delta"
+            }
+        ]
+    },
+    {
+        "type": "submit",
+        "defaultValue": "Save Settings"
+    }
+]
