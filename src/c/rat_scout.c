@@ -87,14 +87,28 @@ static void main_window_unload(Window *window)
 static void inbox_received_callback(DictionaryIterator *iterator, void *context)
 {
     Tuple *bgv_tuple = dict_find(iterator, MESSAGE_KEY_BG);
-    Tuple *bgdelta_tuple = dict_find(iterator, MESSAGE_KEY_BGDELTA);
 
-    if (bgv_tuple && bgdelta_tuple)
+    if (bgv_tuple)
     {
         snprintf(bgv_buffer, sizeof(bgv_buffer), "%s", bgv_tuple->value->cstring);
-        snprintf(bgdelta_buffer, sizeof(bgdelta_buffer), "%s", bgdelta_tuple->value->cstring);
 
-        snprintf(bg_buffer, sizeof(bg_buffer), "%s [%s]", bgv_buffer, bgdelta_buffer);
+        Tuple *showdelta_tuple = dict_find(iterator, MESSAGE_KEY_BG_SHOW_DELTA);
+
+        if (showdelta_tuple && 
+            showdelta_tuple->value->int8 == 1)
+        {
+            Tuple *bgdelta_tuple = dict_find(iterator, MESSAGE_KEY_BGDELTA);
+
+            if (bgdelta_tuple)
+            {
+                snprintf(bgdelta_buffer, sizeof(bgdelta_buffer), "%s", bgdelta_tuple->value->cstring);
+                snprintf(bg_buffer, sizeof(bg_buffer), "%s [%s]", bgv_buffer, bgdelta_buffer);
+            }
+        }
+        else
+        {
+            snprintf(bg_buffer, sizeof(bg_buffer), "%s", bgv_buffer);
+        }
 
         text_layer_set_text(s_glucose_layer, bg_buffer);
     }
