@@ -110,19 +110,19 @@ function authenticate(_callback) {
     try {
         if (!this.accountId) {
             console.log('Getting account ID...');
-            var authUrl = this.baseUrl + DEXCOM_AUTHENTICATE_ENDPOINT; 
+            var authUrl = this.baseUrl + DEXCOM_AUTHENTICATE_ENDPOINT;
             var req = this.xhr('POST', authUrl);
 
-            req.onload = 
+            req.onload =
                 function(e) {
-                    if (req.readyState == 4) 
+                    if (req.readyState == 4)
                     {
-                        if (req.status == 200) 
+                        if (req.status == 200)
                         {
                             self.accountId = (req.responseText).replace(/"/g, '');
 
                             console.log('Account ID: ' + self.accountId);
-            
+
                             if (self.accountId === '00000000-0000-0000-0000-000000000000') {
                                 throw new Error('Invalid credentials');
                             }
@@ -131,23 +131,23 @@ function authenticate(_callback) {
                                 console.log('Getting session ID...');
                                 var loginUrl = self.baseUrl + DEXCOM_LOGIN_ID_ENDPOINT;
                                 var loginReq = self.xhr('POST', loginUrl);
-                                
-                                loginReq.onload = 
+
+                                loginReq.onload =
                                     function(e) {
-                                        if (loginReq.readyState == 4) 
+                                        if (loginReq.readyState == 4)
                                         {
-                                            if (loginReq.status == 200) 
+                                            if (loginReq.status == 200)
                                             {
                                                 self.sessionId = (loginReq.responseText).replace(/"/g, '');
                                                 console.log('Session ID: ' + self.sessionId);
-                                
+
                                                 if (self.sessionId === '00000000-0000-0000-0000-000000000000') {
                                                     throw new Error('Login failed');
                                                 }
 
                                                 _callback.call(self);
-                                            } 
-                                            else 
+                                            }
+                                            else
                                             {
                                                 console.log('Error fetching session ID');
                                             }
@@ -163,10 +163,10 @@ function authenticate(_callback) {
                             else {
                                 _callback.call(self);
                             }
-                        } 
-                        else 
+                        }
+                        else
                         {
-                          console.log('Error fetching reading');
+                            console.log('Error fetching reading');
                         }
                     }
                 };
@@ -203,10 +203,10 @@ function _fetchGlucoseReadings() {
         var url = this.baseUrl + DEXCOM_GLUCOSE_READINGS_ENDPOINT;
         var req = this.xhr('POST', url);
 
-        req.onload = 
+        req.onload =
             function(e) {
                 if (req.readyState == 4) {
-                    if (req.status == 200) 
+                    if (req.status == 200)
                     {
                         var readings = JSON.parse(req.responseText);
 
@@ -217,10 +217,10 @@ function _fetchGlucoseReadings() {
                         var current = self.formatReading(readings[0], self);
                         var previous = readings.length > 1 ? self.formatReading(readings[1], self) : null;
                         var delta = previous ? current._value - previous._value : null;
-                        var deltaTime = previous ? 
+                        var deltaTime = previous ?
                             (current._datetime.getTime() - previous._datetime.getTime()) / (1000 * 60) :
                             null;
-                        
+
                         var currentObj = {
                             _json: current._json,
                             _value: current._value,
@@ -237,10 +237,10 @@ function _fetchGlucoseReadings() {
 
                         self.onResults({
                             current: currentObj,
-                            previous: previous 
+                            previous: previous
                         });
-                    } 
-                    else if (req.status == 500) 
+                    }
+                    else if (req.status == 500)
                     {
                         var error = JSON.parse(req.responseText);
 
@@ -252,7 +252,7 @@ function _fetchGlucoseReadings() {
                             throw new Error('Server error: ' + error.Message);
                         }
                     }
-                    else 
+                    else
                     {
                         throw new Error('Failed to get readings: ' + req.status);
                     }
@@ -260,11 +260,11 @@ function _fetchGlucoseReadings() {
             };
 
         req.send(JSON.stringify({
-                sessionId: this.sessionId,
-                minutes: 10,
-                maxCount: 2
-            }));
-    } 
+            sessionId: this.sessionId,
+            minutes: 10,
+            maxCount: 2
+        }));
+    }
     catch (error) {
         if (error.message.includes('SessionIdNotFound')) {
             this.sessionId = null;
