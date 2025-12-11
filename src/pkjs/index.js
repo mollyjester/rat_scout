@@ -1,61 +1,90 @@
-// Listen for when the watchface is opened
-Pebble.addEventListener('ready', 
-  function(e) {
-    console.log('PebbleKit JS ready!');
+var Dexcom = require('./dexcom');
+var Clay = require('pebble-clay');
+var clayConfig = require('./config.json');
+var clay = new Clay(clayConfig);
+var appSettings = {};
 
-    getScoutReading();
-  }
+function getSettings() {
+    var settings = {};
+
+    try {
+        settings = JSON.parse(window.localStorage.getItem('clay-settings')) || {};
+    }
+    catch (e) {
+        console.error('Error parsing settings: ' + e);
+    }
+
+    return settings;
+}
+
+// Listen for when the watchface is opened
+Pebble.addEventListener('ready',
+    function(e) {
+        console.log('PebbleKit JS ready!');
+
+        appSettings = getSettings();
+
+        getScoutReading();
+    }
 );
 
 // Listen for when an AppMessage is received
 Pebble.addEventListener('appmessage',
-  function(e) {
-    console.log('AppMessage received!');
-  }                     
+    function(e) {
+        console.log('AppMessage received!');
+
+        appSettings = getSettings();
+
+        getScoutReading();
+    }
 );
 
 function getScoutReading() {
     console.log('Getting a reading');
-    var url = 'https://daf9.ns.gluroo.com/pebble?token=daf9b6a4-05d6-4603-91fd-07cb5ac5f8a5&count=1';
-        //pos.coords.latitude + '&lon=' + pos.coords.longitude + '&appid=' + myAPIKey;
-    /*
-    xhrRequest(url, 'GET', 
-        function(responseText) {
-          // responseText contains a JSON object with weather info
-          var json = JSON.parse(responseText);
 
-          var reading = Math.round(json.bgs[0].sgv / 18);
-          console.log('Glocose is ' + reading);
-
-          var delta = Math.round(json.bgs[0].bgdelta / 18);
-          console.log('Delta is ' + delta);
-        }   
-          */
-    
-    var req = new XMLHttpRequest();
-
-    req.open('GET', url, true);
-    req.onload = 
-      function(e) 
-      {
-        if (req.readyState == 4) 
-        {
-          if (req.status == 200) 
-          {
-            var response = JSON.parse(req.responseText);
-
-            if (response) 
-            {
-              var reading = Math.round(response.bgs[0].sgv / 18);
-              console.log('Glucose is ' + reading);
-            }
-          } 
-          else 
-          {
-            console.log('Error fetching reading');
-          }
-      }
+    if (!appSettings || !appSettings.DEX_LOGIN || !appSettings.DEX_PASSWORD) {
+        console.log('No Dexcom login info set');
+        return;
     }
 
-    req.send(null);
+    var accountId = window.localStorage.getItem('accountId');
+    var sessionId = window.localStorage.getItem('sessionId');
+    var dex = new Dexcom(appSettings.DEX_LOGIN,
+                        appSettings.DEX_PASSWORD,
+                        function(result) {
+                            var bgUnits = appSettings.BG_UNITS || "mg/dL";
+
+                            var dictionary = {
+                                "BG_UNITS": bgUnits,
+                                "BG_SHOW_DELTA": appSettings.BG_SHOW_DELTA ? 1 : 0,
+                                "BG_SHOW_TIMEDELTA": appSettings.BG_SHOW_TIMEDELTA ? 1 : 0,
+                                "BG": bgUnits === "mmol/L" ? (result.current._value / 18).toFixed(1) : result.current._value,
+                                "BGDELTA": bgUnits === "mmol/L" ? (result.current._delta / 18).toFixed(1) : result.current._delta,
+                                "TIMEDELTA": result.current._delta_time
+                            };
+
+                            window.localStorage.setItem('accountId', dex.accountId);
+                            window.localStorage.setItem('sessionId', dex.sessionId);
+
+                            Pebble.sendAppMessage(dictionary,
+                                function(e) {
+                                    console.log('BG data sent to Pebble successfully.');
+                                },
+                                function(e) {
+                                    console.log('Error sending BG data to Pebble.');
+                                }
+                            );
+                        });
+
+    if (accountId && sessionId) {
+        dex.accountId = accountId;
+        dex.sessionId = sessionId;
+    }
+
+    try {
+        dex.getLatestGlucoseWithDelta();
+    }
+    catch (error) {
+        console.error('Error fetching glucose data: ' + (error && error.message ? error.message : error));
+    }
 };

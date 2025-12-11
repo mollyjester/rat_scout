@@ -1,15 +1,22 @@
 {
-  "name": "rat_scout",
-  "author": "SL homebrews",
+  "name": "BG Scout",
+  "author": "Sergei Likharev",
   "version": "1.0.0",
-  "keywords": ["pebble-app"],
+  "keywords": [
+    "pebble-app"
+  ],
   "private": true,
-  "dependencies": {},
+  "dependencies": {
+    "pebble-clay": "^1.0.4"
+  },
   "pebble": {
     "displayName": "Rat scout",
     "uuid": "00000000-0000-0000-0000-000000000001",
     "sdkVersion": "3",
     "enableMultiJS": true,
+    "capabilities": [
+      "configurable"
+    ],
     "targetPlatforms": [
       "aplite",
       "basalt",
@@ -21,7 +28,14 @@
       "watchface": true
     },
     "messageKeys": [
-      "dummy"
+      "DEX_LOGIN",
+      "DEX_PASSWORD",
+      "BG_UNITS",
+      "BG_SHOW_DELTA",
+      "BG_SHOW_TIMEDELTA",
+      "BG",
+      "BGDELTA",
+      "TIMEDELTA"
     ],
     "resources": {
       "media": [
