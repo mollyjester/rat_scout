@@ -63,6 +63,9 @@ function getScoutReading() {
                                 "TIMEDELTA": result.current._delta_time
                             };
 
+                            console.log('Current WT: ' + result.current._json.WT);
+                            console.log('Current datetime epoch secs: ' + Math.floor(result.current._datetime.getTime() / 1000));
+
                             window.localStorage.setItem('accountId', dex.accountId);
                             window.localStorage.setItem('sessionId', dex.sessionId);
 
