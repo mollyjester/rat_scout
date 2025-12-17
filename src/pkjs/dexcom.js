@@ -177,6 +177,39 @@ function authenticate(_callback) {
                 applicationId: self.applicationId
             }));
         }
+        if (!self.sessionId) {
+            console.log('Getting session ID...');
+            var loginUrl = self.baseUrl + DEXCOM_LOGIN_ID_ENDPOINT;
+            var loginReq = self.xhr('POST', loginUrl);
+
+            loginReq.onload =
+                function(e) {
+                    if (loginReq.readyState == 4)
+                    {
+                        if (loginReq.status == 200)
+                        {
+                            self.sessionId = (loginReq.responseText).replace(/"/g, '');
+                            console.log('Session ID: ' + self.sessionId);
+
+                            if (self.sessionId === '00000000-0000-0000-0000-000000000000') {
+                                throw new Error('Login failed');
+                            }
+
+                            _callback.call(self);
+                        }
+                        else
+                        {
+                            console.log('Error fetching session ID');
+                        }
+                    }
+                };
+
+            loginReq.send(JSON.stringify({
+                accountId: self.accountId,
+                password: self.password,
+                applicationId: self.applicationId
+            }));
+        }
         else {
             _callback.call(self);
         }
@@ -242,9 +275,15 @@ function _fetchGlucoseReadings() {
                     }
                     else if (req.status == 500)
                     {
+                        console.log('status 500 received');
+                        console.log('response: ' + req.responseText);
+
                         var error = JSON.parse(req.responseText);
 
-                        if (error.Code === 'SessionIdNotFound') {
+                        console.log('error code: ' + error.Code);
+
+                        if (error.Code === 'SessionIdNotFound' ||
+                            error.Code === 'SessionNotValid') {
                             self.sessionId = null;
                             self.authenticate(self.getLatestGlucoseWithDelta);
                         }
@@ -254,6 +293,7 @@ function _fetchGlucoseReadings() {
                     }
                     else
                     {
+                        console.log('reg status: ' + req.status);
                         throw new Error('Failed to get readings: ' + req.status);
                     }
                 }
