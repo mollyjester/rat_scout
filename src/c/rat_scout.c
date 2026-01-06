@@ -6,6 +6,9 @@ static GFont s_glucose_font;
 static TextLayer *s_time_layer;
 static TextLayer *s_glucose_layer;
 
+static BitmapLayer *s_background_layer;
+static GBitmap *s_background_bitmap;
+
 /* Increase buffers a bit to accommodate floating-point formatted strings */
 static char bgv_buffer[16];
 static char bgdelta_buffer[12];

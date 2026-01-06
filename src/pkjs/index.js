@@ -24,7 +24,7 @@ Pebble.addEventListener('ready',
 
         appSettings = getSettings();
 
-        getScoutReading();
+        //getScoutReading();
     }
 );
 
@@ -35,7 +35,7 @@ Pebble.addEventListener('appmessage',
 
         appSettings = getSettings();
 
-        getScoutReading();
+        //getScoutReading();
     }
 );
 

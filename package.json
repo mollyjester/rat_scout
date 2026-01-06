@@ -48,6 +48,11 @@
           "type": "font",
           "name": "FONT_HUMAROID_20",
           "file": "fonts/Humaroid.ttf"
+        },
+        {
+          "type": "bitmap",
+          "name": "BG_IMAGE",
+          "file": "img/bg.png"
         }
       ]
     }
