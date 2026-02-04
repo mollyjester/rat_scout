@@ -24,7 +24,7 @@ Pebble.addEventListener('ready',
 
         appSettings = getSettings();
 
-        //getScoutReading();
+        getScoutReading();
     }
 );
 
@@ -35,7 +35,7 @@ Pebble.addEventListener('appmessage',
 
         appSettings = getSettings();
 
-        //getScoutReading();
+        getScoutReading();
     }
 );
 
@@ -54,13 +54,17 @@ function getScoutReading() {
                         function(result) {
                             var bgUnits = appSettings.BG_UNITS || "mg/dL";
                             var readingTimestamp = Math.floor(result.current._datetime.getTime() / 1000);
+                            
+                            // Format BGDELTA with positive sign for positive values
+                            var bgdelta = bgUnits === "mmol/L" ? (result.current._delta / 18).toFixed(1) : result.current._delta;
+                            bgdelta = bgdelta > 0 ? '+' + bgdelta : bgdelta;
 
                             var dictionary = {
                                 "BG_UNITS": bgUnits,
                                 "BG_SHOW_DELTA": appSettings.BG_SHOW_DELTA ? 1 : 0,
                                 "BG_SHOW_TIMEDELTA": appSettings.BG_SHOW_TIMEDELTA ? 1 : 0,
                                 "BG": bgUnits === "mmol/L" ? (result.current._value / 18).toFixed(1) : result.current._value,
-                                "BGDELTA": bgUnits === "mmol/L" ? (result.current._delta / 18).toFixed(1) : result.current._delta,
+                                "BGDELTA": bgdelta,
                                 "TIMEDELTA": result.current._delta_time,
                                 "TIMESTAMP": readingTimestamp
                             };

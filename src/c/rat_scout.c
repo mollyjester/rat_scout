@@ -75,8 +75,8 @@ static void main_window_load(Window *window)
     s_background_layer = bitmap_layer_create(bounds);
 
     // Set the bitmap onto the layer and add to the window
-    bitmap_layer_set_bitmap(s_background_layer, s_background_bitmap);
-    layer_add_child(window_layer, bitmap_layer_get_layer(s_background_layer));
+    //bitmap_layer_set_bitmap(s_background_layer, s_background_bitmap);
+    //layer_add_child(window_layer, bitmap_layer_get_layer(s_background_layer));
 
     // Create GFont
     s_time_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_HUMAROID_64));
@@ -136,7 +136,7 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
             if (bgdelta_tuple)
             {
                 snprintf(bgdelta_buffer, sizeof(bgdelta_buffer), "%s", bgdelta_tuple->value->cstring);
-                snprintf(bg_buffer, sizeof(bg_buffer), "%s [%s]", bgv_buffer, bgdelta_buffer);
+                snprintf(bg_buffer, sizeof(bg_buffer), "%s %s", bgv_buffer, bgdelta_buffer);
             }
         }
         else
