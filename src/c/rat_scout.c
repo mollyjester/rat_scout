@@ -16,8 +16,10 @@ static uint8_t s_battery_level = 100;
 
 /* Increase buffers a bit to accommodate floating-point formatted strings */
 static char bgv_buffer[16];
-static char bgdelta_buffer[12];
+static char bgdelta_buffer[32];
 static char bg_buffer[32];
+static char bgdelta_raw_buffer[12];    // Store just the delta value
+static char time_since_reading_buffer[16];
 
 /* Store the last reading timestamp and next fetch time */
 static time_t s_last_reading_timestamp = 0;
@@ -43,12 +45,10 @@ static void battery_draw_proc(Layer *layer, GContext *ctx)
     GRect bounds = layer_get_bounds(layer);
     
     // Battery dimensions
-    const int BATTERY_WIDTH = 24;    // 20 segments + borders and spacing
+    const int BATTERY_WIDTH = 24;    // Main battery body width
     const int BATTERY_HEIGHT = 9;
-    const int SEGMENT_WIDTH = 1;
-    const int SEGMENT_HEIGHT = 7;
     const int BORDER_WIDTH = 1;
-    const int TOTAL_SEGMENTS = 20;
+    const int SEGMENT_HEIGHT = 7;
     
     // Position in top right corner with some padding
     int x_start = bounds.size.w - BATTERY_WIDTH - 2;
@@ -64,22 +64,13 @@ static void battery_draw_proc(Layer *layer, GContext *ctx)
     // Draw battery terminal (small nub on right side)
     graphics_draw_rect(ctx, GRect(x_start + BATTERY_WIDTH - 4, y_start + 2, 3, BATTERY_HEIGHT - 4));
     
-    // Calculate how many segments to fill based on battery level
-    int segments_filled = (s_battery_level * TOTAL_SEGMENTS) / 100;
+    // Calculate the width of the filled portion based on battery level
+    int usable_width = BATTERY_WIDTH - 3 - 2;  // Account for borders and terminal
+    int filled_width = (s_battery_level * usable_width) / 100;
     
-    // Draw battery segments
-    int segment_x = x_start + 1;
-    for (int i = 0; i < TOTAL_SEGMENTS; i++)
-    {
-        if (i < segments_filled)
-        {
-            // Fill this segment
-            graphics_context_set_fill_color(ctx, GColorBlack);
-            graphics_fill_rect(ctx, GRect(segment_x, y_start + 1, SEGMENT_WIDTH, SEGMENT_HEIGHT), 0, GCornerNone);
-        }
-
-        segment_x += SEGMENT_WIDTH;  // 1 pixel spacing between segments
-    }
+    // Draw filled rectangle representing battery charge
+    graphics_context_set_fill_color(ctx, GColorBlack);
+    graphics_fill_rect(ctx, GRect(x_start + 1, y_start + 1, filled_width, SEGMENT_HEIGHT), 0, GCornerNone);
 }
 
 static void battery_state_handler(BatteryChargeState charge_state)
@@ -93,6 +84,17 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed)
     update_time();
 
     time_t current_time = time(NULL);
+    
+    // Update time since last reading and refresh delta display
+    if (s_last_reading_timestamp > 0)
+    {
+        int minutes_since_reading = (current_time - s_last_reading_timestamp) / 60;
+        snprintf(time_since_reading_buffer, sizeof(time_since_reading_buffer), "%dm", minutes_since_reading);
+        
+        // Rebuild the delta display with both delta and time since reading
+        snprintf(bgdelta_buffer, sizeof(bgdelta_buffer), "%s %s", bgdelta_raw_buffer, time_since_reading_buffer);
+        text_layer_set_text(s_glucose_delta_layer, bgdelta_buffer);
+    }
     
     // If next fetch time is set and current time has reached or passed it, fetch data
     if (s_next_fetch_time > 0 && current_time >= s_next_fetch_time)
@@ -165,13 +167,12 @@ static void main_window_load(Window *window)
     layer_add_child(window_get_root_layer(window), text_layer_get_layer(s_glucose_layer));
 
     s_glucose_delta_layer = text_layer_create(
-        GRect(3, 106, 53, 25));
+        GRect(3, 106, 71, 25));
 
     text_layer_set_background_color(s_glucose_delta_layer, GColorClear);
     text_layer_set_text_color(s_glucose_delta_layer, GColorBlack);
     text_layer_set_text_alignment(s_glucose_delta_layer, GTextAlignmentCenter);
     text_layer_set_font(s_glucose_delta_layer, s_extra_info_font);
-    //text_layer_set_text(s_glucose_layer, "Loading...");
 
     layer_add_child(window_get_root_layer(window), text_layer_get_layer(s_glucose_delta_layer));
     
@@ -212,15 +213,13 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
 
             if (bgdelta_tuple)
             {
-                snprintf(bgdelta_buffer, sizeof(bgdelta_buffer), "%s", bgdelta_tuple->value->cstring);
-                //snprintf(bg_buffer, sizeof(bg_buffer), "%s %s", bgv_buffer, bgdelta_buffer);
+                snprintf(bgdelta_raw_buffer, sizeof(bgdelta_raw_buffer), "%s", bgdelta_tuple->value->cstring);
             }
         }
 
         text_layer_set_text(s_glucose_layer, bg_buffer);
-        text_layer_set_text(s_glucose_delta_layer, bgdelta_buffer);
         
-        // Extract timestamp if available and calculate next fetch time
+        // Also update the delta display immediately with timestamp info if available
         Tuple *timestamp_tuple = dict_find(iterator, MESSAGE_KEY_TIMESTAMP);
         if (timestamp_tuple)
         {
@@ -228,6 +227,18 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
             // Next fetch: 5 minutes after reading + 5 seconds
             // 5 minutes = 300 seconds
             s_next_fetch_time = s_last_reading_timestamp + 300 + 5;
+            
+            // Immediately update the time display with the new reading
+            time_t current_time = time(NULL);
+            int minutes_since_reading = (current_time - s_last_reading_timestamp) / 60;
+
+            snprintf(time_since_reading_buffer, sizeof(time_since_reading_buffer), "%dm", minutes_since_reading);
+            snprintf(bgdelta_buffer, sizeof(bgdelta_buffer), "%s %s", bgdelta_raw_buffer, time_since_reading_buffer);
+
+            APP_LOG(APP_LOG_LEVEL_INFO, time_since_reading_buffer);
+            APP_LOG(APP_LOG_LEVEL_INFO, bgdelta_buffer);
+
+            text_layer_set_text(s_glucose_delta_layer, bgdelta_buffer);
         }
     }
 }

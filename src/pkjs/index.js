@@ -24,8 +24,8 @@ Pebble.addEventListener('ready',
 
         appSettings = getSettings();
 
-        //getScoutReading();
-        getScoutReadingTest();
+        getScoutReading();
+        //getScoutReadingTest();
     }
 );
 
@@ -36,8 +36,8 @@ Pebble.addEventListener('appmessage',
 
         appSettings = getSettings();
 
-        //getScoutReading();
-        getScoutReadingTest();
+        getScoutReading();
+        //getScoutReadingTest();
     }
 );
 
@@ -101,7 +101,7 @@ function getScoutReading() {
 };
 
 function getScoutReadingTest() {
-    var readingTimestamp = Math.floor(1770292800/ 1000); //Feb 5, 2026, 12:43 UTC
+    var readingTimestamp = (Date.now() - (4.3 * 60 * 1000)) / 1000; // Use current time for testing (5 minutes ago)
                             
     // Format BGDELTA with positive sign for positive values
     var bgdelta = (16.2 / 18).toFixed(1);
