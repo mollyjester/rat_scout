@@ -56,6 +56,11 @@
           "file": "fonts/Humaroid.ttf"
         },
         {
+          "type": "font",
+          "name": "FONT_HUMAROID_28",
+          "file": "fonts/Humaroid.ttf"
+        },
+        {
           "type": "bitmap",
           "name": "BG_IMAGE",
           "file": "img/bg.png"
