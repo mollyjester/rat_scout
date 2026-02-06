@@ -25,6 +25,8 @@ static char time_since_reading_buffer[16];
 /* Store the last reading timestamp and next fetch time */
 static time_t s_last_reading_timestamp = 0;
 static time_t s_next_fetch_time = 0;
+static bool s_show_bg_delta = true;
+static bool s_show_time_delta = true;
 
 static void update_time()
 {
@@ -82,7 +84,6 @@ static void battery_draw_proc(Layer *layer, GContext *ctx)
         // Plus sign next to arrow
         graphics_draw_line(ctx, GPoint(ch_x + 12, ch_y + 2), GPoint(ch_x + 14, ch_y + 2));
         graphics_draw_line(ctx, GPoint(ch_x + 13, ch_y + 1), GPoint(ch_x + 13, ch_y + 3));
-        int bolt_y = y_start + 2;
     } else {
         // Calculate the width of the filled portion based on battery level
         int usable_width = BATTERY_WIDTH - 3 - 2;  // Account for borders and terminal
@@ -111,11 +112,21 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed)
     if (s_last_reading_timestamp > 0)
     {
         int minutes_since_reading = (current_time - s_last_reading_timestamp) / 60;
-        snprintf(time_since_reading_buffer, sizeof(time_since_reading_buffer), "%dm", minutes_since_reading);
+    snprintf(time_since_reading_buffer, sizeof(time_since_reading_buffer), "%dm", minutes_since_reading);
         
-        // Rebuild the delta display with both delta and time since reading
-        snprintf(bgdelta_buffer, sizeof(bgdelta_buffer), "%s %s", bgdelta_raw_buffer, time_since_reading_buffer);
+        // Rebuild the delta display with both delta and time since reading based on settings
+        if (s_show_bg_delta && s_show_time_delta) {
+            snprintf(bgdelta_buffer, sizeof(bgdelta_buffer), "%s %s", bgdelta_raw_buffer, time_since_reading_buffer);
+        } else if (s_show_bg_delta) {
+            snprintf(bgdelta_buffer, sizeof(bgdelta_buffer), "%s", bgdelta_raw_buffer);
+        } else if (s_show_time_delta) {
+            snprintf(bgdelta_buffer, sizeof(bgdelta_buffer), "%s", time_since_reading_buffer);
+        } else {
+            bgdelta_buffer[0] = '\0';
+        }
         text_layer_set_text(s_glucose_delta_layer, bgdelta_buffer);
+        // Hide the layer if both settings are disabled
+        layer_set_hidden(text_layer_get_layer(s_glucose_delta_layer), !s_show_bg_delta && !s_show_time_delta);
     }
     
     // If next fetch time is set and current time has reached or passed it, fetch data
@@ -228,18 +239,29 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
 
         Tuple *showdelta_tuple = dict_find(iterator, MESSAGE_KEY_BG_SHOW_DELTA);
 
-        if (showdelta_tuple && 
-            showdelta_tuple->value->int8 == 1)
+        if (showdelta_tuple)
         {
-            Tuple *bgdelta_tuple = dict_find(iterator, MESSAGE_KEY_BGDELTA);
-
-            if (bgdelta_tuple)
+            s_show_bg_delta = showdelta_tuple->value->int8 == 1;
+            
+            if (s_show_bg_delta)
             {
-                snprintf(bgdelta_raw_buffer, sizeof(bgdelta_raw_buffer), "%s", bgdelta_tuple->value->cstring);
+                Tuple *bgdelta_tuple = dict_find(iterator, MESSAGE_KEY_BGDELTA);
+
+                if (bgdelta_tuple)
+                {
+                    snprintf(bgdelta_raw_buffer, sizeof(bgdelta_raw_buffer), "%s", bgdelta_tuple->value->cstring);
+                }
             }
         }
 
         text_layer_set_text(s_glucose_layer, bg_buffer);
+        
+        // Check if we should show time delta
+        Tuple *show_timedelta_tuple = dict_find(iterator, MESSAGE_KEY_BG_SHOW_TIMEDELTA);
+        if (show_timedelta_tuple)
+        {
+            s_show_time_delta = show_timedelta_tuple->value->int8 == 1;
+        }
         
         // Also update the delta display immediately with timestamp info if available
         Tuple *timestamp_tuple = dict_find(iterator, MESSAGE_KEY_TIMESTAMP);
@@ -255,12 +277,23 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
             int minutes_since_reading = (current_time - s_last_reading_timestamp) / 60;
 
             snprintf(time_since_reading_buffer, sizeof(time_since_reading_buffer), "%dm", minutes_since_reading);
-            snprintf(bgdelta_buffer, sizeof(bgdelta_buffer), "%s %s", bgdelta_raw_buffer, time_since_reading_buffer);
+            
+            if (s_show_bg_delta && s_show_time_delta) {
+                snprintf(bgdelta_buffer, sizeof(bgdelta_buffer), "%s %s", bgdelta_raw_buffer, time_since_reading_buffer);
+            } else if (s_show_bg_delta) {
+                snprintf(bgdelta_buffer, sizeof(bgdelta_buffer), "%s", bgdelta_raw_buffer);
+            } else if (s_show_time_delta) {
+                snprintf(bgdelta_buffer, sizeof(bgdelta_buffer), "%s", time_since_reading_buffer);
+            } else {
+                bgdelta_buffer[0] = '\0';
+            }
 
             APP_LOG(APP_LOG_LEVEL_INFO, time_since_reading_buffer);
             APP_LOG(APP_LOG_LEVEL_INFO, bgdelta_buffer);
 
             text_layer_set_text(s_glucose_delta_layer, bgdelta_buffer);
+            // Hide the layer if both settings are disabled
+            layer_set_hidden(text_layer_get_layer(s_glucose_delta_layer), !s_show_bg_delta && !s_show_time_delta);
         }
     }
 }
