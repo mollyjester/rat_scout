@@ -66,6 +66,21 @@
         ]
     },
     {
+        "type": "section",
+        "items": [
+            {
+                "type": "heading",
+                "defaultValue": "Notifications"
+            },
+            {
+                "type": "toggle",
+                "messageKey": "HOURLY_VIBRATION",
+                "defaultValue": false,
+                "label": "Hourly Vibration"
+            }
+        ]
+    },
+    {
         "type": "submit",
         "defaultValue": "Save Settings"
     }

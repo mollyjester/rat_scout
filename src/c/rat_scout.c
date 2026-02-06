@@ -2,11 +2,13 @@
 
 static Window *s_main_window;
 static GFont s_time_font;
-static GFont s_glucose_font;
+static GFont s_main_font;
 static GFont s_extra_info_font;
 static TextLayer *s_time_layer;
 static TextLayer *s_glucose_layer;
 static TextLayer *s_glucose_delta_layer;
+static TextLayer *s_date_layer;
+static TextLayer *s_week_layer;
 
 static BitmapLayer *s_background_layer;
 static GBitmap *s_background_bitmap;
@@ -15,12 +17,17 @@ static Layer *s_battery_layer;
 static uint8_t s_battery_level = 100;
 static bool s_is_charging = false;
 
-/* Increase buffers a bit to accommodate floating-point formatted strings */
+static bool s_hourly_vibration = false;
+static int s_last_vibration_hour = -1;
+static Layer *s_hourly_layer;
+
 static char bgv_buffer[16];
 static char bgdelta_buffer[32];
 static char bg_buffer[32];
 static char bgdelta_raw_buffer[12];    // Store just the delta value
 static char time_since_reading_buffer[16];
+static char date_buffer[16];            // Store day and month
+static char week_buffer[8];             // Store week number with W prefix
 
 /* Store the last reading timestamp and next fetch time */
 static time_t s_last_reading_timestamp = 0;
@@ -40,6 +47,14 @@ static void update_time()
 
     // Display this time on the TextLayer
     text_layer_set_text(s_time_layer, s_buffer);
+    
+    // Update date information (day and month)
+    strftime(date_buffer, sizeof(date_buffer), "%d.%m", tick_time);
+    text_layer_set_text(s_date_layer, date_buffer);
+    
+    // Update week number with W prefix
+    strftime(week_buffer, sizeof(week_buffer), "W%V", tick_time);
+    text_layer_set_text(s_week_layer, week_buffer);
 }
 
 static void battery_draw_proc(Layer *layer, GContext *ctx)
@@ -95,6 +110,37 @@ static void battery_draw_proc(Layer *layer, GContext *ctx)
     }
 }
 
+static void hourly_indicator_draw_proc(Layer *layer, GContext *ctx)
+{
+    // Draw a simple capital 'H' 11 pixels tall when hourly vibration is enabled.
+    if (!s_hourly_vibration) {
+        // Nothing to draw when disabled
+        return;
+    }
+
+    GRect bounds = layer_get_bounds(layer);
+
+    const int H_HEIGHT = 11;
+    const int H_WIDTH = 7;
+    const int STROKE = 2;
+
+    // Center the H within the layer bounds
+    int x0 = 0; // left of the layer
+    int y0 = 0; // top of the layer
+
+    graphics_context_set_fill_color(ctx, GColorBlack);
+
+    // Left vertical stroke
+    graphics_fill_rect(ctx, GRect(x0, y0, STROKE, H_HEIGHT), 0, GCornerNone);
+
+    // Right vertical stroke
+    graphics_fill_rect(ctx, GRect(x0 + H_WIDTH - STROKE, y0, STROKE, H_HEIGHT), 0, GCornerNone);
+
+    // Middle horizontal bar (centered vertically)
+    int mid_y = y0 + (H_HEIGHT / 2) - (STROKE / 2);
+    graphics_fill_rect(ctx, GRect(x0 + STROKE, mid_y, H_WIDTH - (2 * STROKE), STROKE), 0, GCornerNone);
+}
+
 static void battery_state_handler(BatteryChargeState charge_state)
 {
     s_battery_level = charge_state.charge_percent;
@@ -107,6 +153,12 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed)
     update_time();
 
     time_t current_time = time(NULL);
+    
+    // Handle hourly vibration
+    if (s_hourly_vibration && tick_time->tm_min == 0 && s_last_vibration_hour != tick_time->tm_hour) {
+        s_last_vibration_hour = tick_time->tm_hour;
+        vibes_double_pulse();
+    }
     
     // Update time since last reading and refresh delta display
     if (s_last_reading_timestamp > 0)
@@ -171,7 +223,7 @@ static void main_window_load(Window *window)
 
     // Create GFont
     s_time_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_HUMAROID_64));
-    s_glucose_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_HUMAROID_28));
+    s_main_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_HUMAROID_28));
     s_extra_info_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_HUMAROID_20));
 
     // Create the TextLayer with specific bounds
@@ -194,7 +246,7 @@ static void main_window_load(Window *window)
     text_layer_set_background_color(s_glucose_layer, GColorClear);
     text_layer_set_text_color(s_glucose_layer, GColorBlack);
     text_layer_set_text_alignment(s_glucose_layer, GTextAlignmentCenter);
-    text_layer_set_font(s_glucose_layer, s_glucose_font);
+    text_layer_set_font(s_glucose_layer, s_main_font);
     text_layer_set_text(s_glucose_layer, "Loading...");
 
     layer_add_child(window_get_root_layer(window), text_layer_get_layer(s_glucose_layer));
@@ -209,10 +261,39 @@ static void main_window_load(Window *window)
 
     layer_add_child(window_get_root_layer(window), text_layer_get_layer(s_glucose_delta_layer));
     
+    // Create date layer (day, month) - 15 pixels to the right of glucose layer
+    s_date_layer = text_layer_create(
+        GRect(78, 83, 60, 29));
+
+    text_layer_set_background_color(s_date_layer, GColorClear);
+    text_layer_set_text_color(s_date_layer, GColorBlack);
+    text_layer_set_text_alignment(s_date_layer, GTextAlignmentCenter);
+    text_layer_set_font(s_date_layer, s_main_font);
+    text_layer_set_text(s_date_layer, "01 01");
+
+    layer_add_child(window_get_root_layer(window), text_layer_get_layer(s_date_layer));
+    
+    // Create week layer below date layer - 15 pixels to the right of delta layer
+    s_week_layer = text_layer_create(
+        GRect(78, 106, 60, 25));
+
+    text_layer_set_background_color(s_week_layer, GColorClear);
+    text_layer_set_text_color(s_week_layer, GColorBlack);
+    text_layer_set_text_alignment(s_week_layer, GTextAlignmentCenter);
+    text_layer_set_font(s_week_layer, s_extra_info_font);
+    text_layer_set_text(s_week_layer, "W01");
+
+    layer_add_child(window_get_root_layer(window), text_layer_get_layer(s_week_layer));
+    
     // Create battery indicator layer
     s_battery_layer = layer_create(bounds);
     layer_set_update_proc(s_battery_layer, battery_draw_proc);
     layer_add_child(window_layer, s_battery_layer);
+
+    // Create hourly indicator layer (small, 11px tall)
+    s_hourly_layer = layer_create(GRect(2, 1, 7, 11));
+    layer_set_update_proc(s_hourly_layer, hourly_indicator_draw_proc);
+    layer_add_child(window_layer, s_hourly_layer);
 }
 
 static void main_window_unload(Window *window)
@@ -220,17 +301,33 @@ static void main_window_unload(Window *window)
     text_layer_destroy(s_time_layer);
     text_layer_destroy(s_glucose_layer);
     text_layer_destroy(s_glucose_delta_layer);
+    text_layer_destroy(s_date_layer);
+    text_layer_destroy(s_week_layer);
     fonts_unload_custom_font(s_time_font);
-    fonts_unload_custom_font(s_glucose_font);
+    fonts_unload_custom_font(s_main_font);
     fonts_unload_custom_font(s_extra_info_font);
     bitmap_layer_destroy(s_background_layer);
     gbitmap_destroy(s_background_bitmap);
     layer_destroy(s_battery_layer);
+    layer_destroy(s_hourly_layer);
 }
 
 static void inbox_received_callback(DictionaryIterator *iterator, void *context)
 {
     Tuple *bgv_tuple = dict_find(iterator, MESSAGE_KEY_BG);
+
+    // Handle hourly vibration setting independently of BG payload
+    Tuple *hourly_vibe_tuple = dict_find(iterator, MESSAGE_KEY_HOURLY_VIBRATION);
+    if (hourly_vibe_tuple)
+    {
+        bool new_hourly = hourly_vibe_tuple->value->int8 == 1;
+        if (s_hourly_vibration != new_hourly) {
+            s_hourly_vibration = new_hourly;
+            if (s_hourly_layer) {
+                layer_mark_dirty(s_hourly_layer);
+            }
+        }
+    }
 
     if (bgv_tuple)
     {
@@ -263,6 +360,8 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
             s_show_time_delta = show_timedelta_tuple->value->int8 == 1;
         }
         
+        
+        
         // Also update the delta display immediately with timestamp info if available
         Tuple *timestamp_tuple = dict_find(iterator, MESSAGE_KEY_TIMESTAMP);
         if (timestamp_tuple)
@@ -288,9 +387,6 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
                 bgdelta_buffer[0] = '\0';
             }
 
-            APP_LOG(APP_LOG_LEVEL_INFO, time_since_reading_buffer);
-            APP_LOG(APP_LOG_LEVEL_INFO, bgdelta_buffer);
-
             text_layer_set_text(s_glucose_delta_layer, bgdelta_buffer);
             // Hide the layer if both settings are disabled
             layer_set_hidden(text_layer_get_layer(s_glucose_delta_layer), !s_show_bg_delta && !s_show_time_delta);
@@ -300,7 +396,7 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
 
 static void inbox_dropped_callback(AppMessageResult reason, void *context)
 {
-    APP_LOG(APP_LOG_LEVEL_ERROR, "Message dropped!");
+    APP_LOG(APP_LOG_LEVEL_ERROR, "Message dropped! reason=%d", (int)reason);
 }
 
 static void outbox_failed_callback(DictionaryIterator *iterator, AppMessageResult reason, void *context)
@@ -341,9 +437,9 @@ static void init()
     app_message_register_outbox_failed(outbox_failed_callback);
     app_message_register_outbox_sent(outbox_sent_callback);
 
-    // Open AppMessage
-    const int inbox_size = 128;
-    const int outbox_size = 128;
+    // Open AppMessage (increased buffers to avoid dropped messages)
+    const int inbox_size = 512;
+    const int outbox_size = 512;
     app_message_open(inbox_size, outbox_size);
 }
 

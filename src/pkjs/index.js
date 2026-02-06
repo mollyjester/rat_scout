@@ -22,7 +22,8 @@ function sendSettings() {
     var dictionary = {
         "BG_SHOW_DELTA": appSettings.BG_SHOW_DELTA ? 1 : 0,
         "BG_SHOW_TIMEDELTA": appSettings.BG_SHOW_TIMEDELTA ? 1 : 0,
-        "BG_UNITS": appSettings.BG_UNITS || "mg/dL"
+        "BG_UNITS": appSettings.BG_UNITS || "mg/dL",
+        "HOURLY_VIBRATION": appSettings.HOURLY_VIBRATION ? 1 : 0
     };
     
     Pebble.sendAppMessage(dictionary,

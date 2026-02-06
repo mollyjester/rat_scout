@@ -36,18 +36,14 @@
       "BG",
       "BGDELTA",
       "TIMEDELTA",
-      "TIMESTAMP"
+      "TIMESTAMP",
+      "HOURLY_VIBRATION"
     ],
     "resources": {
       "media": [
         {
           "type": "font",
           "name": "FONT_HUMAROID_64",
-          "file": "fonts/Humaroid.ttf"
-        },
-        {
-          "type": "font",
-          "name": "FONT_HUMAROID_48",
           "file": "fonts/Humaroid.ttf"
         },
         {
