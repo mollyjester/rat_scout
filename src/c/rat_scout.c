@@ -3,13 +3,28 @@
 static Window *s_main_window;
 static GFont s_time_font;
 static GFont s_glucose_font;
+static GFont s_extra_info_font;
 static TextLayer *s_time_layer;
 static TextLayer *s_glucose_layer;
+static TextLayer *s_glucose_delta_layer;
+
+static BitmapLayer *s_background_layer;
+static GBitmap *s_background_bitmap;
+
+static Layer *s_battery_layer;
+static uint8_t s_battery_level = 100;
+static bool s_is_charging = false;
 
 /* Increase buffers a bit to accommodate floating-point formatted strings */
 static char bgv_buffer[16];
-static char bgdelta_buffer[12];
+static char bgdelta_buffer[32];
 static char bg_buffer[32];
+static char bgdelta_raw_buffer[12];    // Store just the delta value
+static char time_since_reading_buffer[16];
+
+/* Store the last reading timestamp and next fetch time */
+static time_t s_last_reading_timestamp = 0;
+static time_t s_next_fetch_time = 0;
 
 static void update_time()
 {
@@ -25,13 +40,100 @@ static void update_time()
     text_layer_set_text(s_time_layer, s_buffer);
 }
 
+static void battery_draw_proc(Layer *layer, GContext *ctx)
+{
+    // Get bounds of the layer
+    GRect bounds = layer_get_bounds(layer);
+    
+    // Battery dimensions
+    const int BATTERY_WIDTH = 24;    // Main battery body width
+    const int BATTERY_HEIGHT = 9;
+    const int BORDER_WIDTH = 1;
+    const int SEGMENT_HEIGHT = 7;
+    
+    // Position in top right corner with some padding
+    int x_start = bounds.size.w - BATTERY_WIDTH - 2;
+    int y_start = 2;
+    
+    // Draw battery outline
+    graphics_context_set_stroke_color(ctx, GColorBlack);
+    graphics_context_set_stroke_width(ctx, BORDER_WIDTH);
+    
+    // Draw main battery body
+    graphics_draw_rect(ctx, GRect(x_start, y_start, BATTERY_WIDTH - 3, BATTERY_HEIGHT));
+    
+    // Draw battery terminal (small nub on right side)
+    graphics_draw_rect(ctx, GRect(x_start + BATTERY_WIDTH - 4, y_start + 2, 3, BATTERY_HEIGHT - 4));
+    
+    // Draw charging state, otherwise show battery charge level
+    if (s_is_charging) {
+        int ch_x = x_start + 4;
+        int ch_y = y_start + 2;
+        
+        graphics_context_set_stroke_color(ctx, GColorBlack);
+        graphics_context_set_stroke_width(ctx, 1);
+        
+        // Arrow pointing left
+        graphics_draw_line(ctx, GPoint(ch_x, ch_y + 2), GPoint(ch_x + 2, ch_y));
+        graphics_draw_line(ctx, GPoint(ch_x + 2, ch_y), GPoint(ch_x + 2, ch_y + 4));
+        graphics_draw_line(ctx, GPoint(ch_x + 2, ch_y + 4), GPoint(ch_x, ch_y + 2));
+        graphics_draw_line(ctx, GPoint(ch_x, ch_y + 2), GPoint(ch_x + 9, ch_y + 2));
+
+        // Plus sign next to arrow
+        graphics_draw_line(ctx, GPoint(ch_x + 12, ch_y + 2), GPoint(ch_x + 14, ch_y + 2));
+        graphics_draw_line(ctx, GPoint(ch_x + 13, ch_y + 1), GPoint(ch_x + 13, ch_y + 3));
+        int bolt_y = y_start + 2;
+    } else {
+        // Calculate the width of the filled portion based on battery level
+        int usable_width = BATTERY_WIDTH - 3 - 2;  // Account for borders and terminal
+        int filled_width = (s_battery_level * usable_width) / 100;
+        
+        // Draw filled rectangle representing battery charge
+        graphics_context_set_fill_color(ctx, GColorBlack);
+        graphics_fill_rect(ctx, GRect(x_start + 1, y_start + 1, filled_width, SEGMENT_HEIGHT), 0, GCornerNone);
+    }
+}
+
+static void battery_state_handler(BatteryChargeState charge_state)
+{
+    s_battery_level = charge_state.charge_percent;
+    s_is_charging = charge_state.is_charging;
+    layer_mark_dirty(s_battery_layer);
+}
+
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed)
 {
     update_time();
 
-    if (tick_time->tm_min % 4 == 0)
+    time_t current_time = time(NULL);
+    
+    // Update time since last reading and refresh delta display
+    if (s_last_reading_timestamp > 0)
     {
-        // Every 4 minutes, request new data
+        int minutes_since_reading = (current_time - s_last_reading_timestamp) / 60;
+        snprintf(time_since_reading_buffer, sizeof(time_since_reading_buffer), "%dm", minutes_since_reading);
+        
+        // Rebuild the delta display with both delta and time since reading
+        snprintf(bgdelta_buffer, sizeof(bgdelta_buffer), "%s %s", bgdelta_raw_buffer, time_since_reading_buffer);
+        text_layer_set_text(s_glucose_delta_layer, bgdelta_buffer);
+    }
+    
+    // If next fetch time is set and current time has reached or passed it, fetch data
+    if (s_next_fetch_time > 0 && current_time >= s_next_fetch_time)
+    {
+        // Request new data
+        DictionaryIterator *iter;
+        app_message_outbox_begin(&iter);
+
+        dict_write_uint8(iter, 0, 0);
+        app_message_outbox_send();
+        
+        // Reset next fetch time - will be updated when reading is received
+        s_next_fetch_time = 0;
+    }
+    // Fallback: if no timestamp received yet, use original 4-minute interval
+    else if (s_next_fetch_time == 0 && tick_time->tm_min % 4 == 0)
+    {
         DictionaryIterator *iter;
         app_message_outbox_begin(&iter);
 
@@ -46,13 +148,24 @@ static void main_window_load(Window *window)
     Layer *window_layer = window_get_root_layer(window);
     GRect bounds = layer_get_bounds(window_layer);
 
+    // Create GBitmap
+    s_background_bitmap = gbitmap_create_with_resource(RESOURCE_ID_BG_IMAGE);
+
+    // Create BitmapLayer to display the GBitmap
+    s_background_layer = bitmap_layer_create(bounds);
+
+    // Set the bitmap onto the layer and add to the window
+    bitmap_layer_set_bitmap(s_background_layer, s_background_bitmap);
+    layer_add_child(window_layer, bitmap_layer_get_layer(s_background_layer));
+
     // Create GFont
-    s_time_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_HUMAROID_48));
-    s_glucose_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_HUMAROID_20));
+    s_time_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_HUMAROID_64));
+    s_glucose_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_HUMAROID_28));
+    s_extra_info_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_HUMAROID_20));
 
     // Create the TextLayer with specific bounds
     s_time_layer = text_layer_create(
-        GRect(0, PBL_IF_ROUND_ELSE(58, 52), bounds.size.w, 50));
+        GRect(0, 4, bounds.size.w, 66));
 
     // Improve the layout to be more like a watchface
     text_layer_set_background_color(s_time_layer, GColorClear);
@@ -65,7 +178,7 @@ static void main_window_load(Window *window)
     layer_add_child(window_layer, text_layer_get_layer(s_time_layer));
 
     s_glucose_layer = text_layer_create(
-        GRect(0, PBL_IF_ROUND_ELSE(125, 120), bounds.size.w, 25));
+        GRect(0, 83, 71, 29));
 
     text_layer_set_background_color(s_glucose_layer, GColorClear);
     text_layer_set_text_color(s_glucose_layer, GColorBlack);
@@ -74,29 +187,81 @@ static void main_window_load(Window *window)
     text_layer_set_text(s_glucose_layer, "Loading...");
 
     layer_add_child(window_get_root_layer(window), text_layer_get_layer(s_glucose_layer));
+
+    s_glucose_delta_layer = text_layer_create(
+        GRect(3, 106, 71, 25));
+
+    text_layer_set_background_color(s_glucose_delta_layer, GColorClear);
+    text_layer_set_text_color(s_glucose_delta_layer, GColorBlack);
+    text_layer_set_text_alignment(s_glucose_delta_layer, GTextAlignmentCenter);
+    text_layer_set_font(s_glucose_delta_layer, s_extra_info_font);
+
+    layer_add_child(window_get_root_layer(window), text_layer_get_layer(s_glucose_delta_layer));
+    
+    // Create battery indicator layer
+    s_battery_layer = layer_create(bounds);
+    layer_set_update_proc(s_battery_layer, battery_draw_proc);
+    layer_add_child(window_layer, s_battery_layer);
 }
 
 static void main_window_unload(Window *window)
 {
     text_layer_destroy(s_time_layer);
     text_layer_destroy(s_glucose_layer);
+    text_layer_destroy(s_glucose_delta_layer);
     fonts_unload_custom_font(s_time_font);
     fonts_unload_custom_font(s_glucose_font);
+    fonts_unload_custom_font(s_extra_info_font);
+    bitmap_layer_destroy(s_background_layer);
+    gbitmap_destroy(s_background_bitmap);
+    layer_destroy(s_battery_layer);
 }
 
 static void inbox_received_callback(DictionaryIterator *iterator, void *context)
 {
     Tuple *bgv_tuple = dict_find(iterator, MESSAGE_KEY_BG);
-    Tuple *bgdelta_tuple = dict_find(iterator, MESSAGE_KEY_BGDELTA);
 
-    if (bgv_tuple && bgdelta_tuple)
+    if (bgv_tuple)
     {
         snprintf(bgv_buffer, sizeof(bgv_buffer), "%s", bgv_tuple->value->cstring);
-        snprintf(bgdelta_buffer, sizeof(bgdelta_buffer), "%s", bgdelta_tuple->value->cstring);
+        snprintf(bg_buffer, sizeof(bg_buffer), "%s", bgv_buffer);
 
-        snprintf(bg_buffer, sizeof(bg_buffer), "%s [%s]", bgv_buffer, bgdelta_buffer);
+        Tuple *showdelta_tuple = dict_find(iterator, MESSAGE_KEY_BG_SHOW_DELTA);
+
+        if (showdelta_tuple && 
+            showdelta_tuple->value->int8 == 1)
+        {
+            Tuple *bgdelta_tuple = dict_find(iterator, MESSAGE_KEY_BGDELTA);
+
+            if (bgdelta_tuple)
+            {
+                snprintf(bgdelta_raw_buffer, sizeof(bgdelta_raw_buffer), "%s", bgdelta_tuple->value->cstring);
+            }
+        }
 
         text_layer_set_text(s_glucose_layer, bg_buffer);
+        
+        // Also update the delta display immediately with timestamp info if available
+        Tuple *timestamp_tuple = dict_find(iterator, MESSAGE_KEY_TIMESTAMP);
+        if (timestamp_tuple)
+        {
+            s_last_reading_timestamp = timestamp_tuple->value->int32;
+            // Next fetch: 5 minutes after reading + 5 seconds
+            // 5 minutes = 300 seconds
+            s_next_fetch_time = s_last_reading_timestamp + 300 + 5;
+            
+            // Immediately update the time display with the new reading
+            time_t current_time = time(NULL);
+            int minutes_since_reading = (current_time - s_last_reading_timestamp) / 60;
+
+            snprintf(time_since_reading_buffer, sizeof(time_since_reading_buffer), "%dm", minutes_since_reading);
+            snprintf(bgdelta_buffer, sizeof(bgdelta_buffer), "%s %s", bgdelta_raw_buffer, time_since_reading_buffer);
+
+            APP_LOG(APP_LOG_LEVEL_INFO, time_since_reading_buffer);
+            APP_LOG(APP_LOG_LEVEL_INFO, bgdelta_buffer);
+
+            text_layer_set_text(s_glucose_delta_layer, bgdelta_buffer);
+        }
     }
 }
 
@@ -130,6 +295,12 @@ static void init()
     // Register with TickTimerService
     tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
     update_time();
+    
+    // Subscribe to battery state changes
+    battery_state_service_subscribe(battery_state_handler);
+    // Set initial battery level
+    BatteryChargeState initial_state = battery_state_service_peek();
+    battery_state_handler(initial_state);
 
     // Register callbacks
     app_message_register_inbox_received(inbox_received_callback);
@@ -147,6 +318,8 @@ static void deinit()
 {
     // Destroy Window
     window_destroy(s_main_window);
+    // Unsubscribe from battery state service
+    battery_state_service_unsubscribe();
 }
 
 int main(void)

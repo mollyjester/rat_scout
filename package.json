@@ -35,10 +35,16 @@
       "BG_SHOW_TIMEDELTA",
       "BG",
       "BGDELTA",
-      "TIMEDELTA"
+      "TIMEDELTA",
+      "TIMESTAMP"
     ],
     "resources": {
       "media": [
+        {
+          "type": "font",
+          "name": "FONT_HUMAROID_64",
+          "file": "fonts/Humaroid.ttf"
+        },
         {
           "type": "font",
           "name": "FONT_HUMAROID_48",
@@ -48,6 +54,16 @@
           "type": "font",
           "name": "FONT_HUMAROID_20",
           "file": "fonts/Humaroid.ttf"
+        },
+        {
+          "type": "font",
+          "name": "FONT_HUMAROID_28",
+          "file": "fonts/Humaroid.ttf"
+        },
+        {
+          "type": "bitmap",
+          "name": "BG_IMAGE",
+          "file": "img/bg.png"
         }
       ]
     }
