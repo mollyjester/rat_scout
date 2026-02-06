@@ -13,6 +13,7 @@ static GBitmap *s_background_bitmap;
 
 static Layer *s_battery_layer;
 static uint8_t s_battery_level = 100;
+static bool s_is_charging = false;
 
 /* Increase buffers a bit to accommodate floating-point formatted strings */
 static char bgv_buffer[16];
@@ -64,18 +65,39 @@ static void battery_draw_proc(Layer *layer, GContext *ctx)
     // Draw battery terminal (small nub on right side)
     graphics_draw_rect(ctx, GRect(x_start + BATTERY_WIDTH - 4, y_start + 2, 3, BATTERY_HEIGHT - 4));
     
-    // Calculate the width of the filled portion based on battery level
-    int usable_width = BATTERY_WIDTH - 3 - 2;  // Account for borders and terminal
-    int filled_width = (s_battery_level * usable_width) / 100;
-    
-    // Draw filled rectangle representing battery charge
-    graphics_context_set_fill_color(ctx, GColorBlack);
-    graphics_fill_rect(ctx, GRect(x_start + 1, y_start + 1, filled_width, SEGMENT_HEIGHT), 0, GCornerNone);
+    // Draw charging state, otherwise show battery charge level
+    if (s_is_charging) {
+        int ch_x = x_start + 4;
+        int ch_y = y_start + 2;
+        
+        graphics_context_set_stroke_color(ctx, GColorBlack);
+        graphics_context_set_stroke_width(ctx, 1);
+        
+        // Arrow pointing left
+        graphics_draw_line(ctx, GPoint(ch_x, ch_y + 2), GPoint(ch_x + 2, ch_y));
+        graphics_draw_line(ctx, GPoint(ch_x + 2, ch_y), GPoint(ch_x + 2, ch_y + 4));
+        graphics_draw_line(ctx, GPoint(ch_x + 2, ch_y + 4), GPoint(ch_x, ch_y + 2));
+        graphics_draw_line(ctx, GPoint(ch_x, ch_y + 2), GPoint(ch_x + 9, ch_y + 2));
+
+        // Plus sign next to arrow
+        graphics_draw_line(ctx, GPoint(ch_x + 12, ch_y + 2), GPoint(ch_x + 14, ch_y + 2));
+        graphics_draw_line(ctx, GPoint(ch_x + 13, ch_y + 1), GPoint(ch_x + 13, ch_y + 3));
+        int bolt_y = y_start + 2;
+    } else {
+        // Calculate the width of the filled portion based on battery level
+        int usable_width = BATTERY_WIDTH - 3 - 2;  // Account for borders and terminal
+        int filled_width = (s_battery_level * usable_width) / 100;
+        
+        // Draw filled rectangle representing battery charge
+        graphics_context_set_fill_color(ctx, GColorBlack);
+        graphics_fill_rect(ctx, GRect(x_start + 1, y_start + 1, filled_width, SEGMENT_HEIGHT), 0, GCornerNone);
+    }
 }
 
 static void battery_state_handler(BatteryChargeState charge_state)
 {
     s_battery_level = charge_state.charge_percent;
+    s_is_charging = charge_state.is_charging;
     layer_mark_dirty(s_battery_layer);
 }
 
