@@ -17,12 +17,33 @@ function getSettings() {
     return settings;
 }
 
+// Send settings to the watchface
+function sendSettings() {
+    var dictionary = {
+        "BG_SHOW_DELTA": appSettings.BG_SHOW_DELTA ? 1 : 0,
+        "BG_SHOW_TIMEDELTA": appSettings.BG_SHOW_TIMEDELTA ? 1 : 0,
+        "BG_UNITS": appSettings.BG_UNITS || "mg/dL"
+    };
+    
+    Pebble.sendAppMessage(dictionary,
+        function(e) {
+            console.log('Settings sent to Pebble successfully.');
+        },
+        function(e) {
+            console.log('Error sending settings to Pebble.');
+        }
+    );
+}
+
 // Listen for when the watchface is opened
 Pebble.addEventListener('ready',
     function(e) {
         console.log('PebbleKit JS ready!');
 
         appSettings = getSettings();
+        
+        // Send current settings to watchface
+        sendSettings();
 
         getScoutReading();
         //getScoutReadingTest();
@@ -38,6 +59,22 @@ Pebble.addEventListener('appmessage',
 
         getScoutReading();
         //getScoutReadingTest();
+    }
+);
+
+// Listen for when the settings form is closed (saved)
+Pebble.addEventListener('webviewclosed',
+    function(e) {
+        console.log('Settings form closed!');
+        
+        // Reload settings from storage
+        appSettings = getSettings();
+        
+        // Send updated settings to watchface immediately
+        sendSettings();
+        
+        // Also fetch fresh glucose data to apply new settings
+        getScoutReading();
     }
 );
 
