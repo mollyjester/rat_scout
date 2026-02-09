@@ -81,6 +81,25 @@
         ]
     },
     {
+        "type": "section",
+        "items": [
+            {
+                "type": "heading",
+                "defaultValue": "Astronomy Data (Sunrise/Sunset)"
+            },
+            {
+                "type": "text",
+                "defaultValue": "Enter your ipgeolocation.io API key to display sunrise/sunset and moonrise/moonset times. Get a free API key at https://ipgeolocation.io/"
+            },
+            {
+                "type": "input",
+                "messageKey": "ASTRO_API_KEY",
+                "defaultValue": "",
+                "label": "ipgeolocation.io API Key (Required)"
+            }
+        ]
+    },
+    {
         "type": "submit",
         "defaultValue": "Save Settings"
     }

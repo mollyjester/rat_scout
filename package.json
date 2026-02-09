@@ -37,7 +37,13 @@
       "BGDELTA",
       "TIMEDELTA",
       "TIMESTAMP",
-      "HOURLY_VIBRATION"
+      "HOURLY_VIBRATION",
+      "SUNRISE",
+      "SUNSET",
+      "MOONRISE",
+      "MOONSET",
+      "MOON_PHASE",
+      "ASTRO_API_KEY"
     ],
     "resources": {
       "media": [
