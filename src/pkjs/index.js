@@ -5,6 +5,8 @@ var clayConfig = require('./config.json');
 var clay = new Clay(clayConfig);
 var appSettings = {};
 
+var debug = false;
+
 function getSettings() {
     var settings = {};
 
@@ -48,8 +50,13 @@ Pebble.addEventListener('ready',
         // Send current settings to watchface
         sendSettings();
 
-        //getScoutReading();
-        getScoutReadingTest();
+        if (debug) {
+            console.log('Debug mode enabled, skipping real data fetch');
+            getScoutReadingTest();
+            return;
+        }
+
+        getScoutReading();
     }
 );
 
@@ -60,8 +67,13 @@ Pebble.addEventListener('appmessage',
 
         appSettings = getSettings();
 
-        //getScoutReading();
-        getScoutReadingTest();
+        if (debug) {
+            console.log('Debug mode enabled, skipping real data fetch');
+            getScoutReadingTest();
+            return;
+        }
+
+        getScoutReading();
     }
 );
 
@@ -77,8 +89,13 @@ Pebble.addEventListener('webviewclosed',
         sendSettings();
         
         // Also fetch fresh glucose data to apply new settings
-        //getScoutReading();
-        getScoutReadingTest();
+        if (debug) {
+            console.log('Debug mode enabled, skipping real data fetch');
+            getScoutReadingTest();
+            return;
+        }
+
+        getScoutReading();
     }
 );
 
@@ -135,6 +152,30 @@ function getScoutReading() {
     }
 };
 
+// Check if astronomy data needs to be refreshed (once per day at midnight)
+function shouldRefreshAstronomyData() {
+    var lastFetchTime = window.localStorage.getItem('lastAstronomyFetchTime');
+    
+    if (!lastFetchTime) {
+        console.log('No cached astronomy data, will fetch new data');
+        return true;
+    }
+    
+    var lastFetchTimestamp = parseInt(lastFetchTime);
+    var now = Date.now();
+    var lastFetchDate = new Date(lastFetchTimestamp);
+    var nowDate = new Date(now);
+    
+    // Check if the date has changed (we've passed midnight since last fetch)
+    if (lastFetchDate.toDateString() !== nowDate.toDateString()) {
+        console.log('Date has changed since last fetch, will refresh astronomy data');
+        return true;
+    }
+    
+    console.log('Astronomy data is still fresh from today');
+    return false;
+}
+
 // Fetch astronomy data and combine with BG data before sending to watchface
 function fetchAndSendAstronomy(bgDictionary) {
     console.log('Fetching astronomy data...');
@@ -163,47 +204,132 @@ function fetchAndSendAstronomy(bgDictionary) {
         return;
     }
     
-    Geolocation.fetchAstronomyData(apiKey, undefined, undefined,
-        function(astronomyData) {
-            console.log('Astronomy data received, combining with BG data');
-            
-            // Add astronomy data to the dictionary
-            bgDictionary.SUNRISE = astronomyData.sunrise || "N/A";
-            bgDictionary.SUNSET = astronomyData.sunset || "N/A";
-            bgDictionary.MOONRISE = astronomyData.moonrise || "N/A";
-            bgDictionary.MOONSET = astronomyData.moonset || "N/A";
-            bgDictionary.MOON_PHASE = astronomyData.moonPhase || "N/A";
-            
-            // Send combined data to watchface
-            Pebble.sendAppMessage(bgDictionary,
-                function(e) {
-                    console.log('BG and astronomy data sent to Pebble successfully.');
-                },
-                function(e) {
-                    console.log('Error sending combined data to Pebble.');
+    // Check if we should refresh the astronomy data
+    if (shouldRefreshAstronomyData()) {
+        console.log('Fetching fresh astronomy data from API');
+        
+        Geolocation.fetchAstronomyData(apiKey, undefined, undefined,
+            function(astronomyData) {
+                console.log('Astronomy data received, caching and combining with BG data');
+                
+                // Cache the astronomy data with current timestamp
+                var cacheData = {
+                    sunrise: astronomyData.sunrise,
+                    sunset: astronomyData.sunset,
+                    moonrise: astronomyData.moonrise,
+                    moonset: astronomyData.moonset,
+                    moonPhase: astronomyData.moonPhase
+                };
+                
+                window.localStorage.setItem('cachedAstronomyData', JSON.stringify(cacheData));
+                window.localStorage.setItem('lastAstronomyFetchTime', String(Date.now()));
+                
+                // Add astronomy data to the dictionary
+                bgDictionary.SUNRISE = astronomyData.sunrise || "N/A";
+                bgDictionary.SUNSET = astronomyData.sunset || "N/A";
+                bgDictionary.MOONRISE = astronomyData.moonrise || "N/A";
+                bgDictionary.MOONSET = astronomyData.moonset || "N/A";
+                bgDictionary.MOON_PHASE = astronomyData.moonPhase || "N/A";
+                
+                // Send combined data to watchface
+                Pebble.sendAppMessage(bgDictionary,
+                    function(e) {
+                        console.log('BG and astronomy data sent to Pebble successfully.');
+                    },
+                    function(e) {
+                        console.log('Error sending combined data to Pebble.');
+                    }
+                );
+            },
+            function(error) {
+                console.log('Error fetching astronomy data: ' + error + ', using cached data or sending BG only');
+                
+                // Try to use cached data
+                var cachedData = window.localStorage.getItem('cachedAstronomyData');
+                
+                if (cachedData) {
+                    try {
+                        var astronomyData = JSON.parse(cachedData);
+                        console.log('Using cached astronomy data');
+                        
+                        bgDictionary.SUNRISE = astronomyData.sunrise || "N/A";
+                        bgDictionary.SUNSET = astronomyData.sunset || "N/A";
+                        bgDictionary.MOONRISE = astronomyData.moonrise || "N/A";
+                        bgDictionary.MOONSET = astronomyData.moonset || "N/A";
+                        bgDictionary.MOON_PHASE = astronomyData.moonPhase || "N/A";
+                    } catch (e) {
+                        console.error('Error parsing cached astronomy data: ' + e);
+                        bgDictionary.SUNRISE = "N/A";
+                        bgDictionary.SUNSET = "N/A";
+                        bgDictionary.MOONRISE = "N/A";
+                        bgDictionary.MOONSET = "N/A";
+                        bgDictionary.MOON_PHASE = "N/A";
+                    }
+                } else {
+                    // No cached data available
+                    bgDictionary.SUNRISE = "N/A";
+                    bgDictionary.SUNSET = "N/A";
+                    bgDictionary.MOONRISE = "N/A";
+                    bgDictionary.MOONSET = "N/A";
+                    bgDictionary.MOON_PHASE = "N/A";
                 }
-            );
-        },
-        function(error) {
-            console.log('Error fetching astronomy data: ' + error + ', sending BG data only');
-            
-            // Send BG data only if astronomy fails
+                
+                // Send data to watchface
+                Pebble.sendAppMessage(bgDictionary,
+                    function(e) {
+                        console.log('BG data sent to Pebble successfully.');
+                    },
+                    function(e) {
+                        console.log('Error sending BG data to Pebble.');
+                    }
+                );
+            }
+        );
+    } else {
+        // Use cached astronomy data
+        console.log('Using cached astronomy data from earlier today');
+        
+        var cachedData = window.localStorage.getItem('cachedAstronomyData');
+        
+        if (cachedData) {
+            try {
+                var astronomyData = JSON.parse(cachedData);
+                
+                // Add cached astronomy data to the dictionary
+                bgDictionary.SUNRISE = astronomyData.sunrise || "N/A";
+                bgDictionary.SUNSET = astronomyData.sunset || "N/A";
+                bgDictionary.MOONRISE = astronomyData.moonrise || "N/A";
+                bgDictionary.MOONSET = astronomyData.moonset || "N/A";
+                bgDictionary.MOON_PHASE = astronomyData.moonPhase || "N/A";
+                
+                console.log('Cached astronomy data loaded successfully');
+            } catch (e) {
+                console.error('Error parsing cached astronomy data: ' + e);
+                bgDictionary.SUNRISE = "N/A";
+                bgDictionary.SUNSET = "N/A";
+                bgDictionary.MOONRISE = "N/A";
+                bgDictionary.MOONSET = "N/A";
+                bgDictionary.MOON_PHASE = "N/A";
+            }
+        } else {
+            console.log('No cached astronomy data available');
             bgDictionary.SUNRISE = "N/A";
             bgDictionary.SUNSET = "N/A";
             bgDictionary.MOONRISE = "N/A";
             bgDictionary.MOONSET = "N/A";
             bgDictionary.MOON_PHASE = "N/A";
-            
-            Pebble.sendAppMessage(bgDictionary,
-                function(e) {
-                    console.log('BG data sent to Pebble successfully.');
-                },
-                function(e) {
-                    console.log('Error sending BG data to Pebble.');
-                }
-            );
         }
-    );
+        
+        // Send data with cached or missing astronomy info
+        Pebble.sendAppMessage(bgDictionary,
+            function(e) {
+                console.log('BG and astronomy data sent to Pebble successfully.');
+            },
+            function(e) {
+                console.log('Error sending combined data to Pebble.');
+            }
+        );
+    }
 }
 
 function getScoutReadingTest() {
