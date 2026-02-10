@@ -10,7 +10,8 @@ const GRect RECT_WEEK_LAYER = {{78, 106}, {60, 25}};
 const GRect RECT_SUN_LAYER = {{0, 133}, {71, 42}};
 const GRect RECT_MOON_LAYER = {{78, 133}, {60, 42}};
 const GRect RECT_HOURLY_LAYER = {{2, 1}, {7, 11}};
-const GRect RECT_GARBAGE_LAYER = {{10, 1}, {7, 11}};
+const GRect RECT_SEPARATOR_LAYER = {{9, 5}, {6, 2}};
+const GRect RECT_GARBAGE_LAYER = {{15, -9}, {15, 22}};
 
 // Battery indicator dimensions
 const int BATTERY_WIDTH = 24;
@@ -71,6 +72,7 @@ static bool s_is_charging = false;
 static bool s_hourly_vibration = false;
 static int s_last_vibration_hour = -1;
 static Layer *s_hourly_layer;
+static Layer *s_separator_layer;
 static TextLayer *s_garbage_text_layer;
 
 // Text buffers
@@ -228,6 +230,15 @@ static void hourly_indicator_draw_proc(Layer *layer, GContext *ctx) {
 }
 
 /**
+ * Render separator dot between hourly and garbage indicators
+ */
+static void separator_draw_proc(Layer *layer, GContext *ctx) {
+    graphics_context_set_fill_color(ctx, GColorBlack);
+    // Draw 2x2 dot in the center (2 pixels padding on each side)
+    graphics_fill_rect(ctx, GRect(2, 0, 2, 2), 0, GCornerNone);
+}
+
+/**
  * Handle battery state changes
  */
 static void battery_state_handler(BatteryChargeState charge_state) {
@@ -375,6 +386,11 @@ static void main_window_load(Window *window) {
     layer_set_update_proc(s_hourly_layer, hourly_indicator_draw_proc);
     layer_add_child(window_layer, s_hourly_layer);
 
+    // Create separator dot layer
+    s_separator_layer = layer_create(RECT_SEPARATOR_LAYER);
+    layer_set_update_proc(s_separator_layer, separator_draw_proc);
+    layer_add_child(window_layer, s_separator_layer);
+
     // Create garbage collection indicator layer (text next to hourly indicator)
     s_garbage_text_layer = text_layer_create(RECT_GARBAGE_LAYER);
     text_layer_set_background_color(s_garbage_text_layer, GColorClear);
@@ -405,6 +421,7 @@ static void main_window_unload(Window *window)
     gbitmap_destroy(s_background_bitmap);
     layer_destroy(s_battery_layer);
     layer_destroy(s_hourly_layer);
+    layer_destroy(s_separator_layer);
 }
 
 static void inbox_received_callback(DictionaryIterator *iterator, void *context) {
