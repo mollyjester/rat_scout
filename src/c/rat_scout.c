@@ -267,7 +267,15 @@ static void update_delta_display(void) {
  */
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     update_time();
-    update_garbage_indicator();
+    
+    // Update garbage indicator only when it changes:
+    // - At midnight (day change)
+    // - At 9am (collection time cutoff)
+    if ((tick_time->tm_hour == 0 && tick_time->tm_min == 0) ||
+        (tick_time->tm_hour == 9 && tick_time->tm_min == 0)) {
+        update_garbage_indicator();
+    }
+    
     time_t current_time = time(NULL);
     
     // Handle hourly vibration
