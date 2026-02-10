@@ -296,7 +296,7 @@ static void main_window_load(Window *window)
     text_layer_set_text_color(s_sun_time_layer, GColorBlack);
     text_layer_set_text_alignment(s_sun_time_layer, GTextAlignmentCenter);
     text_layer_set_font(s_sun_time_layer, s_extra_info_font);
-    text_layer_set_text(s_sun_time_layer, "☀ N/A");
+    text_layer_set_text(s_sun_time_layer, "S N/A");
 
     layer_add_child(window_get_root_layer(window), text_layer_get_layer(s_sun_time_layer));
 
@@ -308,7 +308,7 @@ static void main_window_load(Window *window)
     text_layer_set_text_color(s_moon_time_layer, GColorBlack);
     text_layer_set_text_alignment(s_moon_time_layer, GTextAlignmentCenter);
     text_layer_set_font(s_moon_time_layer, s_extra_info_font);
-    text_layer_set_text(s_moon_time_layer, "🌙 N/A");
+    text_layer_set_text(s_moon_time_layer, "M N/A");
 
     layer_add_child(window_get_root_layer(window), text_layer_get_layer(s_moon_time_layer));
     
