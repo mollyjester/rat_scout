@@ -400,6 +400,8 @@ function useCachedAstronomyData(bgDictionary) {
     
     try {
         var astroData = JSON.parse(cachedData);
+        // Extract sun and moon times from cached TODAY's data
+        // IMPORTANT: sunTime always comes from today, only moonTime may use tomorrow's data
         var times = formatAstronomyTimes(astroData);
         
         // Calculate moon time minutes once for reuse
@@ -426,7 +428,7 @@ function useCachedAstronomyData(bgDictionary) {
                 return false;
             }
             
-            // Update display with tomorrow's data
+            // Update ONLY moonTime with tomorrow's data, sunTime remains from today
             if (needTomorrowMoonrise && astroData.tomorrowMoonrise) {
                 times.moonTime = astroData.tomorrowMoonrise;
             } else if (needTomorrowMoonset) {
@@ -463,6 +465,8 @@ function useCachedAstronomyData(bgDictionary) {
 function handleTodayAstronomyData(todayData, bgDictionary, apiKey, attemptCount) {
     attemptCount = attemptCount || 0;
     
+    // Extract sun and moon times from TODAY's data
+    // IMPORTANT: sunTime always comes from today, only moonTime may use tomorrow's data
     var times = formatAstronomyTimes(todayData);
     var cacheData = buildAstronomyCache(todayData);
     
@@ -483,6 +487,7 @@ function handleTodayAstronomyData(todayData, bgDictionary, apiKey, attemptCount)
                 // If moonrise < moonset (normal case), we need tomorrow's moonrise
                 if (moonriseMinutes !== null && moonsetMinutes !== null && moonriseMinutes < moonsetMinutes) {
                     if (tomorrowData.moonrise && !tomorrowData.moonrise.includes('N/A')) {
+                        // ONLY update moonTime with tomorrow's data, sunTime remains from today
                         times.moonTime = tomorrowData.moonrise;
                         console.log(`Using tomorrow moonrise: ${times.moonTime}`);
                     }
@@ -490,9 +495,11 @@ function handleTodayAstronomyData(todayData, bgDictionary, apiKey, attemptCount)
                 // If moonset < moonrise, we need tomorrow's moonset
                 else {
                     if (tomorrowData.moonset && !tomorrowData.moonset.includes('N/A')) {
+                        // ONLY update moonTime with tomorrow's data, sunTime remains from today
                         times.moonTime = tomorrowData.moonset;
                         console.log(`Using tomorrow moonset: ${times.moonTime}`);
                     } else if (tomorrowData.moonrise && !tomorrowData.moonrise.includes('N/A')) {
+                        // ONLY update moonTime with tomorrow's data, sunTime remains from today
                         times.moonTime = tomorrowData.moonrise;
                         console.log(`Using tomorrow moonrise (fallback): ${times.moonTime}`);
                     }
