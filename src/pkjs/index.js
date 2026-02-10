@@ -274,6 +274,7 @@ function getMoonTime(moonrise, moonset) {
     var currentMinutes = getCurrentTimeInMinutes();
     
     // If we don't have valid times, default to showing moonset with tomorrow flag
+    // Note: The caller will handle displaying "N/A" if moonset is also invalid
     if (moonriseMinutes === null && moonsetMinutes === null) {
         return { time: moonset, needsTomorrowData: true };
     }
@@ -404,13 +405,14 @@ function useCachedAstronomyData(bgDictionary) {
         // IMPORTANT: sunTime always comes from today, only moonTime may use tomorrow's data
         var times = formatAstronomyTimes(astroData);
         
-        // Calculate moon time minutes once for reuse
+        // Initialize variables for determining which tomorrow event we need
         var moonriseMinutes = null;
         var moonsetMinutes = null;
         var needTomorrowMoonrise = false;
         var needTomorrowMoonset = false;
         
         if (times.needsTomorrowData) {
+            // Calculate moon time minutes for comparison
             moonriseMinutes = timeToMinutes(astroData.moonrise);
             moonsetMinutes = timeToMinutes(astroData.moonset);
             
