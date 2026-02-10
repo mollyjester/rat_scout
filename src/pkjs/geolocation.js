@@ -4,53 +4,124 @@
 var IPGEOLOCATION_API_URL = 'https://api.ipgeolocation.io/v2/astronomy';
 
 /**
- * Fetch astronomy data (sunrise/sunset, moonrise/moonset) from ipgeolocation.io
- * @param {string} apiKey - Required API key from ipgeolocation.io
- * @param {number} lat - Latitude (optional, will use IP geolocation if not provided)
- * @param {number} lon - Longitude (optional, will use IP geolocation if not provided)
- * @param {string} date - Date in YYYY-MM-DD format (optional, defaults to today)
- * @param {function} onSuccess - Callback with astronomy data
- * @param {function} onError - Callback with error message
+ * Build query string for astronomy API
+ * @param {Object} params - Query parameters
+ * @returns {string} Query string
  */
-function fetchAstronomyData(apiKey, lat, lon, date, onSuccess, onError) {
+function buildQueryString(params) {
+    var parts = [];
+    
+    Object.keys(params).forEach(function(key) {
+        if (params[key] !== undefined && params[key] !== null) {
+            parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(params[key]));
+        }
+    });
+    
+    return parts.length > 0 ? '?' + parts.join('&') : '';
+}
+
+/**
+ * Parse astronomy response
+ * @param {Object} response - Raw response
+ * @returns {Object} Formatted data
+ */
+function parseAstronomyResponse(response) {
+    var astronomyData = response.astronomy || {};
+    
+    return {
+        sunrise: astronomyData.sunrise,
+        sunset: astronomyData.sunset,
+        moonrise: astronomyData.moonrise,
+        moonset: astronomyData.moonset,
+        moonPhase: astronomyData.moon_phase,
+        moonIllumination: astronomyData.moon_illumination_percentage
+    };
+}
+
+/**
+ * Log astronomy data for debugging
+ * @param {Object} data - Astronomy data
+ */
+function logAstronomyData(data) {
+    console.log('Astronomy data received:');
+    console.log(`  Sunrise: ${data.sunrise}`);
+    console.log(`  Sunset: ${data.sunset}`);
+    console.log(`  Moonrise: ${data.moonrise}`);
+    console.log(`  Moonset: ${data.moonset}`);
+    console.log(`  Moon Phase: ${data.moonPhase}`);
+    console.log(`  Moon Illumination: ${data.moonIllumination}`);
+}
+
+/**
+ * Fetch astronomy data (sunrise/sunset, moonrise/moonset) from ipgeolocation.io
+ * 
+ * Usage examples:
+ *   fetchAstronomyData(apiKey, onSuccess, onError)
+ *   fetchAstronomyData(apiKey, lat, lon, onSuccess, onError)
+ *   fetchAstronomyData(apiKey, lat, lon, date, onSuccess, onError)
+ * 
+ * @param {string} apiKey - Required API key from ipgeolocation.io
+ * @param {number|Function} latOrCallback - Latitude or callback (for parameter flexibility)
+ * @param {number|Function} lonOrCallback - Longitude or callback (for parameter flexibility)
+ * @param {string|Function} dateOrCallback - Date (YYYY-MM-DD) or callback
+ * @param {Function} onSuccess - Callback with astronomy data
+ * @param {Function} onError - Callback with error message
+ */
+function fetchAstronomyData(apiKey, latOrCallback, lonOrCallback, dateOrCallback, onSuccess, onError) {
     // API key is mandatory
     if (!apiKey) {
         console.error('API key is required for astronomy data. Please set ASTRO_API_KEY in settings.');
-        if (onError) {
+        if (typeof onError === 'function') {
             onError('API key is required');
         }
         return;
     }
     
-    // Handle optional date parameter - shift other params if date is omitted
-    if (typeof date === 'function') {
-        onError = onSuccess;
-        onSuccess = date;
+    // Handle parameter overloading for flexibility
+    var lat, lon, date;
+    
+    if (typeof latOrCallback === 'function') {
+        // fetchAstronomyData(apiKey, onSuccess, onError)
+        onSuccess = latOrCallback;
+        onError = lonOrCallback;
+        lat = undefined;
+        lon = undefined;
         date = undefined;
+    } else if (typeof dateOrCallback === 'function') {
+        // fetchAstronomyData(apiKey, lat, lon, onSuccess, onError)
+        lat = latOrCallback;
+        lon = lonOrCallback;
+        onSuccess = dateOrCallback;
+        onError = onSuccess;
+        date = undefined;
+    } else if (typeof onSuccess === 'undefined' && typeof onError === 'function') {
+        // fetchAstronomyData(apiKey, lat, lon, date, onSuccess)
+        lat = latOrCallback;
+        lon = lonOrCallback;
+        date = dateOrCallback;
+        onSuccess = onError;
+        onError = arguments[5];
+    } else {
+        // Normal case: all parameters provided
+        lat = latOrCallback;
+        lon = lonOrCallback;
+        date = dateOrCallback;
     }
     
-    var url = IPGEOLOCATION_API_URL;
-    
     // Build query parameters
-    var params = [];
-    
-    // API key is required
-    params.push('apiKey=' + encodeURIComponent(apiKey));
+    var queryParams = { apiKey: apiKey };
     
     if (lat !== undefined && lon !== undefined) {
-        params.push('lat=' + lat);
-        params.push('lng=' + lon);
+        queryParams.lat = lat;
+        queryParams.lng = lon;
     }
     
     if (date !== undefined) {
-        params.push('date=' + encodeURIComponent(date));
+        queryParams.date = date;
     }
     
-    if (params.length > 0) {
-        url += '?' + params.join('&');
-    }
-    
-    console.log('Fetching astronomy data from: ' + url);
+    var url = IPGEOLOCATION_API_URL + buildQueryString(queryParams);
+    console.log('Fetching astronomy data from API');
     
     var xhr = new XMLHttpRequest();
     
@@ -58,40 +129,23 @@ function fetchAstronomyData(apiKey, lat, lon, date, onSuccess, onError) {
         if (xhr.status === 200) {
             try {
                 var response = JSON.parse(xhr.responseText);
+                var data = parseAstronomyResponse(response);
                 
-                // Extract the astronomy data from the nested astronomy object
-                var astronomyData = response.astronomy || {};
-                
-                var data = {
-                    sunrise: astronomyData.sunrise,        // HH:MM format
-                    sunset: astronomyData.sunset,          // HH:MM format
-                    moonrise: astronomyData.moonrise,      // HH:MM format or N/A
-                    moonset: astronomyData.moonset,        // HH:MM format or N/A
-                    moonPhase: astronomyData.moon_phase,   // String description (e.g., "LAST_QUARTER")
-                    moonIllumination: astronomyData.moon_illumination_percentage  // Percentage string
-                };
-                
-                console.log('Astronomy data received:');
-                console.log('  Sunrise: ' + data.sunrise);
-                console.log('  Sunset: ' + data.sunset);
-                console.log('  Moonrise: ' + data.moonrise);
-                console.log('  Moonset: ' + data.moonset);
-                console.log('  Moon Phase: ' + data.moonPhase);
-                console.log('  Moon Illumination: ' + data.moonIllumination);
+                logAstronomyData(data);
                 
                 if (onSuccess) {
                     onSuccess(data);
                 }
             } catch (e) {
-                console.error('Error parsing astronomy response: ' + e.message);
+                console.error(`Error parsing astronomy response: ${e.message}`);
                 if (onError) {
-                    onError('Failed to parse response: ' + e.message);
+                    onError(`Failed to parse response: ${e.message}`);
                 }
             }
         } else {
-            console.error('Astronomy API error: ' + xhr.status);
+            console.error(`Astronomy API error: ${xhr.status}`);
             if (onError) {
-                onError('API error: ' + xhr.status);
+                onError(`API error: ${xhr.status}`);
             }
         }
     };
