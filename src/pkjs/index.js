@@ -176,6 +176,90 @@ function shouldRefreshAstronomyData() {
     return false;
 }
 
+// Parse time string in HH:MM format to minutes since midnight
+function timeToMinutes(timeStr) {
+    if (!timeStr || timeStr === 'N/A' || timeStr === 'N/A (The Sun never rises)' || timeStr === 'N/A (The Sun never sets)') {
+        return null;
+    }
+    
+    var parts = timeStr.split(':');
+    if (parts.length !== 2) return null;
+    
+    var hours = parseInt(parts[0], 10);
+    var minutes = parseInt(parts[1], 10);
+    
+    if (isNaN(hours) || isNaN(minutes)) return null;
+    
+    return hours * 60 + minutes;
+}
+
+// Get current time in minutes since midnight
+function getCurrentTimeInMinutes() {
+    var now = new Date();
+    return now.getHours() * 60 + now.getMinutes();
+}
+
+// Determine which sun time to display (sunrise or sunset)
+function getSunTime(sunrise, sunset) {
+    var currentMinutes = getCurrentTimeInMinutes();
+    var sunriseMinutes = timeToMinutes(sunrise);
+    var sunsetMinutes = timeToMinutes(sunset);
+    
+    // If sunrise time has passed, show sunset time
+    if (sunriseMinutes !== null && currentMinutes >= sunriseMinutes) {
+        console.log('Sunrise has passed, showing sunset time: ' + sunset);
+        return sunset;
+    }
+    
+    console.log('Sunrise has not passed, showing sunrise time: ' + sunrise);
+    return sunrise;
+}
+
+// Determine which moon time to display (moonrise or moonset)
+// Also returns a flag indicating if tomorrow's moon data is needed
+function getMoonTime(moonrise, moonset) {
+    var currentMinutes = getCurrentTimeInMinutes();
+    var moonriseMinutes = timeToMinutes(moonrise);
+    var moonsetMinutes = timeToMinutes(moonset);
+    
+    // If moonrise time has passed, show moonset time
+    if (moonriseMinutes !== null && currentMinutes >= moonriseMinutes) {
+        console.log('Moonrise has passed, showing moonset time: ' + moonset);
+        return {
+            time: moonset,
+            needsTomorrowData: false
+        };
+    }
+    
+    // If neither moonrise nor moonset have passed, show moonrise
+    if (moonriseMinutes !== null && currentMinutes < moonriseMinutes) {
+        console.log('Moonrise has not passed, showing moonrise time: ' + moonrise);
+        return {
+            time: moonrise,
+            needsTomorrowData: false
+        };
+    }
+    
+    // If we reach here, moonrise and/or moonset might be on the next day
+    console.log('Moon times might be on next day, will need to fetch tomorrow data');
+    return {
+        time: moonset,
+        needsTomorrowData: true
+    };
+}
+
+// Get tomorrow's date in YYYY-MM-DD format
+function getTomorrowDateString() {
+    var tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    var year = tomorrow.getFullYear();
+    var month = String(tomorrow.getMonth() + 1).padStart(2, '0');
+    var day = String(tomorrow.getDate()).padStart(2, '0');
+    
+    return year + '-' + month + '-' + day;
+}
+
 // Fetch astronomy data and combine with BG data before sending to watchface
 function fetchAndSendAstronomy(bgDictionary) {
     console.log('Fetching astronomy data...');
@@ -187,11 +271,8 @@ function fetchAndSendAstronomy(bgDictionary) {
         console.log('No astronomy API key configured, sending BG data only');
         
         // Send BG data only without astronomy data
-        bgDictionary.SUNRISE = "N/A";
-        bgDictionary.SUNSET = "N/A";
-        bgDictionary.MOONRISE = "N/A";
-        bgDictionary.MOONSET = "N/A";
-        bgDictionary.MOON_PHASE = "N/A";
+        bgDictionary.SUNTIME = "N/A";
+        bgDictionary.MOONTIME = "N/A";
         
         Pebble.sendAppMessage(bgDictionary,
             function(e) {
@@ -209,37 +290,104 @@ function fetchAndSendAstronomy(bgDictionary) {
         console.log('Fetching fresh astronomy data from API');
         
         Geolocation.fetchAstronomyData(apiKey, undefined, undefined,
-            function(astronomyData) {
-                console.log('Astronomy data received, caching and combining with BG data');
+            function(todayData) {
+                console.log('Today astronomy data received');
                 
-                // Cache the astronomy data with current timestamp
+                // Determine which sun time to show
+                var displaySunTime = getSunTime(todayData.sunrise, todayData.sunset);
+                
+                // Determine which moon time to show
+                var moonTimeResult = getMoonTime(todayData.moonrise, todayData.moonset);
+                var displayMoonTime = moonTimeResult.time;
+                var needsTomorrowData = moonTimeResult.needsTomorrowData;
+                
+                // Prepare cache data
                 var cacheData = {
-                    sunrise: astronomyData.sunrise,
-                    sunset: astronomyData.sunset,
-                    moonrise: astronomyData.moonrise,
-                    moonset: astronomyData.moonset,
-                    moonPhase: astronomyData.moonPhase
+                    sunrise: todayData.sunrise,
+                    sunset: todayData.sunset,
+                    moonrise: todayData.moonrise,
+                    moonset: todayData.moonset,
+                    moonPhase: todayData.moonPhase,
+                    tomorrowMoonrise: null,
+                    tomorrowMoonset: null
                 };
                 
-                window.localStorage.setItem('cachedAstronomyData', JSON.stringify(cacheData));
-                window.localStorage.setItem('lastAstronomyFetchTime', String(Date.now()));
-                
-                // Add astronomy data to the dictionary
-                bgDictionary.SUNRISE = astronomyData.sunrise || "N/A";
-                bgDictionary.SUNSET = astronomyData.sunset || "N/A";
-                bgDictionary.MOONRISE = astronomyData.moonrise || "N/A";
-                bgDictionary.MOONSET = astronomyData.moonset || "N/A";
-                bgDictionary.MOON_PHASE = astronomyData.moonPhase || "N/A";
-                
-                // Send combined data to watchface
-                Pebble.sendAppMessage(bgDictionary,
-                    function(e) {
-                        console.log('BG and astronomy data sent to Pebble successfully.');
-                    },
-                    function(e) {
-                        console.log('Error sending combined data to Pebble.');
-                    }
-                );
+                // If we need tomorrow's moon data, fetch it
+                if (needsTomorrowData) {
+                    console.log('Fetching tomorrow moon data for complete moon information');
+                    
+                    var tomorrowDate = getTomorrowDateString();
+                    Geolocation.fetchAstronomyData(apiKey, undefined, undefined, tomorrowDate,
+                        function(tomorrowData) {
+                            console.log('Tomorrow moon data received');
+                            
+                            // Store tomorrow's moon data in cache
+                            cacheData.tomorrowMoonrise = tomorrowData.moonrise;
+                            cacheData.tomorrowMoonset = tomorrowData.moonset;
+                            
+                            // Update display moon time with tomorrow's moonrise if applicable
+                            if (tomorrowData.moonrise && tomorrowData.moonrise !== 'N/A') {
+                                displayMoonTime = tomorrowData.moonrise;
+                                console.log('Using tomorrow moonrise: ' + displayMoonTime);
+                            }
+                            
+                            // Cache the complete astronomy data
+                            window.localStorage.setItem('cachedAstronomyData', JSON.stringify(cacheData));
+                            window.localStorage.setItem('lastAstronomyFetchTime', String(Date.now()));
+                            
+                            // Add to dictionary and send
+                            bgDictionary.SUNTIME = displaySunTime || "N/A";
+                            bgDictionary.MOONTIME = displayMoonTime || "N/A";
+                            
+                            Pebble.sendAppMessage(bgDictionary,
+                                function(e) {
+                                    console.log('BG and astronomy data sent to Pebble successfully.');
+                                },
+                                function(e) {
+                                    console.log('Error sending combined data to Pebble.');
+                                }
+                            );
+                        },
+                        function(error) {
+                            console.log('Error fetching tomorrow moon data: ' + error + ', using today moon data');
+                            
+                            // Cache without tomorrow data
+                            window.localStorage.setItem('cachedAstronomyData', JSON.stringify(cacheData));
+                            window.localStorage.setItem('lastAstronomyFetchTime', String(Date.now()));
+                            
+                            // Add to dictionary and send with computed times
+                            bgDictionary.SUNTIME = displaySunTime || "N/A";
+                            bgDictionary.MOONTIME = displayMoonTime || "N/A";
+                            
+                            Pebble.sendAppMessage(bgDictionary,
+                                function(e) {
+                                    console.log('BG and astronomy data sent to Pebble successfully.');
+                                },
+                                function(e) {
+                                    console.log('Error sending combined data to Pebble.');
+                                }
+                            );
+                        }
+                    );
+                } else {
+                    // No need for tomorrow's data, cache and send now
+                    window.localStorage.setItem('cachedAstronomyData', JSON.stringify(cacheData));
+                    window.localStorage.setItem('lastAstronomyFetchTime', String(Date.now()));
+                    
+                    // Add astronomy data to the dictionary
+                    bgDictionary.SUNTIME = displaySunTime || "N/A";
+                    bgDictionary.MOONTIME = displayMoonTime || "N/A";
+                    
+                    // Send combined data to watchface
+                    Pebble.sendAppMessage(bgDictionary,
+                        function(e) {
+                            console.log('BG and astronomy data sent to Pebble successfully.');
+                        },
+                        function(e) {
+                            console.log('Error sending combined data to Pebble.');
+                        }
+                    );
+                }
             },
             function(error) {
                 console.log('Error fetching astronomy data: ' + error + ', using cached data or sending BG only');
@@ -252,26 +400,29 @@ function fetchAndSendAstronomy(bgDictionary) {
                         var astronomyData = JSON.parse(cachedData);
                         console.log('Using cached astronomy data');
                         
-                        bgDictionary.SUNRISE = astronomyData.sunrise || "N/A";
-                        bgDictionary.SUNSET = astronomyData.sunset || "N/A";
-                        bgDictionary.MOONRISE = astronomyData.moonrise || "N/A";
-                        bgDictionary.MOONSET = astronomyData.moonset || "N/A";
-                        bgDictionary.MOON_PHASE = astronomyData.moonPhase || "N/A";
+                        // Determine which sun time to show using cached data
+                        var displaySunTime = getSunTime(astronomyData.sunrise, astronomyData.sunset);
+                        
+                        // Determine which moon time to show using cached data
+                        var moonTimeResult = getMoonTime(astronomyData.moonrise, astronomyData.moonset);
+                        var displayMoonTime = moonTimeResult.time;
+                        
+                        // If we need tomorrow's data and have it cached, use it
+                        if (moonTimeResult.needsTomorrowData && astronomyData.tomorrowMoonrise) {
+                            displayMoonTime = astronomyData.tomorrowMoonrise;
+                        }
+                        
+                        bgDictionary.SUNTIME = displaySunTime || "N/A";
+                        bgDictionary.MOONTIME = displayMoonTime || "N/A";
                     } catch (e) {
                         console.error('Error parsing cached astronomy data: ' + e);
-                        bgDictionary.SUNRISE = "N/A";
-                        bgDictionary.SUNSET = "N/A";
-                        bgDictionary.MOONRISE = "N/A";
-                        bgDictionary.MOONSET = "N/A";
-                        bgDictionary.MOON_PHASE = "N/A";
+                        bgDictionary.SUNTIME = "N/A";
+                        bgDictionary.MOONTIME = "N/A";
                     }
                 } else {
                     // No cached data available
-                    bgDictionary.SUNRISE = "N/A";
-                    bgDictionary.SUNSET = "N/A";
-                    bgDictionary.MOONRISE = "N/A";
-                    bgDictionary.MOONSET = "N/A";
-                    bgDictionary.MOON_PHASE = "N/A";
+                    bgDictionary.SUNTIME = "N/A";
+                    bgDictionary.MOONTIME = "N/A";
                 }
                 
                 // Send data to watchface
@@ -295,29 +446,33 @@ function fetchAndSendAstronomy(bgDictionary) {
             try {
                 var astronomyData = JSON.parse(cachedData);
                 
+                // Determine which sun time to show using cached data
+                var displaySunTime = getSunTime(astronomyData.sunrise, astronomyData.sunset);
+                
+                // Determine which moon time to show using cached data
+                var moonTimeResult = getMoonTime(astronomyData.moonrise, astronomyData.moonset);
+                var displayMoonTime = moonTimeResult.time;
+                
+                // If we need tomorrow's data and have it cached, use it
+                if (moonTimeResult.needsTomorrowData && astronomyData.tomorrowMoonrise) {
+                    displayMoonTime = astronomyData.tomorrowMoonrise;
+                    console.log('Using cached tomorrow moonrise: ' + displayMoonTime);
+                }
+                
                 // Add cached astronomy data to the dictionary
-                bgDictionary.SUNRISE = astronomyData.sunrise || "N/A";
-                bgDictionary.SUNSET = astronomyData.sunset || "N/A";
-                bgDictionary.MOONRISE = astronomyData.moonrise || "N/A";
-                bgDictionary.MOONSET = astronomyData.moonset || "N/A";
-                bgDictionary.MOON_PHASE = astronomyData.moonPhase || "N/A";
+                bgDictionary.SUNTIME = displaySunTime || "N/A";
+                bgDictionary.MOONTIME = displayMoonTime || "N/A";
                 
                 console.log('Cached astronomy data loaded successfully');
             } catch (e) {
                 console.error('Error parsing cached astronomy data: ' + e);
-                bgDictionary.SUNRISE = "N/A";
-                bgDictionary.SUNSET = "N/A";
-                bgDictionary.MOONRISE = "N/A";
-                bgDictionary.MOONSET = "N/A";
-                bgDictionary.MOON_PHASE = "N/A";
+                bgDictionary.SUNTIME = "N/A";
+                bgDictionary.MOONTIME = "N/A";
             }
         } else {
             console.log('No cached astronomy data available');
-            bgDictionary.SUNRISE = "N/A";
-            bgDictionary.SUNSET = "N/A";
-            bgDictionary.MOONRISE = "N/A";
-            bgDictionary.MOONSET = "N/A";
-            bgDictionary.MOON_PHASE = "N/A";
+            bgDictionary.SUNTIME = "N/A";
+            bgDictionary.MOONTIME = "N/A";
         }
         
         // Send data with cached or missing astronomy info

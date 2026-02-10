@@ -8,10 +8,11 @@ var IPGEOLOCATION_API_URL = 'https://api.ipgeolocation.io/v2/astronomy';
  * @param {string} apiKey - Required API key from ipgeolocation.io
  * @param {number} lat - Latitude (optional, will use IP geolocation if not provided)
  * @param {number} lon - Longitude (optional, will use IP geolocation if not provided)
+ * @param {string} date - Date in YYYY-MM-DD format (optional, defaults to today)
  * @param {function} onSuccess - Callback with astronomy data
  * @param {function} onError - Callback with error message
  */
-function fetchAstronomyData(apiKey, lat, lon, onSuccess, onError) {
+function fetchAstronomyData(apiKey, lat, lon, date, onSuccess, onError) {
     // API key is mandatory
     if (!apiKey) {
         console.error('API key is required for astronomy data. Please set ASTRO_API_KEY in settings.');
@@ -19,6 +20,13 @@ function fetchAstronomyData(apiKey, lat, lon, onSuccess, onError) {
             onError('API key is required');
         }
         return;
+    }
+    
+    // Handle optional date parameter - shift other params if date is omitted
+    if (typeof date === 'function') {
+        onError = onSuccess;
+        onSuccess = date;
+        date = undefined;
     }
     
     var url = IPGEOLOCATION_API_URL;
@@ -32,6 +40,10 @@ function fetchAstronomyData(apiKey, lat, lon, onSuccess, onError) {
     if (lat !== undefined && lon !== undefined) {
         params.push('lat=' + lat);
         params.push('lng=' + lon);
+    }
+    
+    if (date !== undefined) {
+        params.push('date=' + encodeURIComponent(date));
     }
     
     if (params.length > 0) {

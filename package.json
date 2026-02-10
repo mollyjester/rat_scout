@@ -38,11 +38,8 @@
       "TIMEDELTA",
       "TIMESTAMP",
       "HOURLY_VIBRATION",
-      "SUNRISE",
-      "SUNSET",
-      "MOONRISE",
-      "MOONSET",
-      "MOON_PHASE",
+      "SUNTIME",
+      "MOONTIME",
       "ASTRO_API_KEY"
     ],
     "resources": {

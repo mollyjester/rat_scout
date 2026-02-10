@@ -9,10 +9,8 @@ static TextLayer *s_glucose_layer;
 static TextLayer *s_glucose_delta_layer;
 static TextLayer *s_date_layer;
 static TextLayer *s_week_layer;
-static TextLayer *s_sunrise_layer;
-static TextLayer *s_sunset_layer;
-static TextLayer *s_moonrise_layer;
-static TextLayer *s_moonset_layer;
+static TextLayer *s_sun_time_layer;
+static TextLayer *s_moon_time_layer;
 
 static BitmapLayer *s_background_layer;
 static GBitmap *s_background_bitmap;
@@ -32,10 +30,8 @@ static char bgdelta_raw_buffer[12];    // Store just the delta value
 static char time_since_reading_buffer[16];
 static char date_buffer[16];            // Store day and month
 static char week_buffer[8];             // Store week number with W prefix
-static char sunrise_buffer[16];         // Store sunrise time
-static char sunset_buffer[16];          // Store sunset time
-static char moonrise_buffer[16];        // Store moonrise time
-static char moonset_buffer[16];         // Store moonset time
+static char sun_time_buffer[16];        // Store sunrise or sunset time
+static char moon_time_buffer[16];       // Store moonrise or moonset time
 
 /* Store the last reading timestamp and next fetch time */
 static time_t s_last_reading_timestamp = 0;
@@ -291,54 +287,30 @@ static void main_window_load(Window *window)
 
     layer_add_child(window_get_root_layer(window), text_layer_get_layer(s_week_layer));
     
-    // Create astronomy layers for sunrise/sunset and moonrise/moonset
-    // Sunrise layer (bottom left area)
-    s_sunrise_layer = text_layer_create(
-        GRect(0, 124, 71, 22));
+    // Create astronomy layers for sun and moon times (bottom area)
+    // Sun time layer (bottom left area) - displays sunrise or sunset based on time passed
+    s_sun_time_layer = text_layer_create(
+        GRect(0, 124, 71, 42));
 
-    text_layer_set_background_color(s_sunrise_layer, GColorClear);
-    text_layer_set_text_color(s_sunrise_layer, GColorBlack);
-    text_layer_set_text_alignment(s_sunrise_layer, GTextAlignmentCenter);
-    text_layer_set_font(s_sunrise_layer, s_extra_info_font);
-    text_layer_set_text(s_sunrise_layer, "↑ N/A");
+    text_layer_set_background_color(s_sun_time_layer, GColorClear);
+    text_layer_set_text_color(s_sun_time_layer, GColorBlack);
+    text_layer_set_text_alignment(s_sun_time_layer, GTextAlignmentCenter);
+    text_layer_set_font(s_sun_time_layer, s_extra_info_font);
+    text_layer_set_text(s_sun_time_layer, "☀ N/A");
 
-    layer_add_child(window_get_root_layer(window), text_layer_get_layer(s_sunrise_layer));
+    layer_add_child(window_get_root_layer(window), text_layer_get_layer(s_sun_time_layer));
 
-    // Sunset layer
-    s_sunset_layer = text_layer_create(
-        GRect(0, 144, 71, 22));
+    // Moon time layer (bottom right area) - displays moonrise or moonset based on time passed
+    s_moon_time_layer = text_layer_create(
+        GRect(78, 124, 60, 42));
 
-    text_layer_set_background_color(s_sunset_layer, GColorClear);
-    text_layer_set_text_color(s_sunset_layer, GColorBlack);
-    text_layer_set_text_alignment(s_sunset_layer, GTextAlignmentCenter);
-    text_layer_set_font(s_sunset_layer, s_extra_info_font);
-    text_layer_set_text(s_sunset_layer, "↓ N/A");
+    text_layer_set_background_color(s_moon_time_layer, GColorClear);
+    text_layer_set_text_color(s_moon_time_layer, GColorBlack);
+    text_layer_set_text_alignment(s_moon_time_layer, GTextAlignmentCenter);
+    text_layer_set_font(s_moon_time_layer, s_extra_info_font);
+    text_layer_set_text(s_moon_time_layer, "🌙 N/A");
 
-    layer_add_child(window_get_root_layer(window), text_layer_get_layer(s_sunset_layer));
-
-    // Moonrise layer (bottom right area)
-    s_moonrise_layer = text_layer_create(
-        GRect(78, 124, 60, 22));
-
-    text_layer_set_background_color(s_moonrise_layer, GColorClear);
-    text_layer_set_text_color(s_moonrise_layer, GColorBlack);
-    text_layer_set_text_alignment(s_moonrise_layer, GTextAlignmentCenter);
-    text_layer_set_font(s_moonrise_layer, s_extra_info_font);
-    text_layer_set_text(s_moonrise_layer, "🌙 N/A");
-
-    layer_add_child(window_get_root_layer(window), text_layer_get_layer(s_moonrise_layer));
-
-    // Moonset layer
-    s_moonset_layer = text_layer_create(
-        GRect(78, 144, 60, 22));
-
-    text_layer_set_background_color(s_moonset_layer, GColorClear);
-    text_layer_set_text_color(s_moonset_layer, GColorBlack);
-    text_layer_set_text_alignment(s_moonset_layer, GTextAlignmentCenter);
-    text_layer_set_font(s_moonset_layer, s_extra_info_font);
-    text_layer_set_text(s_moonset_layer, "🌙 N/A");
-
-    layer_add_child(window_get_root_layer(window), text_layer_get_layer(s_moonset_layer));
+    layer_add_child(window_get_root_layer(window), text_layer_get_layer(s_moon_time_layer));
     
     // Create battery indicator layer
     s_battery_layer = layer_create(bounds);
@@ -358,10 +330,8 @@ static void main_window_unload(Window *window)
     text_layer_destroy(s_glucose_delta_layer);
     text_layer_destroy(s_date_layer);
     text_layer_destroy(s_week_layer);
-    text_layer_destroy(s_sunrise_layer);
-    text_layer_destroy(s_sunset_layer);
-    text_layer_destroy(s_moonrise_layer);
-    text_layer_destroy(s_moonset_layer);
+    text_layer_destroy(s_sun_time_layer);
+    text_layer_destroy(s_moon_time_layer);
     fonts_unload_custom_font(s_time_font);
     fonts_unload_custom_font(s_main_font);
     fonts_unload_custom_font(s_extra_info_font);
@@ -451,33 +421,19 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
             layer_set_hidden(text_layer_get_layer(s_glucose_delta_layer), !s_show_bg_delta && !s_show_time_delta);
         }
         
-        // Handle astronomy data
-        Tuple *sunrise_tuple = dict_find(iterator, MESSAGE_KEY_SUNRISE);
-        if (sunrise_tuple && sunrise_tuple->value->cstring)
+        // Handle astronomy data - JavaScript determines which time (rise/set) to display
+        Tuple *suntime_tuple = dict_find(iterator, MESSAGE_KEY_SUNTIME);
+        if (suntime_tuple && suntime_tuple->value->cstring)
         {
-            snprintf(sunrise_buffer, sizeof(sunrise_buffer), "↑ %s", sunrise_tuple->value->cstring);
-            text_layer_set_text(s_sunrise_layer, sunrise_buffer);
+            snprintf(sun_time_buffer, sizeof(sun_time_buffer), "☀ %s", suntime_tuple->value->cstring);
+            text_layer_set_text(s_sun_time_layer, sun_time_buffer);
         }
         
-        Tuple *sunset_tuple = dict_find(iterator, MESSAGE_KEY_SUNSET);
-        if (sunset_tuple && sunset_tuple->value->cstring)
+        Tuple *moontime_tuple = dict_find(iterator, MESSAGE_KEY_MOONTIME);
+        if (moontime_tuple && moontime_tuple->value->cstring)
         {
-            snprintf(sunset_buffer, sizeof(sunset_buffer), "↓ %s", sunset_tuple->value->cstring);
-            text_layer_set_text(s_sunset_layer, sunset_buffer);
-        }
-        
-        Tuple *moonrise_tuple = dict_find(iterator, MESSAGE_KEY_MOONRISE);
-        if (moonrise_tuple && moonrise_tuple->value->cstring)
-        {
-            snprintf(moonrise_buffer, sizeof(moonrise_buffer), "🌙 %s", moonrise_tuple->value->cstring);
-            text_layer_set_text(s_moonrise_layer, moonrise_buffer);
-        }
-        
-        Tuple *moonset_tuple = dict_find(iterator, MESSAGE_KEY_MOONSET);
-        if (moonset_tuple && moonset_tuple->value->cstring)
-        {
-            snprintf(moonset_buffer, sizeof(moonset_buffer), "🌙 %s", moonset_tuple->value->cstring);
-            text_layer_set_text(s_moonset_layer, moonset_buffer);
+            snprintf(moon_time_buffer, sizeof(moon_time_buffer), "🌙 %s", moontime_tuple->value->cstring);
+            text_layer_set_text(s_moon_time_layer, moon_time_buffer);
         }
     }
 }
