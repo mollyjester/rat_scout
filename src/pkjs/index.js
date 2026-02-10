@@ -257,9 +257,9 @@ function getSunTime(sunrise, sunset) {
     var sunsetMinutes = timeToMinutes(sunset);
     var currentMinutes = getCurrentTimeInMinutes();
     
-    // If we don't have valid times, default to showing sunrise with tomorrow flag
+    // If we don't have valid times, don't fetch tomorrow (likely N/A there too)
     if (sunriseMinutes === null && sunsetMinutes === null) {
-        return { time: sunrise, needsTomorrowData: true };
+        return { time: sunrise, needsTomorrowData: false };
     }
     
     // If we only have sunrise, check if it's passed
@@ -267,6 +267,7 @@ function getSunTime(sunrise, sunset) {
         if (currentMinutes < sunriseMinutes) {
             return { time: sunrise, needsTomorrowData: false };
         }
+        // After sunrise but no sunset data - need tomorrow's sunrise
         return { time: sunrise, needsTomorrowData: true };
     }
     
@@ -275,7 +276,8 @@ function getSunTime(sunrise, sunset) {
         if (currentMinutes < sunsetMinutes) {
             return { time: sunset, needsTomorrowData: false };
         }
-        return { time: sunset, needsTomorrowData: true };
+        // After sunset but no sunrise data - can't get tomorrow's sunrise
+        return { time: sunset, needsTomorrowData: false };
     }
     
     // Both times are available (normal case)
@@ -288,7 +290,7 @@ function getSunTime(sunrise, sunset) {
         return { time: sunset, needsTomorrowData: false };
     } else {
         // After sunset - need tomorrow's sunrise
-        return { time: sunset, needsTomorrowData: true };
+        return { time: sunrise, needsTomorrowData: true };
     }
 }
 
