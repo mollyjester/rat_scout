@@ -290,7 +290,7 @@ static void main_window_load(Window *window)
     // Create astronomy layers for sun and moon times (bottom area)
     // Sun time layer (bottom left area) - displays sunrise or sunset based on time passed
     s_sun_time_layer = text_layer_create(
-        GRect(0, 124, 71, 42));
+        GRect(0, 133, 71, 42));
 
     text_layer_set_background_color(s_sun_time_layer, GColorClear);
     text_layer_set_text_color(s_sun_time_layer, GColorBlack);
@@ -302,7 +302,7 @@ static void main_window_load(Window *window)
 
     // Moon time layer (bottom right area) - displays moonrise or moonset based on time passed
     s_moon_time_layer = text_layer_create(
-        GRect(78, 124, 60, 42));
+        GRect(78, 133, 60, 42));
 
     text_layer_set_background_color(s_moon_time_layer, GColorClear);
     text_layer_set_text_color(s_moon_time_layer, GColorBlack);
@@ -425,14 +425,14 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
         Tuple *suntime_tuple = dict_find(iterator, MESSAGE_KEY_SUNTIME);
         if (suntime_tuple && suntime_tuple->value->cstring)
         {
-            snprintf(sun_time_buffer, sizeof(sun_time_buffer), "☀ %s", suntime_tuple->value->cstring);
+            snprintf(sun_time_buffer, sizeof(sun_time_buffer), "S %s", suntime_tuple->value->cstring);
             text_layer_set_text(s_sun_time_layer, sun_time_buffer);
         }
         
         Tuple *moontime_tuple = dict_find(iterator, MESSAGE_KEY_MOONTIME);
         if (moontime_tuple && moontime_tuple->value->cstring)
         {
-            snprintf(moon_time_buffer, sizeof(moon_time_buffer), "🌙 %s", moontime_tuple->value->cstring);
+            snprintf(moon_time_buffer, sizeof(moon_time_buffer), "M %s", moontime_tuple->value->cstring);
             text_layer_set_text(s_moon_time_layer, moon_time_buffer);
         }
     }
