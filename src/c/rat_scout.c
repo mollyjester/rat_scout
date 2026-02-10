@@ -199,7 +199,7 @@ static char get_next_garbage_bag(void) {
             return 'B';  // Black
         case 4:  // Thursday
             return 'G';  // Grey
-        case 0:  // Sunday - no collection, check Monday
+        case 0:  // Sunday before 9am - show Monday's collection
             return 'O';
         default:
             return '\0';
