@@ -414,9 +414,25 @@ function useCachedAstronomyData(bgDictionary) {
             moonriseMinutes = timeToMinutes(astroData.moonrise);
             moonsetMinutes = timeToMinutes(astroData.moonset);
             
-            // Check which tomorrow event we need
-            needTomorrowMoonrise = (moonriseMinutes !== null && moonsetMinutes !== null && moonriseMinutes < moonsetMinutes);
-            needTomorrowMoonset = !needTomorrowMoonrise;
+            // Determine which tomorrow event we need based on today's event order
+            // This logic mirrors getMoonTime() to ensure consistency
+            
+            if (moonriseMinutes !== null && moonsetMinutes === null) {
+                // Only have moonrise, if it passed we need tomorrow's moonrise
+                needTomorrowMoonrise = true;
+            } else if (moonriseMinutes === null && moonsetMinutes !== null) {
+                // Only have moonset, if it passed we need tomorrow's moonset
+                needTomorrowMoonset = true;
+            } else if (moonriseMinutes !== null && moonsetMinutes !== null) {
+                // Have both - check the order
+                if (moonriseMinutes < moonsetMinutes) {
+                    // Normal case: moonrise before moonset, need tomorrow's moonrise
+                    needTomorrowMoonrise = true;
+                } else {
+                    // Edge case: moonset before moonrise, need tomorrow's moonset
+                    needTomorrowMoonset = true;
+                }
+            }
             
             // If we need tomorrow's data but don't have it cached, return false to trigger fresh fetch
             if (needTomorrowMoonrise && !astroData.tomorrowMoonrise) {
@@ -431,12 +447,8 @@ function useCachedAstronomyData(bgDictionary) {
             // Update ONLY moonTime with tomorrow's data, sunTime remains from today
             if (needTomorrowMoonrise && astroData.tomorrowMoonrise) {
                 times.moonTime = astroData.tomorrowMoonrise;
-            } else if (needTomorrowMoonset) {
-                if (astroData.tomorrowMoonset) {
-                    times.moonTime = astroData.tomorrowMoonset;
-                } else if (astroData.tomorrowMoonrise) {
-                    times.moonTime = astroData.tomorrowMoonrise;
-                }
+            } else if (needTomorrowMoonset && astroData.tomorrowMoonset) {
+                times.moonTime = astroData.tomorrowMoonset;
             }
         }
         
@@ -480,29 +492,38 @@ function handleTodayAstronomyData(todayData, bgDictionary, apiKey, attemptCount)
                 cacheData.tomorrowMoonrise = tomorrowData.moonrise;
                 cacheData.tomorrowMoonset = tomorrowData.moonset;
                 
-                // Determine which tomorrow event to show based on what we're currently displaying
+                // Determine which tomorrow event to show based on today's event order
+                // This logic mirrors getMoonTime() to ensure consistency
                 var moonriseMinutes = timeToMinutes(todayData.moonrise);
                 var moonsetMinutes = timeToMinutes(todayData.moonset);
                 
-                // If moonrise < moonset (normal case), we need tomorrow's moonrise
-                if (moonriseMinutes !== null && moonsetMinutes !== null && moonriseMinutes < moonsetMinutes) {
-                    if (tomorrowData.moonrise && !tomorrowData.moonrise.includes('N/A')) {
-                        // ONLY update moonTime with tomorrow's data, sunTime remains from today
-                        times.moonTime = tomorrowData.moonrise;
-                        console.log(`Using tomorrow moonrise: ${times.moonTime}`);
+                var needTomorrowMoonrise = false;
+                var needTomorrowMoonset = false;
+                
+                if (moonriseMinutes !== null && moonsetMinutes === null) {
+                    // Only have moonrise, if it passed we need tomorrow's moonrise
+                    needTomorrowMoonrise = true;
+                } else if (moonriseMinutes === null && moonsetMinutes !== null) {
+                    // Only have moonset, if it passed we need tomorrow's moonset
+                    needTomorrowMoonset = true;
+                } else if (moonriseMinutes !== null && moonsetMinutes !== null) {
+                    // Have both - check the order
+                    if (moonriseMinutes < moonsetMinutes) {
+                        // Normal case: moonrise before moonset, need tomorrow's moonrise
+                        needTomorrowMoonrise = true;
+                    } else {
+                        // Edge case: moonset before moonrise, need tomorrow's moonset
+                        needTomorrowMoonset = true;
                     }
                 }
-                // If moonset < moonrise, we need tomorrow's moonset
-                else {
-                    if (tomorrowData.moonset && !tomorrowData.moonset.includes('N/A')) {
-                        // ONLY update moonTime with tomorrow's data, sunTime remains from today
-                        times.moonTime = tomorrowData.moonset;
-                        console.log(`Using tomorrow moonset: ${times.moonTime}`);
-                    } else if (tomorrowData.moonrise && !tomorrowData.moonrise.includes('N/A')) {
-                        // ONLY update moonTime with tomorrow's data, sunTime remains from today
-                        times.moonTime = tomorrowData.moonrise;
-                        console.log(`Using tomorrow moonrise (fallback): ${times.moonTime}`);
-                    }
+                
+                // Update ONLY moonTime with tomorrow's data, sunTime remains from today
+                if (needTomorrowMoonrise && tomorrowData.moonrise && !tomorrowData.moonrise.includes('N/A')) {
+                    times.moonTime = tomorrowData.moonrise;
+                    console.log(`Using tomorrow moonrise: ${times.moonTime}`);
+                } else if (needTomorrowMoonset && tomorrowData.moonset && !tomorrowData.moonset.includes('N/A')) {
+                    times.moonTime = tomorrowData.moonset;
+                    console.log(`Using tomorrow moonset: ${times.moonTime}`);
                 }
                 
                 cacheAstronomyData(cacheData);
