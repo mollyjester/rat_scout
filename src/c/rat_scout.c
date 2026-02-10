@@ -90,6 +90,9 @@ static time_t s_next_fetch_time = 0;
 static bool s_show_bg_delta = true;
 static bool s_show_time_delta = true;
 
+// Forward declarations
+static char get_next_garbage_bag(void);
+
 /**
  * Update time, date, and week layers with current time
  */
@@ -204,7 +207,7 @@ static char get_next_garbage_bag(void) {
 }
 
 /**
- * Render hourly vibration indicator (capital 'H') with garbage bag indicator
+ * Render hourly vibration indicator (capital 'H')
  */
 static void hourly_indicator_draw_proc(Layer *layer, GContext *ctx) {
     if (!s_hourly_vibration) return;
