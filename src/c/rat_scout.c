@@ -372,7 +372,7 @@ static void main_window_load(Window *window) {
     text_layer_set_background_color(s_garbage_text_layer, GColorClear);
     text_layer_set_text_color(s_garbage_text_layer, GColorBlack);
     text_layer_set_text_alignment(s_garbage_text_layer, GTextAlignmentLeft);
-    text_layer_set_font(s_garbage_text_layer, fonts_get_system_font(FONT_KEY_GOTHIC_09));
+    text_layer_set_font(s_garbage_text_layer, s_extra_info_font);
     text_layer_set_text(s_garbage_text_layer, "");
     layer_add_child(window_layer, text_layer_get_layer(s_garbage_text_layer));
     
