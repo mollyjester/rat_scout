@@ -10,6 +10,7 @@ const GRect RECT_WEEK_LAYER = {{78, 106}, {60, 25}};
 const GRect RECT_SUN_LAYER = {{0, 133}, {71, 42}};
 const GRect RECT_MOON_LAYER = {{78, 133}, {60, 42}};
 const GRect RECT_HOURLY_LAYER = {{2, 1}, {7, 11}};
+const GRect RECT_GARBAGE_LAYER = {{10, 1}, {7, 11}};
 
 // Battery indicator dimensions
 const int BATTERY_WIDTH = 24;
@@ -21,6 +22,12 @@ const int BATTERY_SEGMENT_HEIGHT = 7;
 const int HOURLY_HEIGHT = 11;
 const int HOURLY_WIDTH = 7;
 const int HOURLY_STROKE = 2;
+
+// Garbage collection schedule (next bag indicator)
+// Monday, Wednesday, Friday: Organic (O)
+// Tuesday, Saturday: Black (B)
+// Thursday: Grey (G)
+// Collection at 9am daily except Sunday
 
 // Data fetch timing (in seconds)
 const int FETCH_INTERVAL_SECONDS = 300;
@@ -64,6 +71,7 @@ static bool s_is_charging = false;
 static bool s_hourly_vibration = false;
 static int s_last_vibration_hour = -1;
 static Layer *s_hourly_layer;
+static TextLayer *s_garbage_text_layer;
 
 // Text buffers
 static char s_bg_buffer[BUFFER_BG];
@@ -74,6 +82,7 @@ static char s_date_buffer[BUFFER_DATE];
 static char s_week_buffer[BUFFER_WEEK];
 static char s_sun_time_buffer[BUFFER_ASTRONOMY];
 static char s_moon_time_buffer[BUFFER_ASTRONOMY];
+static char s_garbage_buffer[2];
 
 // Reading state
 static time_t s_last_reading_timestamp = 0;
@@ -98,6 +107,21 @@ static void update_time(void) {
     
     strftime(s_week_buffer, sizeof(s_week_buffer), "W%V", tick_time);
     text_layer_set_text(s_week_layer, s_week_buffer);
+}
+
+/**
+ * Update garbage collection indicator
+ */
+static void update_garbage_indicator(void) {
+    char bag = get_next_garbage_bag();
+    if (bag != '\0') {
+        s_garbage_buffer[0] = bag;
+        s_garbage_buffer[1] = '\0';
+        text_layer_set_text(s_garbage_text_layer, s_garbage_buffer);
+        layer_set_hidden(text_layer_get_layer(s_garbage_text_layer), false);
+    } else {
+        layer_set_hidden(text_layer_get_layer(s_garbage_text_layer), true);
+    }
 }
 
 /**
@@ -145,7 +169,42 @@ static void battery_draw_proc(Layer *layer, GContext *ctx) {
 }
 
 /**
- * Render hourly vibration indicator (capital 'H')
+ * Get the next garbage collection bag type
+ * Returns: 'O' for Organic, 'B' for Black, 'G' for Grey, or '\0' if no collection
+ */
+static char get_next_garbage_bag(void) {
+    time_t temp = time(NULL);
+    struct tm *tick_time = localtime(&temp);
+    
+    int wday = tick_time->tm_wday;  // 0=Sunday, 1=Monday, ..., 6=Saturday
+    int hour = tick_time->tm_hour;
+    
+    // If it's before 9am, today's collection is still next
+    // If it's 9am or after, tomorrow's collection is next
+    if (hour >= 9) {
+        wday = (wday + 1) % 7;
+    }
+    
+    // Determine bag type based on day
+    switch (wday) {
+        case 1:  // Monday
+        case 3:  // Wednesday
+        case 5:  // Friday
+            return 'O';  // Organic
+        case 2:  // Tuesday
+        case 6:  // Saturday
+            return 'B';  // Black
+        case 4:  // Thursday
+            return 'G';  // Grey
+        case 0:  // Sunday - no collection, check Monday
+            return 'O';
+        default:
+            return '\0';
+    }
+}
+
+/**
+ * Render hourly vibration indicator (capital 'H') with garbage bag indicator
  */
 static void hourly_indicator_draw_proc(Layer *layer, GContext *ctx) {
     if (!s_hourly_vibration) return;
@@ -205,6 +264,7 @@ static void update_delta_display(void) {
  */
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     update_time();
+    update_garbage_indicator();
     time_t current_time = time(NULL);
     
     // Handle hourly vibration
@@ -303,6 +363,18 @@ static void main_window_load(Window *window) {
     s_hourly_layer = layer_create(RECT_HOURLY_LAYER);
     layer_set_update_proc(s_hourly_layer, hourly_indicator_draw_proc);
     layer_add_child(window_layer, s_hourly_layer);
+
+    // Create garbage collection indicator layer (text next to hourly indicator)
+    s_garbage_text_layer = text_layer_create(RECT_GARBAGE_LAYER);
+    text_layer_set_background_color(s_garbage_text_layer, GColorClear);
+    text_layer_set_text_color(s_garbage_text_layer, GColorBlack);
+    text_layer_set_text_alignment(s_garbage_text_layer, GTextAlignmentLeft);
+    text_layer_set_font(s_garbage_text_layer, fonts_get_system_font(FONT_KEY_GOTHIC_09));
+    text_layer_set_text(s_garbage_text_layer, "");
+    layer_add_child(window_layer, text_layer_get_layer(s_garbage_text_layer));
+    
+    // Initialize garbage indicator
+    update_garbage_indicator();
 }
 
 static void main_window_unload(Window *window)
@@ -314,6 +386,7 @@ static void main_window_unload(Window *window)
     text_layer_destroy(s_week_layer);
     text_layer_destroy(s_sun_time_layer);
     text_layer_destroy(s_moon_time_layer);
+    text_layer_destroy(s_garbage_text_layer);
     fonts_unload_custom_font(s_time_font);
     fonts_unload_custom_font(s_main_font);
     fonts_unload_custom_font(s_extra_info_font);
