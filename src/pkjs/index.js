@@ -279,7 +279,7 @@ function getMoonTime(moonrise, moonset) {
     }
     
     // If we only have moonrise, check if it's passed
-    if (moonsetMinutes === null) {
+    if (moonriseMinutes !== null && moonsetMinutes === null) {
         if (currentMinutes < moonriseMinutes) {
             return { time: moonrise, needsTomorrowData: false };
         }
@@ -287,7 +287,7 @@ function getMoonTime(moonrise, moonset) {
     }
     
     // If we only have moonset, check if it's passed
-    if (moonriseMinutes === null) {
+    if (moonriseMinutes === null && moonsetMinutes !== null) {
         if (currentMinutes < moonsetMinutes) {
             return { time: moonset, needsTomorrowData: false };
         }
@@ -402,15 +402,21 @@ function useCachedAstronomyData(bgDictionary) {
         var astroData = JSON.parse(cachedData);
         var times = formatAstronomyTimes(astroData);
         
-        // If we need tomorrow's data but don't have it cached, return false to trigger fresh fetch
+        // Calculate moon time minutes once for reuse
+        var moonriseMinutes = null;
+        var moonsetMinutes = null;
+        var needTomorrowMoonrise = false;
+        var needTomorrowMoonset = false;
+        
         if (times.needsTomorrowData) {
-            var moonriseMinutes = timeToMinutes(astroData.moonrise);
-            var moonsetMinutes = timeToMinutes(astroData.moonset);
+            moonriseMinutes = timeToMinutes(astroData.moonrise);
+            moonsetMinutes = timeToMinutes(astroData.moonset);
             
             // Check which tomorrow event we need
-            var needTomorrowMoonrise = (moonriseMinutes !== null && moonsetMinutes !== null && moonriseMinutes < moonsetMinutes);
-            var needTomorrowMoonset = !needTomorrowMoonrise;
+            needTomorrowMoonrise = (moonriseMinutes !== null && moonsetMinutes !== null && moonriseMinutes < moonsetMinutes);
+            needTomorrowMoonset = !needTomorrowMoonrise;
             
+            // If we need tomorrow's data but don't have it cached, return false to trigger fresh fetch
             if (needTomorrowMoonrise && !astroData.tomorrowMoonrise) {
                 console.log('Cache missing tomorrow moonrise data, need fresh fetch');
                 return false;
@@ -419,21 +425,11 @@ function useCachedAstronomyData(bgDictionary) {
                 console.log('Cache missing tomorrow moonset data, need fresh fetch');
                 return false;
             }
-        }
-        
-        // Update display if we have tomorrow's moon data and need it
-        if (times.needsTomorrowData) {
-            var moonriseMinutes = timeToMinutes(astroData.moonrise);
-            var moonsetMinutes = timeToMinutes(astroData.moonset);
             
-            // Normal case: moonrise before moonset, show tomorrow's moonrise
-            if (moonriseMinutes !== null && moonsetMinutes !== null && moonriseMinutes < moonsetMinutes) {
-                if (astroData.tomorrowMoonrise) {
-                    times.moonTime = astroData.tomorrowMoonrise;
-                }
-            }
-            // Moonset before moonrise case, show tomorrow's moonset
-            else {
+            // Update display with tomorrow's data
+            if (needTomorrowMoonrise && astroData.tomorrowMoonrise) {
+                times.moonTime = astroData.tomorrowMoonrise;
+            } else if (needTomorrowMoonset) {
                 if (astroData.tomorrowMoonset) {
                     times.moonTime = astroData.tomorrowMoonset;
                 } else if (astroData.tomorrowMoonrise) {
