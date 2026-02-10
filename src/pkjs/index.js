@@ -250,16 +250,46 @@ function getCurrentTimeInMinutes() {
  * Determine which sun time to display (sunrise or sunset)
  * @param {string} sunrise - Sunrise time (HH:MM or N/A)
  * @param {string} sunset - Sunset time (HH:MM or N/A)
- * @returns {string} Time to display
+ * @returns {Object} { time: string, needsTomorrowData: boolean }
  */
 function getSunTime(sunrise, sunset) {
     var sunriseMinutes = timeToMinutes(sunrise);
+    var sunsetMinutes = timeToMinutes(sunset);
+    var currentMinutes = getCurrentTimeInMinutes();
     
-    if (sunriseMinutes !== null && getCurrentTimeInMinutes() >= sunriseMinutes) {
-        return sunset;
+    // If we don't have valid times, default to showing sunrise with tomorrow flag
+    if (sunriseMinutes === null && sunsetMinutes === null) {
+        return { time: sunrise, needsTomorrowData: true };
     }
     
-    return sunrise;
+    // If we only have sunrise, check if it's passed
+    if (sunriseMinutes !== null && sunsetMinutes === null) {
+        if (currentMinutes < sunriseMinutes) {
+            return { time: sunrise, needsTomorrowData: false };
+        }
+        return { time: sunrise, needsTomorrowData: true };
+    }
+    
+    // If we only have sunset, check if it's passed
+    if (sunriseMinutes === null && sunsetMinutes !== null) {
+        if (currentMinutes < sunsetMinutes) {
+            return { time: sunset, needsTomorrowData: false };
+        }
+        return { time: sunset, needsTomorrowData: true };
+    }
+    
+    // Both times are available (normal case)
+    // Sunrise is always before sunset in a day
+    if (currentMinutes < sunriseMinutes) {
+        // Before sunrise - show sunrise
+        return { time: sunrise, needsTomorrowData: false };
+    } else if (currentMinutes < sunsetMinutes) {
+        // Between sunrise and sunset - show sunset
+        return { time: sunset, needsTomorrowData: false };
+    } else {
+        // After sunset - need tomorrow's sunrise
+        return { time: sunset, needsTomorrowData: true };
+    }
 }
 
 /**
@@ -344,16 +374,17 @@ function getTomorrowDateString() {
 /**
  * Extract and format sun/moon times from astronomy data
  * @param {Object} astroData - Astronomy data object
- * @returns {Object} { sunTime: string, moonTime: string, needsTomorrowData: boolean }
+ * @returns {Object} { sunTime: string, moonTime: string, needsTomorrowSunData: boolean, needsTomorrowMoonData: boolean }
  */
 function formatAstronomyTimes(astroData) {
-    var displaySunTime = getSunTime(astroData.sunrise, astroData.sunset);
+    var sunTimeResult = getSunTime(astroData.sunrise, astroData.sunset);
     var moonTimeResult = getMoonTime(astroData.moonrise, astroData.moonset);
     
     return {
-        sunTime: displaySunTime,
+        sunTime: sunTimeResult.time,
         moonTime: moonTimeResult.time,
-        needsTomorrowData: moonTimeResult.needsTomorrowData
+        needsTomorrowSunData: sunTimeResult.needsTomorrowData,
+        needsTomorrowMoonData: moonTimeResult.needsTomorrowData
     };
 }
 
@@ -369,6 +400,7 @@ function buildAstronomyCache(astroData) {
         moonrise: astroData.moonrise,
         moonset: astroData.moonset,
         moonPhase: astroData.moonPhase,
+        tomorrowSunrise: null,
         tomorrowMoonrise: null,
         tomorrowMoonset: null
     };
@@ -402,16 +434,21 @@ function useCachedAstronomyData(bgDictionary) {
     try {
         var astroData = JSON.parse(cachedData);
         // Extract sun and moon times from cached TODAY's data
-        // IMPORTANT: sunTime always comes from today, only moonTime may use tomorrow's data
         var times = formatAstronomyTimes(astroData);
         
-        // Initialize variables for determining which tomorrow event we need
+        // Check if we need tomorrow's sun data
+        if (times.needsTomorrowSunData && !astroData.tomorrowSunrise) {
+            console.log('Cache missing tomorrow sunrise data, need fresh fetch');
+            return false;
+        }
+        
+        // Initialize variables for determining which tomorrow moon event we need
         var moonriseMinutes = null;
         var moonsetMinutes = null;
         var needTomorrowMoonrise = false;
         var needTomorrowMoonset = false;
         
-        if (times.needsTomorrowData) {
+        if (times.needsTomorrowMoonData) {
             // Calculate moon time minutes for comparison
             moonriseMinutes = timeToMinutes(astroData.moonrise);
             moonsetMinutes = timeToMinutes(astroData.moonset);
@@ -446,12 +483,17 @@ function useCachedAstronomyData(bgDictionary) {
                 return false;
             }
             
-            // Update ONLY moonTime with tomorrow's data, sunTime remains from today
+            // Update ONLY moonTime with tomorrow's data
             if (needTomorrowMoonrise && astroData.tomorrowMoonrise) {
                 times.moonTime = astroData.tomorrowMoonrise;
             } else if (needTomorrowMoonset && astroData.tomorrowMoonset) {
                 times.moonTime = astroData.tomorrowMoonset;
             }
+        }
+        
+        // Update sunTime with tomorrow's data if needed
+        if (times.needsTomorrowSunData && astroData.tomorrowSunrise) {
+            times.sunTime = astroData.tomorrowSunrise;
         }
         
         bgDictionary.SUNTIME = times.sunTime || "N/A";
@@ -480,52 +522,63 @@ function handleTodayAstronomyData(todayData, bgDictionary, apiKey, attemptCount)
     attemptCount = attemptCount || 0;
     
     // Extract sun and moon times from TODAY's data
-    // IMPORTANT: sunTime always comes from today, only moonTime may use tomorrow's data
     var times = formatAstronomyTimes(todayData);
     var cacheData = buildAstronomyCache(todayData);
     
-    // If we need tomorrow's data for moon times, fetch it
-    if (times.needsTomorrowData) {
-        console.log('Fetching tomorrow moon data');
+    // Check if we need tomorrow's data for either sun or moon times
+    if (times.needsTomorrowSunData || times.needsTomorrowMoonData) {
+        console.log('Fetching tomorrow astronomy data');
         
         var tomorrowDate = getTomorrowDateString();
         Geolocation.fetchAstronomyData(apiKey, undefined, undefined, tomorrowDate,
             function(tomorrowData) {
-                cacheData.tomorrowMoonrise = tomorrowData.moonrise;
-                cacheData.tomorrowMoonset = tomorrowData.moonset;
-                
-                // Determine which tomorrow event to show based on today's event order
-                // This logic mirrors getMoonTime() to ensure consistency
-                var moonriseMinutes = timeToMinutes(todayData.moonrise);
-                var moonsetMinutes = timeToMinutes(todayData.moonset);
-                
-                var needTomorrowMoonrise = false;
-                var needTomorrowMoonset = false;
-                
-                if (moonriseMinutes !== null && moonsetMinutes === null) {
-                    // Only have moonrise, if it passed we need tomorrow's moonrise
-                    needTomorrowMoonrise = true;
-                } else if (moonriseMinutes === null && moonsetMinutes !== null) {
-                    // Only have moonset, if it passed we need tomorrow's moonset
-                    needTomorrowMoonset = true;
-                } else if (moonriseMinutes !== null && moonsetMinutes !== null) {
-                    // Have both - check the order
-                    if (moonriseMinutes < moonsetMinutes) {
-                        // Normal case: moonrise before moonset, need tomorrow's moonrise
-                        needTomorrowMoonrise = true;
-                    } else {
-                        // Edge case: moonset before moonrise, need tomorrow's moonset
-                        needTomorrowMoonset = true;
+                // Cache tomorrow's sunrise if needed
+                if (times.needsTomorrowSunData) {
+                    cacheData.tomorrowSunrise = tomorrowData.sunrise;
+                    if (tomorrowData.sunrise && !tomorrowData.sunrise.includes('N/A')) {
+                        times.sunTime = tomorrowData.sunrise;
+                        console.log(`Using tomorrow sunrise: ${times.sunTime}`);
                     }
                 }
                 
-                // Update ONLY moonTime with tomorrow's data, sunTime remains from today
-                if (needTomorrowMoonrise && tomorrowData.moonrise && !tomorrowData.moonrise.includes('N/A')) {
-                    times.moonTime = tomorrowData.moonrise;
-                    console.log(`Using tomorrow moonrise: ${times.moonTime}`);
-                } else if (needTomorrowMoonset && tomorrowData.moonset && !tomorrowData.moonset.includes('N/A')) {
-                    times.moonTime = tomorrowData.moonset;
-                    console.log(`Using tomorrow moonset: ${times.moonTime}`);
+                // Cache tomorrow's moon data if needed
+                if (times.needsTomorrowMoonData) {
+                    cacheData.tomorrowMoonrise = tomorrowData.moonrise;
+                    cacheData.tomorrowMoonset = tomorrowData.moonset;
+                    
+                    // Determine which tomorrow event to show based on today's event order
+                    // This logic mirrors getMoonTime() to ensure consistency
+                    var moonriseMinutes = timeToMinutes(todayData.moonrise);
+                    var moonsetMinutes = timeToMinutes(todayData.moonset);
+                    
+                    var needTomorrowMoonrise = false;
+                    var needTomorrowMoonset = false;
+                    
+                    if (moonriseMinutes !== null && moonsetMinutes === null) {
+                        // Only have moonrise, if it passed we need tomorrow's moonrise
+                        needTomorrowMoonrise = true;
+                    } else if (moonriseMinutes === null && moonsetMinutes !== null) {
+                        // Only have moonset, if it passed we need tomorrow's moonset
+                        needTomorrowMoonset = true;
+                    } else if (moonriseMinutes !== null && moonsetMinutes !== null) {
+                        // Have both - check the order
+                        if (moonriseMinutes < moonsetMinutes) {
+                            // Normal case: moonrise before moonset, need tomorrow's moonrise
+                            needTomorrowMoonrise = true;
+                        } else {
+                            // Edge case: moonset before moonrise, need tomorrow's moonset
+                            needTomorrowMoonset = true;
+                        }
+                    }
+                    
+                    // Update moonTime with tomorrow's data
+                    if (needTomorrowMoonrise && tomorrowData.moonrise && !tomorrowData.moonrise.includes('N/A')) {
+                        times.moonTime = tomorrowData.moonrise;
+                        console.log(`Using tomorrow moonrise: ${times.moonTime}`);
+                    } else if (needTomorrowMoonset && tomorrowData.moonset && !tomorrowData.moonset.includes('N/A')) {
+                        times.moonTime = tomorrowData.moonset;
+                        console.log(`Using tomorrow moonset: ${times.moonTime}`);
+                    }
                 }
                 
                 cacheAstronomyData(cacheData);
