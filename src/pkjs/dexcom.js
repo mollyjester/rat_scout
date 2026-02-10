@@ -230,8 +230,13 @@ Dexcom.prototype._getSessionId = function(callback) {
     var self = this;
     var loginUrl = this.baseUrl + DEXCOM_LOGIN_ID_ENDPOINT;
     var loginReq = this.xhr('POST', loginUrl);
+    var timeoutHandle = null;
+
+    // Set 15 second timeout for session ID fetch
+    loginReq.timeout = 15000;
 
     loginReq.onload = function() {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
         if (loginReq.readyState !== 4) return;
 
         if (loginReq.status === 200) {
@@ -247,6 +252,26 @@ Dexcom.prototype._getSessionId = function(callback) {
             throw new Error(`Error fetching session ID: ${loginReq.status}`);
         }
     };
+
+    loginReq.onerror = function() {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        console.error('Network error fetching session ID');
+        throw new Error('Network error fetching session ID');
+    };
+
+    loginReq.ontimeout = function() {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        console.error('Timeout fetching session ID (15s)');
+        throw new Error('Timeout fetching session ID');
+    };
+
+    // Fallback timeout using setTimeout for better compatibility
+    timeoutHandle = setTimeout(function() {
+        if (loginReq.readyState !== 4) {
+            console.error('Request timeout: session ID fetch took too long');
+            loginReq.abort();
+        }
+    }, 15000);
 
     loginReq.send(JSON.stringify({
         accountId: this.accountId,
@@ -282,8 +307,13 @@ Dexcom.prototype._fetchGlucoseReadings = function() {
 
         var url = this.baseUrl + DEXCOM_GLUCOSE_READINGS_ENDPOINT;
         var req = this.xhr('POST', url);
+        var timeoutHandle = null;
+
+        // Set 15 second timeout for glucose readings
+        req.timeout = 15000;
 
         req.onload = function() {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
             if (req.readyState !== 4) return;
 
             try {
@@ -298,6 +328,24 @@ Dexcom.prototype._fetchGlucoseReadings = function() {
                 console.error(`Error processing response: ${error.message}`);
             }
         };
+
+        req.onerror = function() {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
+            console.error('Network error fetching glucose readings');
+        };
+
+        req.ontimeout = function() {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
+            console.error('Timeout fetching glucose readings (15s)');
+        };
+
+        // Fallback timeout using setTimeout for better compatibility
+        timeoutHandle = setTimeout(function() {
+            if (req.readyState !== 4) {
+                console.error('Request timeout: glucose readings fetch took too long');
+                req.abort();
+            }
+        }, 15000);
 
         req.send(JSON.stringify({
             sessionId: this.sessionId,
@@ -352,13 +400,27 @@ Dexcom.prototype._handleGlucoseResponse = function(readings) {
 Dexcom.prototype._handleServerError = function(error) {
     var self = this;
     
+    // Track retry attempts to prevent infinite loops
+    if (!this.retryCount) {
+        this.retryCount = 0;
+    }
+    
     if (error.Code === 'SessionIdNotFound' || error.Code === 'SessionNotValid') {
-        console.log(`Session error: ${error.Code}, re-authenticating...`);
-        this.sessionId = null;
-        this.authenticate(function() {
-            self.getLatestGlucoseWithDelta();
-        });
+        // Limit retries to prevent infinite loop
+        if (this.retryCount < 2) {
+            this.retryCount++;
+            console.log(`Session error: ${error.Code}, re-authenticating (attempt ${this.retryCount})...`);
+            this.sessionId = null;
+            this.authenticate(function() {
+                self.getLatestGlucoseWithDelta();
+            });
+        } else {
+            console.error(`Session error: ${error.Code}, max retries reached (${this.retryCount})`);
+            this.retryCount = 0;
+            throw new Error(`Session validation failed after ${this.retryCount} attempts`);
+        }
     } else {
+        this.retryCount = 0;
         throw new Error(`Server error: ${error.Message}`);
     }
 };

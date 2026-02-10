@@ -22,7 +22,9 @@ var CONFIG = {
         SESSION_ID: 'sessionId'
     },
     DEFAULT_BG_UNITS: 'mg/dL',
-    MMOL_CONVERSION_FACTOR: 18.0182
+    MMOL_CONVERSION_FACTOR: 18.0182,
+    MAX_FETCH_RETRIES: 2,
+    REQUEST_TIMEOUT_MS: 15000
 };
 
 /**
@@ -381,9 +383,11 @@ function useCachedAstronomyData(bgDictionary) {
  * @param {Object} todayData - Today's astronomy data
  * @param {Object} bgDictionary - BG data to supplement
  * @param {string} apiKey - API key for subsequent requests
- * @param {Function} onComplete - Callback when done
+ * @param {number} attemptCount - Retry counter to prevent infinite loops
  */
-function handleTodayAstronomyData(todayData, bgDictionary, apiKey, onComplete) {
+function handleTodayAstronomyData(todayData, bgDictionary, apiKey, attemptCount) {
+    attemptCount = attemptCount || 0;
+    
     var times = formatAstronomyTimes(todayData);
     var cacheData = buildAstronomyCache(todayData);
     
@@ -406,9 +410,17 @@ function handleTodayAstronomyData(todayData, bgDictionary, apiKey, onComplete) {
                 completeAstronomyUpdate(bgDictionary, times);
             },
             function(error) {
-                console.log(`Error fetching tomorrow data: ${error}, using today data`);
-                cacheAstronomyData(cacheData);
-                completeAstronomyUpdate(bgDictionary, times);
+                console.log(`Error fetching tomorrow data (attempt ${attemptCount + 1}): ${error}`);
+                
+                // Limit retries for tomorrow data to prevent infinite loops
+                if (attemptCount < 1) {
+                    console.log('Retrying tomorrow data fetch...');
+                    handleTodayAstronomyData(todayData, bgDictionary, apiKey, attemptCount + 1);
+                } else {
+                    console.log('Max retries for tomorrow data reached, using today data');
+                    cacheAstronomyData(cacheData);
+                    completeAstronomyUpdate(bgDictionary, times);
+                }
             }
         );
     } else {
@@ -432,9 +444,12 @@ function completeAstronomyUpdate(bgDictionary, times) {
 /**
  * Fetch astronomy data and combine with glucose data before sending to watchface
  * @param {Object} bgDictionary - Blood glucose data to supplement
+ * @param {number} attemptCount - Internal retry counter (starts at 0)
  */
-function fetchAndSendAstronomy(bgDictionary) {
-    console.log('Processing astronomy data');
+function fetchAndSendAstronomy(bgDictionary, attemptCount) {
+    attemptCount = attemptCount || 0;
+    
+    console.log('Processing astronomy data (attempt ' + (attemptCount + 1) + ')');
     
     var apiKey = appSettings.ASTRO_API_KEY;
     
@@ -454,16 +469,29 @@ function fetchAndSendAstronomy(bgDictionary) {
         return;
     }
     
-    // Fetch fresh astronomy data
+    // Fetch fresh astronomy data with retry tracking
     console.log('Fetching fresh astronomy data from API');
     Geolocation.fetchAstronomyData(apiKey, undefined, undefined,
         function(todayData) {
             console.log('Today astronomy data received');
+            // Reset retry counter on success
+            attemptCount = 0;
             handleTodayAstronomyData(todayData, bgDictionary, apiKey);
         },
         function(error) {
-            console.log(`Error fetching astronomy: ${error}, falling back to cache`);
-            useCachedAstronomyData(bgDictionary);
+            console.log(`Error fetching astronomy (attempt ${attemptCount + 1}): ${error}`);
+            
+            // Limit retries to prevent infinite loops
+            if (attemptCount < CONFIG.MAX_FETCH_RETRIES) {
+                console.log(`Will retry astronomy fetch (${CONFIG.MAX_FETCH_RETRIES - attemptCount - 1} attempts remaining)`);
+                // Retry after 2 second delay to allow network recovery
+                setTimeout(function() {
+                    fetchAndSendAstronomy(bgDictionary, attemptCount + 1);
+                }, 2000);
+            } else {
+                console.log(`Max retries reached (${CONFIG.MAX_FETCH_RETRIES}), falling back to cache`);
+                useCachedAstronomyData(bgDictionary);
+            }
         }
     );
 }

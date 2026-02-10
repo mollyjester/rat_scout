@@ -124,8 +124,14 @@ function fetchAstronomyData(apiKey, latOrCallback, lonOrCallback, dateOrCallback
     console.log('Fetching astronomy data from API');
     
     var xhr = new XMLHttpRequest();
+    var timeoutHandle = null;
+    
+    // Set 20 second timeout for astronomy API (slightly longer due to geolocation lookups)
+    xhr.timeout = 20000;
     
     xhr.onload = function() {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        
         if (xhr.status === 200) {
             try {
                 var response = JSON.parse(xhr.responseText);
@@ -151,11 +157,28 @@ function fetchAstronomyData(apiKey, latOrCallback, lonOrCallback, dateOrCallback
     };
     
     xhr.onerror = function() {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
         console.error('Network error fetching astronomy data');
         if (onError) {
             onError('Network error');
         }
     };
+    
+    xhr.ontimeout = function() {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        console.error('Timeout fetching astronomy data (20s)');
+        if (onError) {
+            onError('Astronomy API request timeout');
+        }
+    };
+    
+    // Fallback timeout using setTimeout for better compatibility
+    timeoutHandle = setTimeout(function() {
+        if (xhr.readyState !== 4) {
+            console.error('Request timeout: astronomy data fetch took too long');
+            xhr.abort();
+        }
+    }, 20000);
     
     xhr.open('GET', url);
     xhr.send();
