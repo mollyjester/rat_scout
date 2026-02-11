@@ -77,6 +77,30 @@
                 "messageKey": "HOURLY_VIBRATION",
                 "defaultValue": false,
                 "label": "Hourly Vibration"
+            },
+            {
+                "type": "toggle",
+                "messageKey": "BG_VIBRATION",
+                "defaultValue": false,
+                "label": "BG Threshold Vibration"
+            },
+            {
+                "type": "input",
+                "messageKey": "BG_LOW_THRESHOLD",
+                "defaultValue": "",
+                "label": "Low BG Threshold (in preferred units)",
+                "attributes": {
+                    "type": "number"
+                }
+            },
+            {
+                "type": "input",
+                "messageKey": "BG_HIGH_THRESHOLD",
+                "defaultValue": "",
+                "label": "High BG Threshold (in preferred units)",
+                "attributes": {
+                    "type": "number"
+                }
             }
         ]
     },
