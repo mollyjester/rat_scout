@@ -415,9 +415,31 @@ function getTomorrowDateString() {
 }
 
 /**
+ * Convert moon phase string from API to numeric index for the watchface
+ * @param {string} moonPhase - Moon phase string from ipgeolocation.io
+ * @returns {number} Moon phase index (0-7), defaults to 0 (new moon)
+ */
+function moonPhaseToIndex(moonPhase) {
+    if (!moonPhase) return 0;
+    var phase = moonPhase.toUpperCase().replace(/ /g, '_');
+    var phases = {
+        'NEW_MOON': 0,
+        'WAXING_CRESCENT': 1,
+        'FIRST_QUARTER': 2,
+        'WAXING_GIBBOUS': 3,
+        'FULL_MOON': 4,
+        'WANING_GIBBOUS': 5,
+        'THIRD_QUARTER': 6,
+        'LAST_QUARTER': 6,
+        'WANING_CRESCENT': 7
+    };
+    return phases.hasOwnProperty(phase) ? phases[phase] : 0;
+}
+
+/**
  * Extract and format sun/moon times from astronomy data
  * @param {Object} astroData - Astronomy data object
- * @returns {Object} { sunTime: string, moonTime: string, needsTomorrowSunData: boolean, needsTomorrowMoonData: boolean }
+ * @returns {Object} { sunTime: string, moonTime: string, moonPhase: number, needsTomorrowSunData: boolean, needsTomorrowMoonData: boolean }
  */
 function formatAstronomyTimes(astroData) {
     var sunTimeResult = getSunTime(astroData.sunrise, astroData.sunset);
@@ -426,6 +448,7 @@ function formatAstronomyTimes(astroData) {
     return {
         sunTime: sunTimeResult.time,
         moonTime: moonTimeResult.time,
+        moonPhase: moonPhaseToIndex(astroData.moonPhase),
         needsTomorrowSunData: sunTimeResult.needsTomorrowData,
         needsTomorrowMoonData: moonTimeResult.needsTomorrowData
     };
@@ -541,6 +564,7 @@ function useCachedAstronomyData(bgDictionary) {
         
         bgDictionary.SUNTIME = times.sunTime || "N/A";
         bgDictionary.MOONTIME = times.moonTime || "N/A";
+        bgDictionary.MOON_PHASE = times.moonPhase !== undefined ? times.moonPhase : 0;
         
         console.log('Using cached astronomy data');
         sendToPebble(bgDictionary, 'BG with cached astronomy');
@@ -656,6 +680,7 @@ function handleTodayAstronomyData(todayData, bgDictionary, apiKey, attemptCount)
 function completeAstronomyUpdate(bgDictionary, times) {
     bgDictionary.SUNTIME = times.sunTime || "N/A";
     bgDictionary.MOONTIME = times.moonTime || "N/A";
+    bgDictionary.MOON_PHASE = times.moonPhase !== undefined ? times.moonPhase : 0;
     sendToPebble(bgDictionary, 'BG with astronomy');
 }
 

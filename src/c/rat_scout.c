@@ -7,8 +7,10 @@ const GRect RECT_GLUCOSE_LAYER = {{0, 83}, {71, 29}};
 const GRect RECT_DELTA_LAYER = {{3, 106}, {71, 25}};
 const GRect RECT_DATE_LAYER = {{78, 83}, {60, 29}};
 const GRect RECT_WEEK_LAYER = {{78, 106}, {60, 25}};
-const GRect RECT_SUN_LAYER = {{0, 127}, {71, 42}};
-const GRect RECT_MOON_LAYER = {{0, 142}, {71, 42}};
+const GRect RECT_SUN_LAYER = {{16, 127}, {55, 42}};
+const GRect RECT_MOON_LAYER = {{16, 142}, {55, 42}};
+const GRect RECT_SUN_ICON = {{2, 130}, {12, 12}};
+const GRect RECT_MOON_ICON = {{2, 145}, {12, 12}};
 const GRect RECT_WEATHER_TEMP_LAYER = {{78, 127}, {60, 29}};
 const GRect RECT_WEATHER_WIND_LAYER = {{78, 142}, {60, 25}};
 const GRect RECT_HOURLY_LAYER = {{2, 1}, {7, 11}};
@@ -76,6 +78,12 @@ static TextLayer *s_weather_wind_layer;
 static BitmapLayer *s_background_layer;
 static GBitmap *s_background_bitmap;
 
+static BitmapLayer *s_sun_icon_layer;
+static GBitmap *s_sun_icon_bitmap;
+static BitmapLayer *s_moon_icon_layer;
+static GBitmap *s_moon_icon_bitmap;
+static int s_current_moon_phase = -1;
+
 static Layer *s_battery_layer;
 static uint8_t s_battery_level = 100;
 static bool s_is_charging = false;
@@ -116,11 +124,13 @@ enum PersistKeys {
     PERSIST_KEY_SUN_TIME,
     PERSIST_KEY_MOON_TIME,
     PERSIST_KEY_WEATHER_TEMP,
-    PERSIST_KEY_WEATHER_WIND
+    PERSIST_KEY_WEATHER_WIND,
+    PERSIST_KEY_MOON_PHASE
 };
 
 // Forward declarations
 static char get_next_garbage_bag(void);
+static void update_moon_icon(int phase);
 
 /**
  * Update time, date, and week layers with current time
@@ -154,6 +164,46 @@ static void update_garbage_indicator(void) {
     } else {
         layer_set_hidden(text_layer_get_layer(s_garbage_text_layer), true);
     }
+}
+
+/**
+ * Get the resource ID for a moon phase
+ * @param phase - Moon phase index (0-7)
+ */
+static uint32_t get_moon_phase_resource(int phase) {
+    switch (phase) {
+        case 0: return RESOURCE_ID_MOON_NEW;
+        case 1: return RESOURCE_ID_MOON_WAXING_CRESCENT;
+        case 2: return RESOURCE_ID_MOON_FIRST_QUARTER;
+        case 3: return RESOURCE_ID_MOON_WAXING_GIBBOUS;
+        case 4: return RESOURCE_ID_MOON_FULL;
+        case 5: return RESOURCE_ID_MOON_WANING_GIBBOUS;
+        case 6: return RESOURCE_ID_MOON_THIRD_QUARTER;
+        case 7: return RESOURCE_ID_MOON_WANING_CRESCENT;
+        default: return RESOURCE_ID_MOON_NEW;
+    }
+}
+
+/**
+ * Update moon icon bitmap based on phase
+ * @param phase - Moon phase index (0-7)
+ */
+static void update_moon_icon(int phase) {
+    if (phase < 0 || phase > 7) phase = 0;
+    if (phase == s_current_moon_phase) return;
+    
+    s_current_moon_phase = phase;
+    
+    // Destroy old bitmap if exists
+    if (s_moon_icon_bitmap) {
+        gbitmap_destroy(s_moon_icon_bitmap);
+    }
+    
+    s_moon_icon_bitmap = gbitmap_create_with_resource(get_moon_phase_resource(phase));
+    bitmap_layer_set_bitmap(s_moon_icon_layer, s_moon_icon_bitmap);
+    layer_mark_dirty(bitmap_layer_get_layer(s_moon_icon_layer));
+    
+    persist_write_int(PERSIST_KEY_MOON_PHASE, phase);
 }
 
 /**
@@ -403,23 +453,39 @@ static void main_window_load(Window *window) {
     text_layer_set_text(s_week_layer, "W01");
     layer_add_child(window_layer, text_layer_get_layer(s_week_layer));
     
+    // Create sun icon layer
+    s_sun_icon_bitmap = gbitmap_create_with_resource(RESOURCE_ID_SUN_ICON);
+    s_sun_icon_layer = bitmap_layer_create(RECT_SUN_ICON);
+    bitmap_layer_set_bitmap(s_sun_icon_layer, s_sun_icon_bitmap);
+    bitmap_layer_set_compositing_mode(s_sun_icon_layer, GCompOpSet);
+    layer_add_child(window_layer, bitmap_layer_get_layer(s_sun_icon_layer));
+
+    // Create moon icon layer (default to new moon, updated when data arrives)
+    int initial_moon_phase = persist_exists(PERSIST_KEY_MOON_PHASE) ? persist_read_int(PERSIST_KEY_MOON_PHASE) : 0;
+    s_moon_icon_bitmap = gbitmap_create_with_resource(get_moon_phase_resource(initial_moon_phase));
+    s_current_moon_phase = initial_moon_phase;
+    s_moon_icon_layer = bitmap_layer_create(RECT_MOON_ICON);
+    bitmap_layer_set_bitmap(s_moon_icon_layer, s_moon_icon_bitmap);
+    bitmap_layer_set_compositing_mode(s_moon_icon_layer, GCompOpSet);
+    layer_add_child(window_layer, bitmap_layer_get_layer(s_moon_icon_layer));
+
     // Create sun time layer
-    s_sun_time_layer = create_text_layer(RECT_SUN_LAYER, s_extra_info_font, GTextAlignmentCenter);
+    s_sun_time_layer = create_text_layer(RECT_SUN_LAYER, s_extra_info_font, GTextAlignmentLeft);
     if (persist_exists(PERSIST_KEY_SUN_TIME)) {
         persist_read_string(PERSIST_KEY_SUN_TIME, s_sun_time_buffer, sizeof(s_sun_time_buffer));
         text_layer_set_text(s_sun_time_layer, s_sun_time_buffer);
     } else {
-        text_layer_set_text(s_sun_time_layer, "S N/A");
+        text_layer_set_text(s_sun_time_layer, "N/A");
     }
     layer_add_child(window_layer, text_layer_get_layer(s_sun_time_layer));
 
     // Create moon time layer
-    s_moon_time_layer = create_text_layer(RECT_MOON_LAYER, s_extra_info_font, GTextAlignmentCenter);
+    s_moon_time_layer = create_text_layer(RECT_MOON_LAYER, s_extra_info_font, GTextAlignmentLeft);
     if (persist_exists(PERSIST_KEY_MOON_TIME)) {
         persist_read_string(PERSIST_KEY_MOON_TIME, s_moon_time_buffer, sizeof(s_moon_time_buffer));
         text_layer_set_text(s_moon_time_layer, s_moon_time_buffer);
     } else {
-        text_layer_set_text(s_moon_time_layer, "M N/A");
+        text_layer_set_text(s_moon_time_layer, "N/A");
     }
     layer_add_child(window_layer, text_layer_get_layer(s_moon_time_layer));
 
@@ -484,6 +550,12 @@ static void main_window_unload(Window *window)
     fonts_unload_custom_font(s_extra_info_font);
     bitmap_layer_destroy(s_background_layer);
     gbitmap_destroy(s_background_bitmap);
+    bitmap_layer_destroy(s_sun_icon_layer);
+    gbitmap_destroy(s_sun_icon_bitmap);
+    bitmap_layer_destroy(s_moon_icon_layer);
+    if (s_moon_icon_bitmap) {
+        gbitmap_destroy(s_moon_icon_bitmap);
+    }
     layer_destroy(s_battery_layer);
     layer_destroy(s_hourly_layer);
     layer_destroy(s_separator_layer);
@@ -602,16 +674,21 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
     // Handle astronomy data
     Tuple *suntime_tuple = dict_find(iterator, MESSAGE_KEY_SUNTIME);
     if (suntime_tuple && suntime_tuple->value->cstring) {
-        snprintf(s_sun_time_buffer, sizeof(s_sun_time_buffer), "S %s", suntime_tuple->value->cstring);
+        snprintf(s_sun_time_buffer, sizeof(s_sun_time_buffer), "%s", suntime_tuple->value->cstring);
         text_layer_set_text(s_sun_time_layer, s_sun_time_buffer);
         persist_write_string(PERSIST_KEY_SUN_TIME, s_sun_time_buffer);
     }
     
     Tuple *moontime_tuple = dict_find(iterator, MESSAGE_KEY_MOONTIME);
     if (moontime_tuple && moontime_tuple->value->cstring) {
-        snprintf(s_moon_time_buffer, sizeof(s_moon_time_buffer), "M %s", moontime_tuple->value->cstring);
+        snprintf(s_moon_time_buffer, sizeof(s_moon_time_buffer), "%s", moontime_tuple->value->cstring);
         text_layer_set_text(s_moon_time_layer, s_moon_time_buffer);
         persist_write_string(PERSIST_KEY_MOON_TIME, s_moon_time_buffer);
+    }
+    
+    Tuple *moon_phase_tuple = dict_find(iterator, MESSAGE_KEY_MOON_PHASE);
+    if (moon_phase_tuple) {
+        update_moon_icon(moon_phase_tuple->value->int32);
     }
 
     } // end if (bgv_tuple)

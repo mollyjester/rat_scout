@@ -43,6 +43,7 @@
       "BG_HIGH_THRESHOLD",
       "SUNTIME",
       "MOONTIME",
+      "MOON_PHASE",
       "ASTRO_API_KEY",
       "OWM_API_KEY",
       "WEATHER_UNITS",
@@ -71,6 +72,51 @@
           "type": "bitmap",
           "name": "BG_IMAGE",
           "file": "img/bg.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "SUN_ICON",
+          "file": "img/sun.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "MOON_NEW",
+          "file": "img/newmoon.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "MOON_WAXING_CRESCENT",
+          "file": "img/waxingcrescentmoon.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "MOON_FIRST_QUARTER",
+          "file": "img/firstquartermoon.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "MOON_WAXING_GIBBOUS",
+          "file": "img/waxinggibbousmoon.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "MOON_FULL",
+          "file": "img/fullmoon.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "MOON_WANING_GIBBOUS",
+          "file": "img/waninggibbousmoon.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "MOON_THIRD_QUARTER",
+          "file": "img/thirdquartermoon.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "MOON_WANING_CRESCENT",
+          "file": "img/waningcrescentmoon.png"
         }
       ]
     }
