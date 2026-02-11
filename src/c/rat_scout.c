@@ -37,6 +37,12 @@ const int FETCH_INTERVAL_SECONDS = 300;
 const int FETCH_INTERVAL_JITTER = 5;
 const int FALLBACK_FETCH_MINUTES = 4;
 
+// BG threshold vibration patterns
+// High threshold: short vibration, pause, long vibration
+static const uint32_t BG_HIGH_VIBE_PATTERN[] = {100, 200, 400};
+// Low threshold: long vibration, pause, short vibration
+static const uint32_t BG_LOW_VIBE_PATTERN[] = {400, 200, 100};
+
 // Buffer sizes (use #define for compile-time constants for static arrays)
 #define BUFFER_BG 16
 #define BUFFER_DELTA 32
@@ -515,20 +521,15 @@ static void check_bg_threshold_vibration(const char *bg_str) {
         decimal_places--;
     }
 
-    // High threshold: short-long vibration pattern
-    static const uint32_t high_pattern[] = {100, 200, 400};
-    // Low threshold: long-short vibration pattern
-    static const uint32_t low_pattern[] = {400, 200, 100};
-
     if (s_bg_high_threshold > 0 && bg_x10 >= s_bg_high_threshold) {
         vibes_enqueue_custom_pattern((VibePattern){
-            .durations = high_pattern,
-            .num_segments = 3
+            .durations = BG_HIGH_VIBE_PATTERN,
+            .num_segments = ARRAY_LENGTH(BG_HIGH_VIBE_PATTERN)
         });
     } else if (s_bg_low_threshold > 0 && bg_x10 <= s_bg_low_threshold) {
         vibes_enqueue_custom_pattern((VibePattern){
-            .durations = low_pattern,
-            .num_segments = 3
+            .durations = BG_LOW_VIBE_PATTERN,
+            .num_segments = ARRAY_LENGTH(BG_LOW_VIBE_PATTERN)
         });
     }
 }
