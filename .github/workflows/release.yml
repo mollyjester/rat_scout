@@ -3,15 +3,38 @@ on:
   push:
     tags:
       - 'v*' # Triggers on tags like v1.0.1, v2.0, etc.
+  workflow_run:
+    workflows: ["Auto Tag on Merge"]
+    types:
+      - completed
 
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
+    # Run when triggered by a tag push, or when the Auto Tag workflow succeeded
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     permissions:
       contents: write # Required to create the release and upload assets
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine tag
+        id: get_tag
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            TAG=$(git describe --tags --abbrev=0)
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout tag
+        run: git checkout "${{ steps.get_tag.outputs.tag }}"
 
       - name: Install uv and Pebble SDK
         run: |
@@ -33,6 +56,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.get_tag.outputs.tag }}
           files: build/*.pbw # Automatically attaches the compiled watchface
           generate_release_notes: true # Auto-generates notes from your commit history
         env:
