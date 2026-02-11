@@ -30,7 +30,8 @@ var CONFIG = {
     MAX_FETCH_RETRIES: 2,
     REQUEST_TIMEOUT_MS: 15000,
     DEFAULT_WEATHER_INTERVAL_MIN: 60,
-    SIGNIFICANT_LOCATION_CHANGE_KM: 5
+    SIGNIFICANT_LOCATION_CHANGE_KM: 5,
+    GEOLOCATION_MAX_AGE_MS: 300000
 };
 
 /**
@@ -741,7 +742,7 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 /**
  * Fetch weather data from OpenWeatherMap and send to Pebble
  * Caches for 30 minutes to avoid excessive API calls and GPS lookups
- * Invalidates cache if location changes significantly (>5km)
+ * Invalidates cache if location changes significantly (> 5km)
  * @param {number} attemptCount - Internal retry counter
  */
 function fetchAndSendWeather(attemptCount) {
@@ -853,7 +854,7 @@ function fetchAndSendWeather(attemptCount) {
                     }
                 }
             },
-            { timeout: 15000, maximumAge: 300000 }
+            { timeout: CONFIG.REQUEST_TIMEOUT_MS, maximumAge: CONFIG.GEOLOCATION_MAX_AGE_MS }
         );
     };
     

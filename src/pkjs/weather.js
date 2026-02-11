@@ -4,6 +4,8 @@
 
 var OWM_WEATHER_URL = 'https://api.openweathermap.org/data/2.5/weather';
 var OWM_FORECAST_URL = 'https://api.openweathermap.org/data/2.5/forecast';
+var REQUEST_TIMEOUT_MS = 15000;
+var GEOLOCATION_MAX_AGE_MS = 300000;
 
 /**
  * Build query string from params object
@@ -98,7 +100,7 @@ function logWeatherData(data) {
  */
 function httpGet(url, onSuccess, onError) {
     var xhr = new XMLHttpRequest();
-    xhr.timeout = 15000;
+    xhr.timeout = REQUEST_TIMEOUT_MS;
 
     xhr.onload = function() {
         if (xhr.status === 200) {
@@ -190,7 +192,7 @@ function fetchWeatherData(apiKey, units, onSuccess, onError) {
             console.error('Geolocation error: ' + err.message);
             if (onError) onError('Location error: ' + err.message);
         },
-        { timeout: 15000, maximumAge: 300000 }
+        { timeout: REQUEST_TIMEOUT_MS, maximumAge: GEOLOCATION_MAX_AGE_MS }
     );
 }
 
