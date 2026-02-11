@@ -18,7 +18,8 @@ var CONFIG = {
         ASTRONOMY_DATA: 'cachedAstronomyData',
         ASTRONOMY_FETCH_TIME: 'lastAstronomyFetchTime',
         WEATHER_DATA: 'cachedWeatherData',
-        WEATHER_FETCH_TIME: 'lastWeatherFetchTime'
+        WEATHER_FETCH_TIME: 'lastWeatherFetchTime',
+        WEATHER_LOCATION: 'lastWeatherLocation'
     },
     STORAGE_KEYS: {
         ACCOUNT_ID: 'accountId',
@@ -28,7 +29,8 @@ var CONFIG = {
     MMOL_CONVERSION_FACTOR: 18.0182,
     MAX_FETCH_RETRIES: 2,
     REQUEST_TIMEOUT_MS: 15000,
-    DEFAULT_WEATHER_INTERVAL_MIN: 60
+    DEFAULT_WEATHER_INTERVAL_MIN: 60,
+    SIGNIFICANT_LOCATION_CHANGE_KM: 5
 };
 
 /**
@@ -718,8 +720,28 @@ function fetchAndSendAstronomy(bgDictionary, attemptCount) {
 }
 
 /**
+ * Calculate distance between two GPS coordinates using Haversine formula
+ * @param {number} lat1 - Latitude of first point
+ * @param {number} lon1 - Longitude of first point
+ * @param {number} lat2 - Latitude of second point
+ * @param {number} lon2 - Longitude of second point
+ * @returns {number} Distance in kilometers
+ */
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    var R = 6371; // Earth's radius in kilometers
+    var dLat = (lat2 - lat1) * Math.PI / 180;
+    var dLon = (lon2 - lon1) * Math.PI / 180;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+}
+
+/**
  * Fetch weather data from OpenWeatherMap and send to Pebble
  * Caches for 30 minutes to avoid excessive API calls and GPS lookups
+ * Invalidates cache if location changes significantly (>5km)
  * @param {number} attemptCount - Internal retry counter
  */
 function fetchAndSendWeather(attemptCount) {
@@ -731,54 +753,111 @@ function fetchAndSendWeather(attemptCount) {
         return;
     }
     
-    // Check cache
-    var cachedData = window.localStorage.getItem(CONFIG.TIME_CACHE_KEYS.WEATHER_DATA);
-    var lastFetchTime = window.localStorage.getItem(CONFIG.TIME_CACHE_KEYS.WEATHER_FETCH_TIME);
-    
-    if (cachedData && lastFetchTime) {
-        var elapsed = Date.now() - parseInt(lastFetchTime);
-        var weatherIntervalMs = (parseInt(appSettings.WEATHER_INTERVAL) || CONFIG.DEFAULT_WEATHER_INTERVAL_MIN) * 60 * 1000;
-        if (elapsed < weatherIntervalMs) {
-            try {
-                var cached = JSON.parse(cachedData);
-                console.log('Using cached weather data');
-                sendWeatherToPebble(cached);
-                return;
-            } catch (e) {
-                console.error('Error parsing cached weather: ' + e.message);
-            }
-        }
-    }
-    
-    var units = appSettings.WEATHER_UNITS || 'metric';
-    
-    console.log('Fetching fresh weather data (attempt ' + (attemptCount + 1) + ')');
-    Weather.fetchWeatherData(apiKey, units,
-        function(data) {
-            // Cache weather data
-            window.localStorage.setItem(CONFIG.TIME_CACHE_KEYS.WEATHER_DATA, JSON.stringify(data));
-            window.localStorage.setItem(CONFIG.TIME_CACHE_KEYS.WEATHER_FETCH_TIME, String(Date.now()));
-            sendWeatherToPebble(data);
-        },
-        function(error) {
-            console.error('Weather fetch error (attempt ' + (attemptCount + 1) + '): ' + error);
-            
-            if (attemptCount < CONFIG.MAX_FETCH_RETRIES) {
-                setTimeout(function() {
-                    fetchAndSendWeather(attemptCount + 1);
-                }, 2000);
-            } else {
-                console.log('Max weather retries reached, trying cached data');
-                if (cachedData) {
-                    try {
-                        sendWeatherToPebble(JSON.parse(cachedData));
-                    } catch (e) {
-                        console.error('Error using expired weather cache: ' + e.message);
+    // Helper to fetch current location and check against cache
+    var checkLocationAndCache = function() {
+        navigator.geolocation.getCurrentPosition(
+            function(pos) {
+                var currentLat = pos.coords.latitude;
+                var currentLon = pos.coords.longitude;
+                
+                // Check cache
+                var cachedData = window.localStorage.getItem(CONFIG.TIME_CACHE_KEYS.WEATHER_DATA);
+                var lastFetchTime = window.localStorage.getItem(CONFIG.TIME_CACHE_KEYS.WEATHER_FETCH_TIME);
+                var lastLocation = window.localStorage.getItem(CONFIG.TIME_CACHE_KEYS.WEATHER_LOCATION);
+                
+                var shouldFetchFresh = true;
+                
+                if (cachedData && lastFetchTime) {
+                    var elapsed = Date.now() - parseInt(lastFetchTime);
+                    var weatherIntervalMs = (parseInt(appSettings.WEATHER_INTERVAL) || CONFIG.DEFAULT_WEATHER_INTERVAL_MIN) * 60 * 1000;
+                    
+                    if (elapsed < weatherIntervalMs) {
+                        try {
+                            var cached = JSON.parse(cachedData);
+                            
+                            // Check if location has changed significantly
+                            if (lastLocation) {
+                                var lastLoc = JSON.parse(lastLocation);
+                                var distance = calculateDistance(
+                                    lastLoc.latitude, lastLoc.longitude,
+                                    currentLat, currentLon
+                                );
+                                
+                                if (distance > CONFIG.SIGNIFICANT_LOCATION_CHANGE_KM) {
+                                    console.log('Location changed by ' + distance.toFixed(2) + ' km, refreshing weather');
+                                    shouldFetchFresh = true;
+                                } else {
+                                    console.log('Using cached weather data (location change: ' + distance.toFixed(2) + ' km)');
+                                    sendWeatherToPebble(cached);
+                                    shouldFetchFresh = false;
+                                }
+                            } else {
+                                console.log('Using cached weather data');
+                                sendWeatherToPebble(cached);
+                                shouldFetchFresh = false;
+                            }
+                        } catch (e) {
+                            console.error('Error parsing cached weather: ' + e.message);
+                            shouldFetchFresh = true;
+                        }
                     }
                 }
-            }
-        }
-    );
+                
+                if (shouldFetchFresh) {
+                    var units = appSettings.WEATHER_UNITS || 'metric';
+                    
+                    console.log('Fetching fresh weather data (attempt ' + (attemptCount + 1) + ')');
+                    Weather.fetchWeatherData(apiKey, units,
+                        function(data) {
+                            // Cache weather data with location
+                            window.localStorage.setItem(CONFIG.TIME_CACHE_KEYS.WEATHER_DATA, JSON.stringify(data));
+                            window.localStorage.setItem(CONFIG.TIME_CACHE_KEYS.WEATHER_FETCH_TIME, String(Date.now()));
+                            window.localStorage.setItem(CONFIG.TIME_CACHE_KEYS.WEATHER_LOCATION, JSON.stringify({
+                                latitude: data.latitude,
+                                longitude: data.longitude
+                            }));
+                            sendWeatherToPebble(data);
+                        },
+                        function(error) {
+                            console.error('Weather fetch error (attempt ' + (attemptCount + 1) + '): ' + error);
+                            
+                            if (attemptCount < CONFIG.MAX_FETCH_RETRIES) {
+                                setTimeout(function() {
+                                    fetchAndSendWeather(attemptCount + 1);
+                                }, 2000);
+                            } else {
+                                console.log('Max weather retries reached, trying cached data');
+                                if (cachedData) {
+                                    try {
+                                        sendWeatherToPebble(JSON.parse(cachedData));
+                                    } catch (e) {
+                                        console.error('Error using expired weather cache: ' + e.message);
+                                    }
+                                }
+                            }
+                        }
+                    );
+                }
+            },
+            function(err) {
+                // Geolocation error - fall back to cache if available
+                console.error('Geolocation error: ' + err.message);
+                var cachedData = window.localStorage.getItem(CONFIG.TIME_CACHE_KEYS.WEATHER_DATA);
+                if (cachedData) {
+                    try {
+                        var cached = JSON.parse(cachedData);
+                        console.log('Using cached weather data (geolocation unavailable)');
+                        sendWeatherToPebble(cached);
+                    } catch (e) {
+                        console.error('Error using cached weather: ' + e.message);
+                    }
+                }
+            },
+            { timeout: 15000, maximumAge: 300000 }
+        );
+    };
+    
+    checkLocationAndCache();
 }
 
 /**

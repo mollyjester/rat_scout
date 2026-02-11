@@ -133,7 +133,7 @@ function httpGet(url, onSuccess, onError) {
  *
  * @param {string} apiKey - OpenWeatherMap API key
  * @param {string} units - 'metric' (°C, m/s) or 'imperial' (°F, mph)
- * @param {Function} onSuccess - Callback with parsed weather data
+ * @param {Function} onSuccess - Callback with parsed weather data and location
  * @param {Function} onError - Callback with error message
  */
 function fetchWeatherData(apiKey, units, onSuccess, onError) {
@@ -145,9 +145,12 @@ function fetchWeatherData(apiKey, units, onSuccess, onError) {
 
     navigator.geolocation.getCurrentPosition(
         function(pos) {
+            var latitude = pos.coords.latitude;
+            var longitude = pos.coords.longitude;
+            
             var params = {
-                lat: pos.coords.latitude.toFixed(4),
-                lon: pos.coords.longitude.toFixed(4),
+                lat: latitude.toFixed(4),
+                lon: longitude.toFixed(4),
                 appid: apiKey,
                 units: units || 'metric'
             };
@@ -162,12 +165,16 @@ function fetchWeatherData(apiKey, units, onSuccess, onError) {
                     httpGet(forecastUrl,
                         function(forecastResponse) {
                             var data = parseWeatherData(currentResponse, forecastResponse.list);
+                            data.latitude = latitude;
+                            data.longitude = longitude;
                             logWeatherData(data);
                             if (onSuccess) onSuccess(data);
                         },
                         function() {
                             console.log('Forecast fetch failed, using current weather only');
                             var data = parseWeatherData(currentResponse, null);
+                            data.latitude = latitude;
+                            data.longitude = longitude;
                             logWeatherData(data);
                             if (onSuccess) onSuccess(data);
                         }
