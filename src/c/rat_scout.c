@@ -92,6 +92,14 @@ static time_t s_next_fetch_time = 0;
 static bool s_show_bg_delta = true;
 static bool s_show_time_delta = true;
 
+// Persistent storage keys
+enum PersistKeys {
+    PERSIST_KEY_BG = 100,
+    PERSIST_KEY_BG_DELTA,
+    PERSIST_KEY_SUN_TIME,
+    PERSIST_KEY_MOON_TIME
+};
+
 // Forward declarations
 static char get_next_garbage_bag(void);
 
@@ -349,11 +357,21 @@ static void main_window_load(Window *window) {
 
     // Create glucose layer
     s_glucose_layer = create_text_layer(RECT_GLUCOSE_LAYER, s_main_font, GTextAlignmentCenter);
-    text_layer_set_text(s_glucose_layer, "Loading...");
+    if (persist_exists(PERSIST_KEY_BG)) {
+        persist_read_string(PERSIST_KEY_BG, s_bg_buffer, sizeof(s_bg_buffer));
+        text_layer_set_text(s_glucose_layer, s_bg_buffer);
+    } else {
+        text_layer_set_text(s_glucose_layer, "Loading...");
+    }
     layer_add_child(window_layer, text_layer_get_layer(s_glucose_layer));
 
     // Create glucose delta layer
     s_glucose_delta_layer = create_text_layer(RECT_DELTA_LAYER, s_extra_info_font, GTextAlignmentCenter);
+    if (persist_exists(PERSIST_KEY_BG_DELTA)) {
+        persist_read_string(PERSIST_KEY_BG_DELTA, s_delta_raw_buffer, sizeof(s_delta_raw_buffer));
+        snprintf(s_delta_buffer, sizeof(s_delta_buffer), "%s", s_delta_raw_buffer);
+        text_layer_set_text(s_glucose_delta_layer, s_delta_buffer);
+    }
     layer_add_child(window_layer, text_layer_get_layer(s_glucose_delta_layer));
     
     // Create date layer (day, month)
@@ -368,12 +386,22 @@ static void main_window_load(Window *window) {
     
     // Create sun time layer
     s_sun_time_layer = create_text_layer(RECT_SUN_LAYER, s_extra_info_font, GTextAlignmentCenter);
-    text_layer_set_text(s_sun_time_layer, "S N/A");
+    if (persist_exists(PERSIST_KEY_SUN_TIME)) {
+        persist_read_string(PERSIST_KEY_SUN_TIME, s_sun_time_buffer, sizeof(s_sun_time_buffer));
+        text_layer_set_text(s_sun_time_layer, s_sun_time_buffer);
+    } else {
+        text_layer_set_text(s_sun_time_layer, "S N/A");
+    }
     layer_add_child(window_layer, text_layer_get_layer(s_sun_time_layer));
 
     // Create moon time layer
     s_moon_time_layer = create_text_layer(RECT_MOON_LAYER, s_extra_info_font, GTextAlignmentCenter);
-    text_layer_set_text(s_moon_time_layer, "M N/A");
+    if (persist_exists(PERSIST_KEY_MOON_TIME)) {
+        persist_read_string(PERSIST_KEY_MOON_TIME, s_moon_time_buffer, sizeof(s_moon_time_buffer));
+        text_layer_set_text(s_moon_time_layer, s_moon_time_buffer);
+    } else {
+        text_layer_set_text(s_moon_time_layer, "M N/A");
+    }
     layer_add_child(window_layer, text_layer_get_layer(s_moon_time_layer));
     
     // Create battery indicator layer
@@ -443,6 +471,7 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
 
     snprintf(s_bg_buffer, sizeof(s_bg_buffer), "%s", bgv_tuple->value->cstring);
     text_layer_set_text(s_glucose_layer, s_bg_buffer);
+    persist_write_string(PERSIST_KEY_BG, s_bg_buffer);
     
     // Handle BG delta setting
     Tuple *showdelta_tuple = dict_find(iterator, MESSAGE_KEY_BG_SHOW_DELTA);
@@ -452,6 +481,7 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
             Tuple *bgdelta_tuple = dict_find(iterator, MESSAGE_KEY_BGDELTA);
             if (bgdelta_tuple) {
                 snprintf(s_delta_raw_buffer, sizeof(s_delta_raw_buffer), "%s", bgdelta_tuple->value->cstring);
+                persist_write_string(PERSIST_KEY_BG_DELTA, s_delta_raw_buffer);
             }
         }
     }
@@ -475,12 +505,14 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
     if (suntime_tuple && suntime_tuple->value->cstring) {
         snprintf(s_sun_time_buffer, sizeof(s_sun_time_buffer), "S %s", suntime_tuple->value->cstring);
         text_layer_set_text(s_sun_time_layer, s_sun_time_buffer);
+        persist_write_string(PERSIST_KEY_SUN_TIME, s_sun_time_buffer);
     }
     
     Tuple *moontime_tuple = dict_find(iterator, MESSAGE_KEY_MOONTIME);
     if (moontime_tuple && moontime_tuple->value->cstring) {
         snprintf(s_moon_time_buffer, sizeof(s_moon_time_buffer), "M %s", moontime_tuple->value->cstring);
         text_layer_set_text(s_moon_time_layer, s_moon_time_buffer);
+        persist_write_string(PERSIST_KEY_MOON_TIME, s_moon_time_buffer);
     }
 }
 
