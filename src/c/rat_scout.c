@@ -80,6 +80,10 @@ static Layer *s_hourly_layer;
 static Layer *s_separator_layer;
 static TextLayer *s_garbage_text_layer;
 
+static bool s_bg_vibration = false;
+static int s_bg_low_threshold = 0;
+static int s_bg_high_threshold = 0;
+
 // Text buffers
 static char s_bg_buffer[BUFFER_BG];
 static char s_delta_buffer[BUFFER_DELTA];
@@ -479,6 +483,56 @@ static void main_window_unload(Window *window)
     layer_destroy(s_separator_layer);
 }
 
+/**
+ * Check glucose value against thresholds and vibrate if needed.
+ * High threshold: short then long vibration.
+ * Low threshold: long then short vibration.
+ * Values are compared in x10 scale to handle mmol/L decimals.
+ * @param bg_str - The formatted glucose value string (e.g. "120" or "6.7")
+ */
+static void check_bg_threshold_vibration(const char *bg_str) {
+    if (!s_bg_vibration) return;
+    if (!bg_str || bg_str[0] == '\0') return;
+
+    // Parse BG string to x10 integer (e.g. "120" -> 1200, "6.7" -> 67)
+    int bg_x10 = 0;
+    int decimal_places = -1;
+    for (int i = 0; bg_str[i] != '\0'; i++) {
+        if (bg_str[i] == '.') {
+            decimal_places = 0;
+        } else if (bg_str[i] >= '0' && bg_str[i] <= '9') {
+            bg_x10 = bg_x10 * 10 + (bg_str[i] - '0');
+            if (decimal_places >= 0) decimal_places++;
+        }
+    }
+    // Scale to x10: if no decimal, multiply by 10; if 1 decimal place, already x10
+    if (decimal_places <= 0) {
+        bg_x10 *= 10;
+    }
+    // If more than 1 decimal place, divide excess (unlikely but safe)
+    while (decimal_places > 1) {
+        bg_x10 /= 10;
+        decimal_places--;
+    }
+
+    // High threshold: short-long vibration pattern
+    static const uint32_t high_pattern[] = {100, 200, 400};
+    // Low threshold: long-short vibration pattern
+    static const uint32_t low_pattern[] = {400, 200, 100};
+
+    if (s_bg_high_threshold > 0 && bg_x10 >= s_bg_high_threshold) {
+        vibes_enqueue_custom_pattern((VibePattern){
+            .durations = high_pattern,
+            .num_segments = 3
+        });
+    } else if (s_bg_low_threshold > 0 && bg_x10 <= s_bg_low_threshold) {
+        vibes_enqueue_custom_pattern((VibePattern){
+            .durations = low_pattern,
+            .num_segments = 3
+        });
+    }
+}
+
 static void inbox_received_callback(DictionaryIterator *iterator, void *context) {
     // Handle hourly vibration setting
     Tuple *hourly_vibe_tuple = dict_find(iterator, MESSAGE_KEY_HOURLY_VIBRATION);
@@ -492,6 +546,20 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
         }
     }
 
+    // Handle BG threshold vibration settings
+    Tuple *bg_vibe_tuple = dict_find(iterator, MESSAGE_KEY_BG_VIBRATION);
+    if (bg_vibe_tuple) {
+        s_bg_vibration = bg_vibe_tuple->value->int8 == 1;
+    }
+    Tuple *bg_low_tuple = dict_find(iterator, MESSAGE_KEY_BG_LOW_THRESHOLD);
+    if (bg_low_tuple) {
+        s_bg_low_threshold = bg_low_tuple->value->int32;
+    }
+    Tuple *bg_high_tuple = dict_find(iterator, MESSAGE_KEY_BG_HIGH_THRESHOLD);
+    if (bg_high_tuple) {
+        s_bg_high_threshold = bg_high_tuple->value->int32;
+    }
+
     // Handle blood glucose data
     Tuple *bgv_tuple = dict_find(iterator, MESSAGE_KEY_BG);
     if (bgv_tuple) {
@@ -499,6 +567,9 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
     snprintf(s_bg_buffer, sizeof(s_bg_buffer), "%s", bgv_tuple->value->cstring);
     text_layer_set_text(s_glucose_layer, s_bg_buffer);
     persist_write_string(PERSIST_KEY_BG, s_bg_buffer);
+
+    // Check glucose thresholds and vibrate if needed
+    check_bg_threshold_vibration(s_bg_buffer);
     
     // Handle BG delta setting
     Tuple *showdelta_tuple = dict_find(iterator, MESSAGE_KEY_BG_SHOW_DELTA);

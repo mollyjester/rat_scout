@@ -96,6 +96,9 @@ function sendSettings() {
         "BG_SHOW_TIMEDELTA": appSettings.BG_SHOW_TIMEDELTA ? 1 : 0,
         "BG_UNITS": appSettings.BG_UNITS || CONFIG.DEFAULT_BG_UNITS,
         "HOURLY_VIBRATION": appSettings.HOURLY_VIBRATION ? 1 : 0,
+        "BG_VIBRATION": appSettings.BG_VIBRATION ? 1 : 0,
+        "BG_LOW_THRESHOLD": Math.round((parseFloat(appSettings.BG_LOW_THRESHOLD) || 0) * 10),
+        "BG_HIGH_THRESHOLD": Math.round((parseFloat(appSettings.BG_HIGH_THRESHOLD) || 0) * 10),
         "ASTRO_API_KEY": appSettings.ASTRO_API_KEY || ""
     };
     
