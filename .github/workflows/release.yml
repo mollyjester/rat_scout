@@ -36,11 +36,12 @@ jobs:
       - name: Checkout tag
         run: git checkout "${{ steps.get_tag.outputs.tag }}"
 
-      - name: Install uv and Pebble SDK
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install Pebble SDK
         run: |
-          curl -LsSf https://astral.sh | sh
-          source $HOME/.cargo/env
-          uv tool install pebble-tool --python 3.13 
+          uv tool install pebble-tool --python 3.13
           pebble sdk install latest
 
       - name: Install System Dependencies
