@@ -1,5 +1,6 @@
 var Dexcom = require('./dexcom');
 var Geolocation = require('./geolocation');
+var Weather = require('./weather');
 var Clay = require('pebble-clay');
 var clayConfig = require('./config.json');
 var clay = new Clay(clayConfig);
@@ -15,7 +16,9 @@ var CONFIG = {
     },
     TIME_CACHE_KEYS: {
         ASTRONOMY_DATA: 'cachedAstronomyData',
-        ASTRONOMY_FETCH_TIME: 'lastAstronomyFetchTime'
+        ASTRONOMY_FETCH_TIME: 'lastAstronomyFetchTime',
+        WEATHER_DATA: 'cachedWeatherData',
+        WEATHER_FETCH_TIME: 'lastWeatherFetchTime'
     },
     STORAGE_KEYS: {
         ACCOUNT_ID: 'accountId',
@@ -24,7 +27,8 @@ var CONFIG = {
     DEFAULT_BG_UNITS: 'mg/dL',
     MMOL_CONVERSION_FACTOR: 18.0182,
     MAX_FETCH_RETRIES: 2,
-    REQUEST_TIMEOUT_MS: 15000
+    REQUEST_TIMEOUT_MS: 15000,
+    DEFAULT_WEATHER_INTERVAL_MIN: 60
 };
 
 /**
@@ -41,17 +45,46 @@ function getSettings() {
 }
 
 /**
- * Helper to send message to Pebble with consistent error handling
+ * Message queue to prevent concurrent sendAppMessage calls.
+ * Pebble can only handle one in-flight message at a time.
+ */
+var messageQueue = [];
+var isSending = false;
+
+/**
+ * Process the next message in the queue
+ */
+function processMessageQueue() {
+    if (isSending || messageQueue.length === 0) return;
+    
+    isSending = true;
+    var msg = messageQueue.shift();
+    
+    Pebble.sendAppMessage(msg.dictionary,
+        function() {
+            console.log(msg.messageType + ' sent to Pebble successfully');
+            isSending = false;
+            processMessageQueue();
+        },
+        function() {
+            console.error('Error sending ' + msg.messageType + ' to Pebble');
+            isSending = false;
+            processMessageQueue();
+        }
+    );
+}
+
+/**
+ * Helper to send message to Pebble with consistent error handling.
+ * Messages are queued to avoid concurrent sendAppMessage calls.
  * @param {Object} dictionary - Data to send
  * @param {string} messageType - Type of message for logging
  */
 function sendToPebble(dictionary, messageType) {
     messageType = messageType || 'data';
     
-    Pebble.sendAppMessage(dictionary, 
-        () => console.log(`${messageType} sent to Pebble successfully`),
-        () => console.error(`Error sending ${messageType} to Pebble`)
-    );
+    messageQueue.push({ dictionary: dictionary, messageType: messageType });
+    processMessageQueue();
 }
 
 /**
@@ -80,6 +113,8 @@ function fetchWebData(isTestMode) {
     } else {
         getScoutReading();
     }
+    // Fetch weather independently (sent as separate message)
+    fetchAndSendWeather();
 }
 
 // Listen for when the watchface is opened
@@ -677,6 +712,84 @@ function fetchAndSendAstronomy(bgDictionary, attemptCount) {
             }
         }
     );
+}
+
+/**
+ * Fetch weather data from OpenWeatherMap and send to Pebble
+ * Caches for 30 minutes to avoid excessive API calls and GPS lookups
+ * @param {number} attemptCount - Internal retry counter
+ */
+function fetchAndSendWeather(attemptCount) {
+    attemptCount = attemptCount || 0;
+    
+    var apiKey = appSettings.OWM_API_KEY;
+    if (!apiKey) {
+        console.log('No OpenWeatherMap API key configured, skipping weather');
+        return;
+    }
+    
+    // Check cache
+    var cachedData = window.localStorage.getItem(CONFIG.TIME_CACHE_KEYS.WEATHER_DATA);
+    var lastFetchTime = window.localStorage.getItem(CONFIG.TIME_CACHE_KEYS.WEATHER_FETCH_TIME);
+    
+    if (cachedData && lastFetchTime) {
+        var elapsed = Date.now() - parseInt(lastFetchTime);
+        var weatherIntervalMs = (parseInt(appSettings.WEATHER_INTERVAL) || CONFIG.DEFAULT_WEATHER_INTERVAL_MIN) * 60 * 1000;
+        if (elapsed < weatherIntervalMs) {
+            try {
+                var cached = JSON.parse(cachedData);
+                console.log('Using cached weather data');
+                sendWeatherToPebble(cached);
+                return;
+            } catch (e) {
+                console.error('Error parsing cached weather: ' + e.message);
+            }
+        }
+    }
+    
+    var units = appSettings.WEATHER_UNITS || 'metric';
+    
+    console.log('Fetching fresh weather data (attempt ' + (attemptCount + 1) + ')');
+    Weather.fetchWeatherData(apiKey, units,
+        function(data) {
+            // Cache weather data
+            window.localStorage.setItem(CONFIG.TIME_CACHE_KEYS.WEATHER_DATA, JSON.stringify(data));
+            window.localStorage.setItem(CONFIG.TIME_CACHE_KEYS.WEATHER_FETCH_TIME, String(Date.now()));
+            sendWeatherToPebble(data);
+        },
+        function(error) {
+            console.error('Weather fetch error (attempt ' + (attemptCount + 1) + '): ' + error);
+            
+            if (attemptCount < CONFIG.MAX_FETCH_RETRIES) {
+                setTimeout(function() {
+                    fetchAndSendWeather(attemptCount + 1);
+                }, 2000);
+            } else {
+                console.log('Max weather retries reached, trying cached data');
+                if (cachedData) {
+                    try {
+                        sendWeatherToPebble(JSON.parse(cachedData));
+                    } catch (e) {
+                        console.error('Error using expired weather cache: ' + e.message);
+                    }
+                }
+            }
+        }
+    );
+}
+
+/**
+ * Send weather data to Pebble watchface
+ * @param {Object} data - Weather data { temp, windSpeed, needsUmbrella }
+ */
+function sendWeatherToPebble(data) {
+    var dictionary = {
+        "WEATHER_TEMP": String(data.temp),
+        "WEATHER_WIND": String(data.windSpeed),
+        "WEATHER_UMBRELLA": data.needsUmbrella ? 1 : 0
+    };
+    
+    sendToPebble(dictionary, 'Weather');
 }
 
 /**

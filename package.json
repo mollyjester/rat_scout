@@ -40,7 +40,12 @@
       "HOURLY_VIBRATION",
       "SUNTIME",
       "MOONTIME",
-      "ASTRO_API_KEY"
+      "ASTRO_API_KEY",
+      "OWM_API_KEY",
+      "WEATHER_UNITS",
+      "WEATHER_TEMP",
+      "WEATHER_WIND",
+      "WEATHER_UMBRELLA"
     ],
     "resources": {
       "media": [

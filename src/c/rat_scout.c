@@ -9,6 +9,8 @@ const GRect RECT_DATE_LAYER = {{78, 83}, {60, 29}};
 const GRect RECT_WEEK_LAYER = {{78, 106}, {60, 25}};
 const GRect RECT_SUN_LAYER = {{0, 127}, {71, 42}};
 const GRect RECT_MOON_LAYER = {{0, 142}, {71, 42}};
+const GRect RECT_WEATHER_TEMP_LAYER = {{78, 127}, {60, 29}};
+const GRect RECT_WEATHER_WIND_LAYER = {{78, 142}, {60, 25}};
 const GRect RECT_HOURLY_LAYER = {{2, 1}, {7, 11}};
 const GRect RECT_SEPARATOR_LAYER = {{9, 5}, {6, 2}};
 const GRect RECT_GARBAGE_LAYER = {{15, -9}, {15, 22}};
@@ -43,9 +45,10 @@ const int FALLBACK_FETCH_MINUTES = 4;
 #define BUFFER_WEEK 8
 #define BUFFER_ASTRONOMY 16
 #define BUFFER_DELTA_RAW 12
+#define BUFFER_WEATHER 16
 
 // AppMessage buffer sizes
-const int APPMESSAGE_INBOX = 512;
+const int APPMESSAGE_INBOX = 1024;
 const int APPMESSAGE_OUTBOX = 512;
 
 // ===== Global State =====
@@ -61,6 +64,8 @@ static TextLayer *s_date_layer;
 static TextLayer *s_week_layer;
 static TextLayer *s_sun_time_layer;
 static TextLayer *s_moon_time_layer;
+static TextLayer *s_weather_temp_layer;
+static TextLayer *s_weather_wind_layer;
 
 static BitmapLayer *s_background_layer;
 static GBitmap *s_background_bitmap;
@@ -84,6 +89,8 @@ static char s_date_buffer[BUFFER_DATE];
 static char s_week_buffer[BUFFER_WEEK];
 static char s_sun_time_buffer[BUFFER_ASTRONOMY];
 static char s_moon_time_buffer[BUFFER_ASTRONOMY];
+static char s_weather_temp_buffer[BUFFER_WEATHER];
+static char s_weather_wind_buffer[BUFFER_WEATHER];
 static char s_garbage_buffer[2];
 
 // Reading state
@@ -97,7 +104,9 @@ enum PersistKeys {
     PERSIST_KEY_BG = 100,
     PERSIST_KEY_BG_DELTA,
     PERSIST_KEY_SUN_TIME,
-    PERSIST_KEY_MOON_TIME
+    PERSIST_KEY_MOON_TIME,
+    PERSIST_KEY_WEATHER_TEMP,
+    PERSIST_KEY_WEATHER_WIND
 };
 
 // Forward declarations
@@ -403,6 +412,22 @@ static void main_window_load(Window *window) {
         text_layer_set_text(s_moon_time_layer, "M N/A");
     }
     layer_add_child(window_layer, text_layer_get_layer(s_moon_time_layer));
+
+    // Create weather temperature layer (bottom-right)
+    s_weather_temp_layer = create_text_layer(RECT_WEATHER_TEMP_LAYER, s_extra_info_font, GTextAlignmentCenter);
+    if (persist_exists(PERSIST_KEY_WEATHER_TEMP)) {
+        persist_read_string(PERSIST_KEY_WEATHER_TEMP, s_weather_temp_buffer, sizeof(s_weather_temp_buffer));
+        text_layer_set_text(s_weather_temp_layer, s_weather_temp_buffer);
+    }
+    layer_add_child(window_layer, text_layer_get_layer(s_weather_temp_layer));
+
+    // Create weather wind layer (bottom-right, below temp)
+    s_weather_wind_layer = create_text_layer(RECT_WEATHER_WIND_LAYER, s_extra_info_font, GTextAlignmentCenter);
+    if (persist_exists(PERSIST_KEY_WEATHER_WIND)) {
+        persist_read_string(PERSIST_KEY_WEATHER_WIND, s_weather_wind_buffer, sizeof(s_weather_wind_buffer));
+        text_layer_set_text(s_weather_wind_layer, s_weather_wind_buffer);
+    }
+    layer_add_child(window_layer, text_layer_get_layer(s_weather_wind_layer));
     
     // Create battery indicator layer
     s_battery_layer = layer_create(bounds);
@@ -441,6 +466,8 @@ static void main_window_unload(Window *window)
     text_layer_destroy(s_week_layer);
     text_layer_destroy(s_sun_time_layer);
     text_layer_destroy(s_moon_time_layer);
+    text_layer_destroy(s_weather_temp_layer);
+    text_layer_destroy(s_weather_wind_layer);
     text_layer_destroy(s_garbage_text_layer);
     fonts_unload_custom_font(s_time_font);
     fonts_unload_custom_font(s_main_font);
@@ -467,7 +494,7 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
 
     // Handle blood glucose data
     Tuple *bgv_tuple = dict_find(iterator, MESSAGE_KEY_BG);
-    if (!bgv_tuple) return;
+    if (bgv_tuple) {
 
     snprintf(s_bg_buffer, sizeof(s_bg_buffer), "%s", bgv_tuple->value->cstring);
     text_layer_set_text(s_glucose_layer, s_bg_buffer);
@@ -513,6 +540,30 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
         snprintf(s_moon_time_buffer, sizeof(s_moon_time_buffer), "M %s", moontime_tuple->value->cstring);
         text_layer_set_text(s_moon_time_layer, s_moon_time_buffer);
         persist_write_string(PERSIST_KEY_MOON_TIME, s_moon_time_buffer);
+    }
+
+    } // end if (bgv_tuple)
+
+    // Handle weather data (arrives as separate message from BG)
+    Tuple *weather_temp_tuple = dict_find(iterator, MESSAGE_KEY_WEATHER_TEMP);
+    if (weather_temp_tuple && weather_temp_tuple->value->cstring) {
+        Tuple *weather_umbrella_tuple = dict_find(iterator, MESSAGE_KEY_WEATHER_UMBRELLA);
+        bool umbrella = weather_umbrella_tuple && weather_umbrella_tuple->value->int8 == 1;
+        
+        if (umbrella) {
+            snprintf(s_weather_temp_buffer, sizeof(s_weather_temp_buffer), "U %s", weather_temp_tuple->value->cstring);
+        } else {
+            snprintf(s_weather_temp_buffer, sizeof(s_weather_temp_buffer), "%s", weather_temp_tuple->value->cstring);
+        }
+        text_layer_set_text(s_weather_temp_layer, s_weather_temp_buffer);
+        persist_write_string(PERSIST_KEY_WEATHER_TEMP, s_weather_temp_buffer);
+    }
+    
+    Tuple *weather_wind_tuple = dict_find(iterator, MESSAGE_KEY_WEATHER_WIND);
+    if (weather_wind_tuple && weather_wind_tuple->value->cstring) {
+        snprintf(s_weather_wind_buffer, sizeof(s_weather_wind_buffer), "W %s", weather_wind_tuple->value->cstring);
+        text_layer_set_text(s_weather_wind_layer, s_weather_wind_buffer);
+        persist_write_string(PERSIST_KEY_WEATHER_WIND, s_weather_wind_buffer);
     }
 }
 

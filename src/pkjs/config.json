@@ -100,6 +100,65 @@
         ]
     },
     {
+        "type": "section",
+        "items": [
+            {
+                "type": "heading",
+                "defaultValue": "Weather (OpenWeatherMap)"
+            },
+            {
+                "type": "text",
+                "defaultValue": "Enter your OpenWeatherMap API key to display current weather. Get a free key at https://openweathermap.org/api (One Call API 3.0 subscription required)."
+            },
+            {
+                "type": "input",
+                "messageKey": "OWM_API_KEY",
+                "defaultValue": "",
+                "label": "OpenWeatherMap API Key"
+            },
+            {
+                "type": "select",
+                "messageKey": "WEATHER_UNITS",
+                "defaultValue": "metric",
+                "label": "Weather Units",
+                "options": [
+                    {
+                        "label": "Metric (°C, m/s)",
+                        "value": "metric"
+                    },
+                    {
+                        "label": "Imperial (°F, mph)",
+                        "value": "imperial"
+                    }
+                ]
+            },
+            {
+                "type": "select",
+                "messageKey": "WEATHER_INTERVAL",
+                "defaultValue": "60",
+                "label": "Update Interval",
+                "options": [
+                    {
+                        "label": "Every 30 minutes",
+                        "value": "30"
+                    },
+                    {
+                        "label": "Every hour",
+                        "value": "60"
+                    },
+                    {
+                        "label": "Every 2 hours",
+                        "value": "120"
+                    },
+                    {
+                        "label": "Every 3 hours",
+                        "value": "180"
+                    }
+                ]
+            }
+        ]
+    },
+    {
         "type": "submit",
         "defaultValue": "Save Settings"
     }
