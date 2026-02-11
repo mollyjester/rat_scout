@@ -4,6 +4,8 @@
 
 var OWM_WEATHER_URL = 'https://api.openweathermap.org/data/2.5/weather';
 var OWM_FORECAST_URL = 'https://api.openweathermap.org/data/2.5/forecast';
+var REQUEST_TIMEOUT_MS = 15000;
+var GEOLOCATION_MAX_AGE_MS = 300000;
 
 /**
  * Build query string from params object
@@ -98,7 +100,7 @@ function logWeatherData(data) {
  */
 function httpGet(url, onSuccess, onError) {
     var xhr = new XMLHttpRequest();
-    xhr.timeout = 15000;
+    xhr.timeout = REQUEST_TIMEOUT_MS;
 
     xhr.onload = function() {
         if (xhr.status === 200) {
@@ -133,7 +135,7 @@ function httpGet(url, onSuccess, onError) {
  *
  * @param {string} apiKey - OpenWeatherMap API key
  * @param {string} units - 'metric' (°C, m/s) or 'imperial' (°F, mph)
- * @param {Function} onSuccess - Callback with parsed weather data
+ * @param {Function} onSuccess - Callback with parsed weather data and location
  * @param {Function} onError - Callback with error message
  */
 function fetchWeatherData(apiKey, units, onSuccess, onError) {
@@ -145,9 +147,12 @@ function fetchWeatherData(apiKey, units, onSuccess, onError) {
 
     navigator.geolocation.getCurrentPosition(
         function(pos) {
+            var latitude = pos.coords.latitude;
+            var longitude = pos.coords.longitude;
+            
             var params = {
-                lat: pos.coords.latitude.toFixed(4),
-                lon: pos.coords.longitude.toFixed(4),
+                lat: latitude.toFixed(4),
+                lon: longitude.toFixed(4),
                 appid: apiKey,
                 units: units || 'metric'
             };
@@ -162,12 +167,16 @@ function fetchWeatherData(apiKey, units, onSuccess, onError) {
                     httpGet(forecastUrl,
                         function(forecastResponse) {
                             var data = parseWeatherData(currentResponse, forecastResponse.list);
+                            data.latitude = latitude;
+                            data.longitude = longitude;
                             logWeatherData(data);
                             if (onSuccess) onSuccess(data);
                         },
                         function() {
                             console.log('Forecast fetch failed, using current weather only');
                             var data = parseWeatherData(currentResponse, null);
+                            data.latitude = latitude;
+                            data.longitude = longitude;
                             logWeatherData(data);
                             if (onSuccess) onSuccess(data);
                         }
@@ -183,7 +192,7 @@ function fetchWeatherData(apiKey, units, onSuccess, onError) {
             console.error('Geolocation error: ' + err.message);
             if (onError) onError('Location error: ' + err.message);
         },
-        { timeout: 15000, maximumAge: 300000 }
+        { timeout: REQUEST_TIMEOUT_MS, maximumAge: GEOLOCATION_MAX_AGE_MS }
     );
 }
 
