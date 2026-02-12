@@ -12,7 +12,8 @@ const GRect RECT_MOON_LAYER = {{18, 142}, {55, 42}};
 const GRect RECT_SUN_ICON = {{4, 136}, {12, 12}};
 const GRect RECT_MOON_ICON = {{4, 151}, {12, 12}};
 const GRect RECT_WEATHER_TEMP_LAYER = {{78, 127}, {60, 29}};
-const GRect RECT_WEATHER_WIND_LAYER = {{78, 142}, {60, 25}};
+const GRect RECT_WEATHER_WIND_LAYER = {{92, 142}, {48, 25}};
+const GRect RECT_WIND_ICON = {{78, 151}, {12, 12}};
 // Status bar layout (16px tall panel at top)
 // Icons are 12x12, active bars are 12x2
 const int STATUS_ICON_SIZE = 12;
@@ -92,6 +93,9 @@ static GBitmap *s_sun_icon_bitmap;
 static BitmapLayer *s_moon_icon_layer;
 static GBitmap *s_moon_icon_bitmap;
 static int s_current_moon_phase = -1;
+
+static BitmapLayer *s_wind_icon_layer;
+static GBitmap *s_wind_icon_bitmap;
 
 static Layer *s_battery_layer;
 static uint8_t s_battery_level = 100;
@@ -533,8 +537,15 @@ static void main_window_load(Window *window) {
     }
     layer_add_child(window_layer, text_layer_get_layer(s_weather_temp_layer));
 
+    // Create wind icon layer
+    s_wind_icon_bitmap = gbitmap_create_with_resource(RESOURCE_ID_WIND_ICON);
+    s_wind_icon_layer = bitmap_layer_create(RECT_WIND_ICON);
+    bitmap_layer_set_bitmap(s_wind_icon_layer, s_wind_icon_bitmap);
+    bitmap_layer_set_compositing_mode(s_wind_icon_layer, GCompOpSet);
+    layer_add_child(window_layer, bitmap_layer_get_layer(s_wind_icon_layer));
+
     // Create weather wind layer (bottom-right, below temp)
-    s_weather_wind_layer = create_text_layer(RECT_WEATHER_WIND_LAYER, s_extra_info_font, GTextAlignmentCenter);
+    s_weather_wind_layer = create_text_layer(RECT_WEATHER_WIND_LAYER, s_extra_info_font, GTextAlignmentLeft);
     if (persist_exists(PERSIST_KEY_WEATHER_WIND)) {
         persist_read_string(PERSIST_KEY_WEATHER_WIND, s_weather_wind_buffer, sizeof(s_weather_wind_buffer));
         text_layer_set_text(s_weather_wind_layer, s_weather_wind_buffer);
@@ -625,6 +636,8 @@ static void main_window_unload(Window *window)
     gbitmap_destroy(s_grey_icon_bitmap);
     bitmap_layer_destroy(s_black_icon_layer);
     gbitmap_destroy(s_black_icon_bitmap);
+    bitmap_layer_destroy(s_wind_icon_layer);
+    gbitmap_destroy(s_wind_icon_bitmap);
     layer_destroy(s_status_bar_layer);
 }
 
@@ -793,7 +806,7 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
     
     Tuple *weather_wind_tuple = dict_find(iterator, MESSAGE_KEY_WEATHER_WIND);
     if (weather_wind_tuple && weather_wind_tuple->value->cstring) {
-        snprintf(s_weather_wind_buffer, sizeof(s_weather_wind_buffer), "W %s", weather_wind_tuple->value->cstring);
+        snprintf(s_weather_wind_buffer, sizeof(s_weather_wind_buffer), "%s", weather_wind_tuple->value->cstring);
         text_layer_set_text(s_weather_wind_layer, s_weather_wind_buffer);
         persist_write_string(PERSIST_KEY_WEATHER_WIND, s_weather_wind_buffer);
     }

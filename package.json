@@ -142,6 +142,11 @@
           "type": "bitmap",
           "name": "GARBAGE_BLACK",
           "file": "img/blackbag.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "WIND_ICON",
+          "file": "img/wind.png"
         }
       ]
     }
