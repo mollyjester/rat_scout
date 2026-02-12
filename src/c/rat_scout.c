@@ -13,9 +13,20 @@ const GRect RECT_SUN_ICON = {{4, 136}, {12, 12}};
 const GRect RECT_MOON_ICON = {{4, 151}, {12, 12}};
 const GRect RECT_WEATHER_TEMP_LAYER = {{78, 127}, {60, 29}};
 const GRect RECT_WEATHER_WIND_LAYER = {{78, 142}, {60, 25}};
-const GRect RECT_HOURLY_LAYER = {{2, 1}, {7, 11}};
-const GRect RECT_SEPARATOR_LAYER = {{9, 5}, {6, 2}};
-const GRect RECT_GARBAGE_LAYER = {{15, -9}, {15, 22}};
+// Status bar layout (16px tall panel at top)
+// Icons are 12x12, active bars are 12x2
+const int STATUS_ICON_SIZE = 12;
+const int STATUS_BAR_WIDTH = 12;
+const int STATUS_BAR_HEIGHT = 2;
+const int STATUS_ICON_Y = 1;
+const int STATUS_BAR_Y = 14;
+const int STATUS_HOURLY_X = 2;
+const int STATUS_UMBRELLA_X = 16;   // 2 + 12 + 2
+const int STATUS_ORGANIC_X = 34;    // 16 + 12 + 6
+const int STATUS_GREY_X = 48;       // 34 + 12 + 2
+const int STATUS_BLACK_X = 62;      // 48 + 12 + 2
+const GRect RECT_WEEKDAY_LAYER = {{81, -9}, {40, 21}}; // 62 + 12 + 7
+const GRect RECT_STATUS_BAR = {{0, 0}, {144, 16}};
 
 // Battery indicator dimensions
 const int BATTERY_WIDTH = 24;
@@ -23,10 +34,7 @@ const int BATTERY_HEIGHT = 9;
 const int BATTERY_BORDER = 1;
 const int BATTERY_SEGMENT_HEIGHT = 7;
 
-// Hourly indicator dimensions
-const int HOURLY_HEIGHT = 11;
-const int HOURLY_WIDTH = 7;
-const int HOURLY_STROKE = 2;
+
 
 // Garbage collection schedule (next bag indicator)
 // Monday, Wednesday, Friday: Organic (O)
@@ -74,6 +82,7 @@ static TextLayer *s_sun_time_layer;
 static TextLayer *s_moon_time_layer;
 static TextLayer *s_weather_temp_layer;
 static TextLayer *s_weather_wind_layer;
+static TextLayer *s_weekday_layer;
 
 static BitmapLayer *s_background_layer;
 static GBitmap *s_background_bitmap;
@@ -90,9 +99,22 @@ static bool s_is_charging = false;
 
 static bool s_hourly_vibration = false;
 static int s_last_vibration_hour = -1;
-static Layer *s_hourly_layer;
-static Layer *s_separator_layer;
-static TextLayer *s_garbage_text_layer;
+static bool s_umbrella_active = false;
+
+// Status bar icon layers (always visible)
+static BitmapLayer *s_hourly_icon_layer;
+static GBitmap *s_hourly_icon_bitmap;
+static BitmapLayer *s_umbrella_icon_layer;
+static GBitmap *s_umbrella_icon_bitmap;
+static BitmapLayer *s_organic_icon_layer;
+static GBitmap *s_organic_icon_bitmap;
+static BitmapLayer *s_grey_icon_layer;
+static GBitmap *s_grey_icon_bitmap;
+static BitmapLayer *s_black_icon_layer;
+static GBitmap *s_black_icon_bitmap;
+
+// Status bar underscore layer (draws active indicator bars)
+static Layer *s_status_bar_layer;
 
 static bool s_bg_vibration = false;
 static int s_bg_low_threshold = 0;
@@ -117,7 +139,7 @@ static char s_sun_time_buffer[BUFFER_ASTRONOMY];
 static char s_moon_time_buffer[BUFFER_ASTRONOMY];
 static char s_weather_temp_buffer[BUFFER_WEATHER];
 static char s_weather_wind_buffer[BUFFER_WEATHER];
-static char s_garbage_buffer[2];
+static char s_weekday_buffer[4];
 
 // Reading state
 static time_t s_last_reading_timestamp = 0;
@@ -160,18 +182,23 @@ static void update_time(void) {
 }
 
 /**
- * Update garbage collection indicator
+ * Update garbage collection indicator and weekday (marks status bar dirty)
  */
 static void update_garbage_indicator(void) {
-    char bag = get_next_garbage_bag();
-    if (bag != '\0') {
-        s_garbage_buffer[0] = bag;
-        s_garbage_buffer[1] = '\0';
-        text_layer_set_text(s_garbage_text_layer, s_garbage_buffer);
-        layer_set_hidden(text_layer_get_layer(s_garbage_text_layer), false);
-    } else {
-        layer_set_hidden(text_layer_get_layer(s_garbage_text_layer), true);
+    if (s_status_bar_layer) {
+        layer_mark_dirty(s_status_bar_layer);
     }
+    
+    // Update 3-letter weekday abbreviation (uppercase)
+    time_t temp = time(NULL);
+    struct tm *tick_time = localtime(&temp);
+    strftime(s_weekday_buffer, sizeof(s_weekday_buffer), "%a", tick_time);
+    for (int i = 0; s_weekday_buffer[i]; i++) {
+        if (s_weekday_buffer[i] >= 'a' && s_weekday_buffer[i] <= 'z') {
+            s_weekday_buffer[i] -= 32;
+        }
+    }
+    text_layer_set_text(s_weekday_layer, s_weekday_buffer);
 }
 
 /**
@@ -294,33 +321,34 @@ static char get_next_garbage_bag(void) {
 }
 
 /**
- * Render hourly vibration indicator (capital 'H')
+ * Render status bar active indicator bars (underscore beneath active icons)
  */
-static void hourly_indicator_draw_proc(Layer *layer, GContext *ctx) {
-    if (!s_hourly_vibration) return;
-
+static void status_bar_draw_proc(Layer *layer, GContext *ctx) {
     graphics_context_set_fill_color(ctx, GColorBlack);
     
-    // Left vertical stroke
-    graphics_fill_rect(ctx, GRect(0, 0, HOURLY_STROKE, HOURLY_HEIGHT), 0, GCornerNone);
+    // Hourly vibration active bar
+    if (s_hourly_vibration) {
+        graphics_fill_rect(ctx, GRect(STATUS_HOURLY_X, STATUS_BAR_Y, STATUS_BAR_WIDTH, STATUS_BAR_HEIGHT), 0, GCornerNone);
+    }
     
-    // Right vertical stroke
-    graphics_fill_rect(ctx, GRect(HOURLY_WIDTH - HOURLY_STROKE, 0, HOURLY_STROKE, HOURLY_HEIGHT), 
-                      0, GCornerNone);
+    // Umbrella active bar
+    if (s_umbrella_active) {
+        graphics_fill_rect(ctx, GRect(STATUS_UMBRELLA_X, STATUS_BAR_Y, STATUS_BAR_WIDTH, STATUS_BAR_HEIGHT), 0, GCornerNone);
+    }
     
-    // Middle horizontal bar (centered vertically)
-    int mid_y = (HOURLY_HEIGHT / 2) - (HOURLY_STROKE / 2);
-    graphics_fill_rect(ctx, GRect(HOURLY_STROKE, mid_y, HOURLY_WIDTH - (2 * HOURLY_STROKE), HOURLY_STROKE), 
-                      0, GCornerNone);
-}
-
-/**
- * Render separator dot between hourly and garbage indicators
- */
-static void separator_draw_proc(Layer *layer, GContext *ctx) {
-    graphics_context_set_fill_color(ctx, GColorBlack);
-    // Draw 2x2 dot in the center (2 pixels padding on each side)
-    graphics_fill_rect(ctx, GRect(2, 0, 2, 2), 0, GCornerNone);
+    // Garbage collection: underscore the icon for the next collection type
+    char bag = get_next_garbage_bag();
+    switch (bag) {
+        case 'O':
+            graphics_fill_rect(ctx, GRect(STATUS_ORGANIC_X, STATUS_BAR_Y, STATUS_BAR_WIDTH, STATUS_BAR_HEIGHT), 0, GCornerNone);
+            break;
+        case 'G':
+            graphics_fill_rect(ctx, GRect(STATUS_GREY_X, STATUS_BAR_Y, STATUS_BAR_WIDTH, STATUS_BAR_HEIGHT), 0, GCornerNone);
+            break;
+        case 'B':
+            graphics_fill_rect(ctx, GRect(STATUS_BLACK_X, STATUS_BAR_Y, STATUS_BAR_WIDTH, STATUS_BAR_HEIGHT), 0, GCornerNone);
+            break;
+    }
 }
 
 /**
@@ -518,24 +546,45 @@ static void main_window_load(Window *window) {
     layer_set_update_proc(s_battery_layer, battery_draw_proc);
     layer_add_child(window_layer, s_battery_layer);
 
-    // Create hourly indicator layer
-    s_hourly_layer = layer_create(RECT_HOURLY_LAYER);
-    layer_set_update_proc(s_hourly_layer, hourly_indicator_draw_proc);
-    layer_add_child(window_layer, s_hourly_layer);
+    // Create status bar icon layers (always visible, 12x12 each)
+    s_hourly_icon_bitmap = gbitmap_create_with_resource(RESOURCE_ID_HOURLY_ICON);
+    s_hourly_icon_layer = bitmap_layer_create(GRect(STATUS_HOURLY_X, STATUS_ICON_Y, STATUS_ICON_SIZE, STATUS_ICON_SIZE));
+    bitmap_layer_set_bitmap(s_hourly_icon_layer, s_hourly_icon_bitmap);
+    bitmap_layer_set_compositing_mode(s_hourly_icon_layer, GCompOpSet);
+    layer_add_child(window_layer, bitmap_layer_get_layer(s_hourly_icon_layer));
 
-    // Create separator dot layer
-    s_separator_layer = layer_create(RECT_SEPARATOR_LAYER);
-    layer_set_update_proc(s_separator_layer, separator_draw_proc);
-    layer_add_child(window_layer, s_separator_layer);
+    s_umbrella_icon_bitmap = gbitmap_create_with_resource(RESOURCE_ID_UMBRELLA_ICON);
+    s_umbrella_icon_layer = bitmap_layer_create(GRect(STATUS_UMBRELLA_X, STATUS_ICON_Y, STATUS_ICON_SIZE, STATUS_ICON_SIZE));
+    bitmap_layer_set_bitmap(s_umbrella_icon_layer, s_umbrella_icon_bitmap);
+    bitmap_layer_set_compositing_mode(s_umbrella_icon_layer, GCompOpSet);
+    layer_add_child(window_layer, bitmap_layer_get_layer(s_umbrella_icon_layer));
 
-    // Create garbage collection indicator layer (text next to hourly indicator)
-    s_garbage_text_layer = text_layer_create(RECT_GARBAGE_LAYER);
-    text_layer_set_background_color(s_garbage_text_layer, GColorClear);
-    text_layer_set_text_color(s_garbage_text_layer, GColorBlack);
-    text_layer_set_text_alignment(s_garbage_text_layer, GTextAlignmentLeft);
-    text_layer_set_font(s_garbage_text_layer, s_extra_info_font);
-    text_layer_set_text(s_garbage_text_layer, "");
-    layer_add_child(window_layer, text_layer_get_layer(s_garbage_text_layer));
+    s_organic_icon_bitmap = gbitmap_create_with_resource(RESOURCE_ID_GARBAGE_ORGANIC);
+    s_organic_icon_layer = bitmap_layer_create(GRect(STATUS_ORGANIC_X, STATUS_ICON_Y, STATUS_ICON_SIZE, STATUS_ICON_SIZE));
+    bitmap_layer_set_bitmap(s_organic_icon_layer, s_organic_icon_bitmap);
+    bitmap_layer_set_compositing_mode(s_organic_icon_layer, GCompOpSet);
+    layer_add_child(window_layer, bitmap_layer_get_layer(s_organic_icon_layer));
+
+    s_grey_icon_bitmap = gbitmap_create_with_resource(RESOURCE_ID_GARBAGE_GREY);
+    s_grey_icon_layer = bitmap_layer_create(GRect(STATUS_GREY_X, STATUS_ICON_Y, STATUS_ICON_SIZE, STATUS_ICON_SIZE));
+    bitmap_layer_set_bitmap(s_grey_icon_layer, s_grey_icon_bitmap);
+    bitmap_layer_set_compositing_mode(s_grey_icon_layer, GCompOpSet);
+    layer_add_child(window_layer, bitmap_layer_get_layer(s_grey_icon_layer));
+
+    s_black_icon_bitmap = gbitmap_create_with_resource(RESOURCE_ID_GARBAGE_BLACK);
+    s_black_icon_layer = bitmap_layer_create(GRect(STATUS_BLACK_X, STATUS_ICON_Y, STATUS_ICON_SIZE, STATUS_ICON_SIZE));
+    bitmap_layer_set_bitmap(s_black_icon_layer, s_black_icon_bitmap);
+    bitmap_layer_set_compositing_mode(s_black_icon_layer, GCompOpSet);
+    layer_add_child(window_layer, bitmap_layer_get_layer(s_black_icon_layer));
+
+    // Create weekday abbreviation text layer in status bar
+    s_weekday_layer = create_text_layer(RECT_WEEKDAY_LAYER, s_extra_info_font, GTextAlignmentLeft);
+    layer_add_child(window_layer, text_layer_get_layer(s_weekday_layer));
+
+    // Create status bar underscore layer (draws active indicator bars)
+    s_status_bar_layer = layer_create(RECT_STATUS_BAR);
+    layer_set_update_proc(s_status_bar_layer, status_bar_draw_proc);
+    layer_add_child(window_layer, s_status_bar_layer);
     
     // Initialize garbage indicator
     update_garbage_indicator();
@@ -552,7 +601,7 @@ static void main_window_unload(Window *window)
     text_layer_destroy(s_moon_time_layer);
     text_layer_destroy(s_weather_temp_layer);
     text_layer_destroy(s_weather_wind_layer);
-    text_layer_destroy(s_garbage_text_layer);
+    text_layer_destroy(s_weekday_layer);
     fonts_unload_custom_font(s_time_font);
     fonts_unload_custom_font(s_main_font);
     fonts_unload_custom_font(s_extra_info_font);
@@ -565,8 +614,18 @@ static void main_window_unload(Window *window)
         gbitmap_destroy(s_moon_icon_bitmap);
     }
     layer_destroy(s_battery_layer);
-    layer_destroy(s_hourly_layer);
-    layer_destroy(s_separator_layer);
+    // Destroy status bar layers
+    bitmap_layer_destroy(s_hourly_icon_layer);
+    gbitmap_destroy(s_hourly_icon_bitmap);
+    bitmap_layer_destroy(s_umbrella_icon_layer);
+    gbitmap_destroy(s_umbrella_icon_bitmap);
+    bitmap_layer_destroy(s_organic_icon_layer);
+    gbitmap_destroy(s_organic_icon_bitmap);
+    bitmap_layer_destroy(s_grey_icon_layer);
+    gbitmap_destroy(s_grey_icon_bitmap);
+    bitmap_layer_destroy(s_black_icon_layer);
+    gbitmap_destroy(s_black_icon_bitmap);
+    layer_destroy(s_status_bar_layer);
 }
 
 /**
@@ -633,8 +692,8 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
         bool new_hourly = hourly_vibe_tuple->value->int8 == 1;
         if (s_hourly_vibration != new_hourly) {
             s_hourly_vibration = new_hourly;
-            if (s_hourly_layer) {
-                layer_mark_dirty(s_hourly_layer);
+            if (s_status_bar_layer) {
+                layer_mark_dirty(s_status_bar_layer);
             }
         }
     }
@@ -719,11 +778,15 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
         Tuple *weather_umbrella_tuple = dict_find(iterator, MESSAGE_KEY_WEATHER_UMBRELLA);
         bool umbrella = weather_umbrella_tuple && weather_umbrella_tuple->value->int8 == 1;
         
-        if (umbrella) {
-            snprintf(s_weather_temp_buffer, sizeof(s_weather_temp_buffer), "U %s", weather_temp_tuple->value->cstring);
-        } else {
-            snprintf(s_weather_temp_buffer, sizeof(s_weather_temp_buffer), "%s", weather_temp_tuple->value->cstring);
+        // Update umbrella status bar indicator
+        if (s_umbrella_active != umbrella) {
+            s_umbrella_active = umbrella;
+            if (s_status_bar_layer) {
+                layer_mark_dirty(s_status_bar_layer);
+            }
         }
+        
+        snprintf(s_weather_temp_buffer, sizeof(s_weather_temp_buffer), "%s", weather_temp_tuple->value->cstring);
         text_layer_set_text(s_weather_temp_layer, s_weather_temp_buffer);
         persist_write_string(PERSIST_KEY_WEATHER_TEMP, s_weather_temp_buffer);
     }

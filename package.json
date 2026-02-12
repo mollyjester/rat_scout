@@ -117,6 +117,31 @@
           "type": "bitmap",
           "name": "MOON_WANING_CRESCENT",
           "file": "img/waningcrescentmoon.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "HOURLY_ICON",
+          "file": "img/hourly.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "UMBRELLA_ICON",
+          "file": "img/umbrella.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "GARBAGE_ORGANIC",
+          "file": "img/organicbag.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "GARBAGE_GREY",
+          "file": "img/greybag.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "GARBAGE_BLACK",
+          "file": "img/blackbag.png"
         }
       ]
     }
