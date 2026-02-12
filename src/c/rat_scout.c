@@ -2,7 +2,7 @@
 
 // ===== Configuration Constants =====
 // Layer dimensions and positioning
-const GRect RECT_TIME_LAYER = {{0, 4}, {144, 66}};
+const GRect RECT_TIME_LAYER = {{2, 4}, {144, 66}};
 const GRect RECT_GLUCOSE_LAYER = {{0, 83}, {71, 29}};
 const GRect RECT_DELTA_LAYER = {{3, 106}, {71, 25}};
 const GRect RECT_DATE_LAYER = {{78, 83}, {60, 29}};
