@@ -98,6 +98,14 @@ static bool s_bg_vibration = false;
 static int s_bg_low_threshold = 0;
 static int s_bg_high_threshold = 0;
 
+// BG zone tracking for one-shot vibration alerts
+typedef enum {
+    BG_ZONE_NORMAL = 0,
+    BG_ZONE_HIGH,
+    BG_ZONE_LOW
+} BgZone;
+static BgZone s_bg_zone = BG_ZONE_NORMAL;
+
 // Text buffers
 static char s_bg_buffer[BUFFER_BG];
 static char s_delta_buffer[BUFFER_DELTA];
@@ -593,16 +601,28 @@ static void check_bg_threshold_vibration(const char *bg_str) {
         decimal_places--;
     }
 
+    // Determine current BG zone
+    BgZone new_zone = BG_ZONE_NORMAL;
     if (s_bg_high_threshold > 0 && bg_x10 >= s_bg_high_threshold) {
-        vibes_enqueue_custom_pattern((VibePattern){
-            .durations = BG_HIGH_VIBE_PATTERN,
-            .num_segments = ARRAY_LENGTH(BG_HIGH_VIBE_PATTERN)
-        });
+        new_zone = BG_ZONE_HIGH;
     } else if (s_bg_low_threshold > 0 && bg_x10 <= s_bg_low_threshold) {
-        vibes_enqueue_custom_pattern((VibePattern){
-            .durations = BG_LOW_VIBE_PATTERN,
-            .num_segments = ARRAY_LENGTH(BG_LOW_VIBE_PATTERN)
-        });
+        new_zone = BG_ZONE_LOW;
+    }
+
+    // Only vibrate when entering a HIGH or LOW zone from a different zone
+    if (new_zone != s_bg_zone) {
+        if (new_zone == BG_ZONE_HIGH) {
+            vibes_enqueue_custom_pattern((VibePattern){
+                .durations = BG_HIGH_VIBE_PATTERN,
+                .num_segments = ARRAY_LENGTH(BG_HIGH_VIBE_PATTERN)
+            });
+        } else if (new_zone == BG_ZONE_LOW) {
+            vibes_enqueue_custom_pattern((VibePattern){
+                .durations = BG_LOW_VIBE_PATTERN,
+                .num_segments = ARRAY_LENGTH(BG_LOW_VIBE_PATTERN)
+            });
+        }
+        s_bg_zone = new_zone;
     }
 }
 
