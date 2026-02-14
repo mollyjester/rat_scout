@@ -122,19 +122,7 @@ Glucose + astronomy data are sent as a single message. Weather data is sent as a
 
 ### Watchface Layout
 
-```
-┌──────────────────────────────┐
-│ [H][☂][O][G][B] DAY  [batt] │  ← Status bar (16px)
-│                              │
-│          HH:MM               │  ← Time (64px font)
-│                              │
-│   glucose    +delta 5m       │  ← BG value + delta + minutes
-│   dd.mm      W##             │  ← Date + week number
-│                              │
-│  ☀ HH:MM    🌡 ##   💨 ##    │  ← Sun time, temp, wind
-│  🌙 HH:MM   👟 ####         │  ← Moon time, steps
-└──────────────────────────────┘
-```
+![Watchface Layout](resources/img/rat_scout.png)
 
 ## Building
 
