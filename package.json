@@ -161,8 +161,8 @@
         },
         {
           "type": "png",
-          "name": "APP_SCREENSHOT",
-          "file": "img/rat_scout.png",
+          "name": "APP_ICON",
+          "file": "img/rat_scout_icon.png",
           "menuIcon": true
         }
       ]
