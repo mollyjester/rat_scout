@@ -147,6 +147,11 @@
           "type": "bitmap",
           "name": "WIND_ICON",
           "file": "img/wind.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "TEMP_ICON",
+          "file": "img/temperature.png"
         }
       ]
     }

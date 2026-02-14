@@ -2,18 +2,19 @@
 
 // ===== Configuration Constants =====
 // Layer dimensions and positioning
-const GRect RECT_TIME_LAYER = {{2, 4}, {144, 66}};
-const GRect RECT_GLUCOSE_LAYER = {{0, 83}, {71, 29}};
-const GRect RECT_DELTA_LAYER = {{3, 106}, {71, 25}};
-const GRect RECT_DATE_LAYER = {{78, 83}, {60, 29}};
-const GRect RECT_WEEK_LAYER = {{78, 106}, {60, 25}};
-const GRect RECT_SUN_LAYER = {{18, 127}, {55, 42}};
-const GRect RECT_MOON_LAYER = {{18, 142}, {55, 42}};
-const GRect RECT_SUN_ICON = {{4, 136}, {12, 12}};
-const GRect RECT_MOON_ICON = {{4, 151}, {12, 12}};
-const GRect RECT_WEATHER_TEMP_LAYER = {{78, 127}, {60, 29}};
+const GRect RECT_TIME_LAYER = {{1, -1}, {144, 66}};
+const GRect RECT_GLUCOSE_LAYER = {{0, 59}, {66, 29}};
+const GRect RECT_DELTA_LAYER = {{76, 67}, {66, 25}};
+const GRect RECT_DATE_LAYER = {{0, 87}, {66, 29}};
+const GRect RECT_WEEK_LAYER = {{76, 95}, {66, 25}};
+const GRect RECT_SUN_LAYER = {{26, 120}, {41, 25}};
+const GRect RECT_MOON_LAYER = {{26, 135}, {41, 25}};
+const GRect RECT_SUN_ICON = {{11, 129}, {12, 12}};
+const GRect RECT_MOON_ICON = {{11, 144}, {12, 12}};
+const GRect RECT_WEATHER_TEMP_LAYER = {{92, 127}, {48, 29}};
+const GRect RECT_TEMP_ICON = {{75, 129}, {12, 12}};
 const GRect RECT_WEATHER_WIND_LAYER = {{92, 142}, {48, 25}};
-const GRect RECT_WIND_ICON = {{78, 151}, {12, 12}};
+const GRect RECT_WIND_ICON = {{105, 129}, {12, 12}};
 // Status bar layout (16px tall panel at top)
 // Icons are 12x12, active bars are 12x2
 const int STATUS_ICON_SIZE = 12;
@@ -96,6 +97,9 @@ static int s_current_moon_phase = -1;
 
 static BitmapLayer *s_wind_icon_layer;
 static GBitmap *s_wind_icon_bitmap;
+
+static BitmapLayer *s_temp_icon_layer;
+static GBitmap *s_temp_icon_bitmap;
 
 static Layer *s_battery_layer;
 static uint8_t s_battery_level = 100;
@@ -465,7 +469,7 @@ static void main_window_load(Window *window) {
     layer_add_child(window_layer, text_layer_get_layer(s_time_layer));
 
     // Create glucose layer
-    s_glucose_layer = create_text_layer(RECT_GLUCOSE_LAYER, s_main_font, GTextAlignmentCenter);
+    s_glucose_layer = create_text_layer(RECT_GLUCOSE_LAYER, s_main_font, GTextAlignmentRight);
     if (persist_exists(PERSIST_KEY_BG)) {
         persist_read_string(PERSIST_KEY_BG, s_bg_buffer, sizeof(s_bg_buffer));
         text_layer_set_text(s_glucose_layer, s_bg_buffer);
@@ -475,7 +479,7 @@ static void main_window_load(Window *window) {
     layer_add_child(window_layer, text_layer_get_layer(s_glucose_layer));
 
     // Create glucose delta layer
-    s_glucose_delta_layer = create_text_layer(RECT_DELTA_LAYER, s_extra_info_font, GTextAlignmentCenter);
+    s_glucose_delta_layer = create_text_layer(RECT_DELTA_LAYER, s_extra_info_font, GTextAlignmentLeft);
     if (persist_exists(PERSIST_KEY_BG_DELTA)) {
         persist_read_string(PERSIST_KEY_BG_DELTA, s_delta_raw_buffer, sizeof(s_delta_raw_buffer));
         snprintf(s_delta_buffer, sizeof(s_delta_buffer), "%s", s_delta_raw_buffer);
@@ -484,12 +488,12 @@ static void main_window_load(Window *window) {
     layer_add_child(window_layer, text_layer_get_layer(s_glucose_delta_layer));
     
     // Create date layer (day, month)
-    s_date_layer = create_text_layer(RECT_DATE_LAYER, s_main_font, GTextAlignmentCenter);
+    s_date_layer = create_text_layer(RECT_DATE_LAYER, s_main_font, GTextAlignmentRight);
     text_layer_set_text(s_date_layer, "01 01");
     layer_add_child(window_layer, text_layer_get_layer(s_date_layer));
     
     // Create week layer
-    s_week_layer = create_text_layer(RECT_WEEK_LAYER, s_extra_info_font, GTextAlignmentCenter);
+    s_week_layer = create_text_layer(RECT_WEEK_LAYER, s_extra_info_font, GTextAlignmentLeft);
     text_layer_set_text(s_week_layer, "W01");
     layer_add_child(window_layer, text_layer_get_layer(s_week_layer));
     
@@ -510,7 +514,7 @@ static void main_window_load(Window *window) {
     layer_add_child(window_layer, bitmap_layer_get_layer(s_moon_icon_layer));
 
     // Create sun time layer
-    s_sun_time_layer = create_text_layer(RECT_SUN_LAYER, s_extra_info_font, GTextAlignmentLeft);
+    s_sun_time_layer = create_text_layer(RECT_SUN_LAYER, s_extra_info_font, GTextAlignmentRight);
     if (persist_exists(PERSIST_KEY_SUN_TIME)) {
         persist_read_string(PERSIST_KEY_SUN_TIME, s_sun_time_buffer, sizeof(s_sun_time_buffer));
         text_layer_set_text(s_sun_time_layer, s_sun_time_buffer);
@@ -520,7 +524,7 @@ static void main_window_load(Window *window) {
     layer_add_child(window_layer, text_layer_get_layer(s_sun_time_layer));
 
     // Create moon time layer
-    s_moon_time_layer = create_text_layer(RECT_MOON_LAYER, s_extra_info_font, GTextAlignmentLeft);
+    s_moon_time_layer = create_text_layer(RECT_MOON_LAYER, s_extra_info_font, GTextAlignmentRight);
     if (persist_exists(PERSIST_KEY_MOON_TIME)) {
         persist_read_string(PERSIST_KEY_MOON_TIME, s_moon_time_buffer, sizeof(s_moon_time_buffer));
         text_layer_set_text(s_moon_time_layer, s_moon_time_buffer);
@@ -529,8 +533,15 @@ static void main_window_load(Window *window) {
     }
     layer_add_child(window_layer, text_layer_get_layer(s_moon_time_layer));
 
-    // Create weather temperature layer (bottom-right)
-    s_weather_temp_layer = create_text_layer(RECT_WEATHER_TEMP_LAYER, s_extra_info_font, GTextAlignmentCenter);
+    // Create temperature icon layer (bottom-right, next to temp text)
+    s_temp_icon_bitmap = gbitmap_create_with_resource(RESOURCE_ID_TEMP_ICON);
+    s_temp_icon_layer = bitmap_layer_create(RECT_TEMP_ICON);
+    bitmap_layer_set_bitmap(s_temp_icon_layer, s_temp_icon_bitmap);
+    bitmap_layer_set_compositing_mode(s_temp_icon_layer, GCompOpSet);
+    layer_add_child(window_layer, bitmap_layer_get_layer(s_temp_icon_layer));
+
+    // Create weather temperature layer (bottom-right, next to temp icon)
+    s_weather_temp_layer = create_text_layer(RECT_WEATHER_TEMP_LAYER, s_extra_info_font, GTextAlignmentLeft);
     if (persist_exists(PERSIST_KEY_WEATHER_TEMP)) {
         persist_read_string(PERSIST_KEY_WEATHER_TEMP, s_weather_temp_buffer, sizeof(s_weather_temp_buffer));
         text_layer_set_text(s_weather_temp_layer, s_weather_temp_buffer);
@@ -638,6 +649,8 @@ static void main_window_unload(Window *window)
     gbitmap_destroy(s_black_icon_bitmap);
     bitmap_layer_destroy(s_wind_icon_layer);
     gbitmap_destroy(s_wind_icon_bitmap);
+    bitmap_layer_destroy(s_temp_icon_layer);
+    gbitmap_destroy(s_temp_icon_bitmap);
     layer_destroy(s_status_bar_layer);
 }
 
