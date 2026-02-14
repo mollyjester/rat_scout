@@ -49,7 +49,8 @@
       "WEATHER_UNITS",
       "WEATHER_TEMP",
       "WEATHER_WIND",
-      "WEATHER_UMBRELLA"
+      "WEATHER_UMBRELLA",
+      "DATE_FORMAT"
     ],
     "resources": {
       "media": [
@@ -152,6 +153,11 @@
           "type": "bitmap",
           "name": "TEMP_ICON",
           "file": "img/temperature.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "STEPS_ICON",
+          "file": "img/steps.png"
         }
       ]
     }

@@ -15,6 +15,8 @@ const GRect RECT_WEATHER_TEMP_LAYER = {{86, 120}, {25, 25}};
 const GRect RECT_TEMP_ICON = {{75, 129}, {12, 12}};
 const GRect RECT_WEATHER_WIND_LAYER = {{118, 120}, {48, 25}};
 const GRect RECT_WIND_ICON = {{105, 129}, {12, 12}};
+const GRect RECT_STEPS_LAYER = {{87, 135}, {56, 25}};
+const GRect RECT_STEPS_ICON = {{74, 144}, {12, 12}};
 // Status bar layout (16px tall panel at top)
 // Icons are 12x12, active bars are 12x2
 const int STATUS_ICON_SIZE = 12;
@@ -64,6 +66,7 @@ static const uint32_t BG_LOW_VIBE_PATTERN[] = {400, 200, 100};
 #define BUFFER_ASTRONOMY 16
 #define BUFFER_DELTA_RAW 12
 #define BUFFER_WEATHER 16
+#define BUFFER_STEPS 12
 
 // AppMessage buffer sizes
 const int APPMESSAGE_INBOX = 1024;
@@ -84,6 +87,9 @@ static TextLayer *s_sun_time_layer;
 static TextLayer *s_moon_time_layer;
 static TextLayer *s_weather_temp_layer;
 static TextLayer *s_weather_wind_layer;
+#if defined(PBL_HEALTH)
+static TextLayer *s_steps_layer;
+#endif
 static TextLayer *s_weekday_layer;
 
 static BitmapLayer *s_background_layer;
@@ -100,6 +106,11 @@ static GBitmap *s_wind_icon_bitmap;
 
 static BitmapLayer *s_temp_icon_layer;
 static GBitmap *s_temp_icon_bitmap;
+
+#if defined(PBL_HEALTH)
+static BitmapLayer *s_steps_icon_layer;
+static GBitmap *s_steps_icon_bitmap;
+#endif
 
 static Layer *s_battery_layer;
 static uint8_t s_battery_level = 100;
@@ -147,6 +158,9 @@ static char s_sun_time_buffer[BUFFER_ASTRONOMY];
 static char s_moon_time_buffer[BUFFER_ASTRONOMY];
 static char s_weather_temp_buffer[BUFFER_WEATHER];
 static char s_weather_wind_buffer[BUFFER_WEATHER];
+#if defined(PBL_HEALTH)
+static char s_steps_buffer[BUFFER_STEPS];
+#endif
 static char s_weekday_buffer[4];
 
 // Reading state
@@ -154,6 +168,7 @@ static time_t s_last_reading_timestamp = 0;
 static time_t s_next_fetch_time = 0;
 static bool s_show_bg_delta = true;
 static bool s_show_time_delta = true;
+static bool s_date_format_mmdd = false;  // false = dd.mm, true = mm.dd
 
 // Persistent storage keys
 enum PersistKeys {
@@ -166,40 +181,107 @@ enum PersistKeys {
     PERSIST_KEY_MOON_PHASE
 };
 
+/**
+ * Write a string to persistent storage only if the value has changed.
+ * Avoids unnecessary flash I/O which wears the storage and costs battery.
+ * @param key - Persist key
+ * @param value - New string value
+ * @param buf_size - Size of the comparison buffer
+ */
+static void persist_write_string_if_changed(uint32_t key, const char *value, size_t buf_size) {
+    char existing[32];
+    size_t check_size = buf_size < sizeof(existing) ? buf_size : sizeof(existing);
+    if (persist_exists(key)) {
+        persist_read_string(key, existing, check_size);
+        if (strncmp(existing, value, check_size) == 0) return;
+    }
+    persist_write_string(key, value);
+}
+
 // Forward declarations
-static char get_next_garbage_bag(void);
 static void update_moon_icon(int phase);
 
 /**
- * Update time, date, and week layers with current time
+ * Update step count from Health API
  */
-static void update_time(void) {
-    time_t temp = time(NULL);
-    struct tm *tick_time = localtime(&temp);
+static void update_steps(void) {
+#if defined(PBL_HEALTH)
+    HealthMetric metric = HealthMetricStepCount;
+    time_t start = time_start_of_today();
+    time_t end = time(NULL);
+    HealthServiceAccessibilityMask mask = health_service_metric_accessible(metric, start, end);
+    if (mask & HealthServiceAccessibilityMaskAvailable) {
+        int steps = (int)health_service_sum_today(metric);
+        snprintf(s_steps_buffer, sizeof(s_steps_buffer), "%d", steps);
+    } else {
+        snprintf(s_steps_buffer, sizeof(s_steps_buffer), "N/A");
+    }
+    text_layer_set_text(s_steps_layer, s_steps_buffer);
+#endif
+}
+
+/**
+ * Update time layer, and date/week layers only when the day changes.
+ * Accepts tick_time to avoid a redundant time()/localtime() pair.
+ * @param tick_time - Current broken-down time (NULL triggers fresh lookup)
+ * @param force_date - Force date/week update (e.g. on first call)
+ */
+static void update_time(struct tm *tick_time, bool force_date) {
+    // Fall back to fresh lookup only when called without a tick_time
+    time_t now;
+    if (!tick_time) {
+        now = time(NULL);
+        tick_time = localtime(&now);
+    }
     
     static char time_buffer[8];
     strftime(time_buffer, sizeof(time_buffer), 
              clock_is_24h_style() ? "%H:%M" : "%I:%M", tick_time);
     text_layer_set_text(s_time_layer, time_buffer);
     
-    strftime(s_date_buffer, sizeof(s_date_buffer), "%d.%m", tick_time);
-    text_layer_set_text(s_date_layer, s_date_buffer);
-    
-    strftime(s_week_buffer, sizeof(s_week_buffer), "W%V", tick_time);
-    text_layer_set_text(s_week_layer, s_week_buffer);
+    // Date and week only change at midnight; skip the rest of the time
+    if (force_date || (tick_time->tm_hour == 0 && tick_time->tm_min == 0)) {
+        strftime(s_date_buffer, sizeof(s_date_buffer),
+                 s_date_format_mmdd ? "%m.%d" : "%d.%m", tick_time);
+        text_layer_set_text(s_date_layer, s_date_buffer);
+        
+        strftime(s_week_buffer, sizeof(s_week_buffer), "W%V", tick_time);
+        text_layer_set_text(s_week_layer, s_week_buffer);
+    }
 }
 
+// Cached garbage bag type to avoid recalculating in every draw_proc call
+static char s_cached_garbage_bag = '\0';
+
 /**
- * Update garbage collection indicator and weekday (marks status bar dirty)
+ * Update garbage collection indicator and weekday.
+ * Accepts tick_time to avoid redundant time()/localtime() calls.
+ * @param tick_time - Current broken-down time (NULL triggers fresh lookup)
  */
-static void update_garbage_indicator(void) {
+static void update_garbage_indicator(struct tm *tick_time) {
+    time_t now;
+    if (!tick_time) {
+        now = time(NULL);
+        tick_time = localtime(&now);
+    }
+    
+    // Cache the garbage bag type so draw_proc doesn't need time() calls
+    int wday = tick_time->tm_wday;
+    if (tick_time->tm_hour >= 9) {
+        wday = (wday + 1) % 7;
+    }
+    switch (wday) {
+        case 1: case 3: case 5: case 0: s_cached_garbage_bag = 'O'; break;
+        case 2: case 6:                 s_cached_garbage_bag = 'B'; break;
+        case 4:                         s_cached_garbage_bag = 'G'; break;
+        default:                        s_cached_garbage_bag = '\0'; break;
+    }
+    
     if (s_status_bar_layer) {
         layer_mark_dirty(s_status_bar_layer);
     }
     
     // Update 3-letter weekday abbreviation (uppercase)
-    time_t temp = time(NULL);
-    struct tm *tick_time = localtime(&temp);
     strftime(s_weekday_buffer, sizeof(s_weekday_buffer), "%a", tick_time);
     for (int i = 0; s_weekday_buffer[i]; i++) {
         if (s_weekday_buffer[i] >= 'a' && s_weekday_buffer[i] <= 'z') {
@@ -250,13 +332,11 @@ static void update_moon_icon(int phase) {
 }
 
 /**
- * Render battery indicator in top-right corner
+ * Render battery indicator (layer is sized to fit exactly)
  */
 static void battery_draw_proc(Layer *layer, GContext *ctx) {
-    GRect bounds = layer_get_bounds(layer);
-    
-    int x_start = bounds.size.w - BATTERY_WIDTH - 2;
-    int y_start = 2;
+    int x_start = 0;
+    int y_start = 0;
     
     // Draw battery outline
     graphics_context_set_stroke_color(ctx, GColorBlack);
@@ -294,42 +374,8 @@ static void battery_draw_proc(Layer *layer, GContext *ctx) {
 }
 
 /**
- * Get the next garbage collection bag type
- * Returns: 'O' for Organic, 'B' for Black, 'G' for Grey, or '\0' if no collection
- */
-static char get_next_garbage_bag(void) {
-    time_t temp = time(NULL);
-    struct tm *tick_time = localtime(&temp);
-    
-    int wday = tick_time->tm_wday;  // 0=Sunday, 1=Monday, ..., 6=Saturday
-    int hour = tick_time->tm_hour;
-    
-    // If it's before 9am, today's collection is still next
-    // If it's 9am or after, tomorrow's collection is next
-    if (hour >= 9) {
-        wday = (wday + 1) % 7;
-    }
-    
-    // Determine bag type based on day
-    switch (wday) {
-        case 1:  // Monday
-        case 3:  // Wednesday
-        case 5:  // Friday
-            return 'O';  // Organic
-        case 2:  // Tuesday
-        case 6:  // Saturday
-            return 'B';  // Black
-        case 4:  // Thursday
-            return 'G';  // Grey
-        case 0:  // Sunday before 9am - show Monday's collection
-            return 'O';
-        default:
-            return '\0';
-    }
-}
-
-/**
- * Render status bar active indicator bars (underscore beneath active icons)
+ * Render status bar active indicator bars (underscore beneath active icons).
+ * Uses cached garbage bag type — no time() calls during rendering.
  */
 static void status_bar_draw_proc(Layer *layer, GContext *ctx) {
     graphics_context_set_fill_color(ctx, GColorBlack);
@@ -345,8 +391,7 @@ static void status_bar_draw_proc(Layer *layer, GContext *ctx) {
     }
     
     // Garbage collection: underscore the icon for the next collection type
-    char bag = get_next_garbage_bag();
-    switch (bag) {
+    switch (s_cached_garbage_bag) {
         case 'O':
             graphics_fill_rect(ctx, GRect(STATUS_ORGANIC_X, STATUS_BAR_Y, STATUS_BAR_WIDTH, STATUS_BAR_HEIGHT), 0, GCornerNone);
             break;
@@ -369,7 +414,8 @@ static void battery_state_handler(BatteryChargeState charge_state) {
 }
 
 /**
- * Update delta display based on current settings
+ * Update delta display based on current settings.
+ * Skips text layer update if the formatted string hasn't changed.
  */
 static void update_delta_display(void) {
     if (s_last_reading_timestamp <= 0) return;
@@ -378,34 +424,41 @@ static void update_delta_display(void) {
     int minutes_since_reading = (current_time - s_last_reading_timestamp) / 60;
     snprintf(s_time_delta_buffer, sizeof(s_time_delta_buffer), "%dm", minutes_since_reading);
     
-    // Rebuild the delta display based on settings
+    // Build new delta string into a temp buffer and compare before updating
+    char new_delta[BUFFER_DELTA];
     if (s_show_bg_delta && s_show_time_delta) {
-        snprintf(s_delta_buffer, sizeof(s_delta_buffer), "%s %s", s_delta_raw_buffer, s_time_delta_buffer);
+        snprintf(new_delta, sizeof(new_delta), "%s %s", s_delta_raw_buffer, s_time_delta_buffer);
     } else if (s_show_bg_delta) {
-        snprintf(s_delta_buffer, sizeof(s_delta_buffer), "%s", s_delta_raw_buffer);
+        snprintf(new_delta, sizeof(new_delta), "%s", s_delta_raw_buffer);
     } else if (s_show_time_delta) {
-        snprintf(s_delta_buffer, sizeof(s_delta_buffer), "%s", s_time_delta_buffer);
+        snprintf(new_delta, sizeof(new_delta), "%s", s_time_delta_buffer);
     } else {
-        s_delta_buffer[0] = '\0';
+        new_delta[0] = '\0';
     }
     
-    text_layer_set_text(s_glucose_delta_layer, s_delta_buffer);
-    layer_set_hidden(text_layer_get_layer(s_glucose_delta_layer), 
-                    !s_show_bg_delta && !s_show_time_delta);
+    bool hidden = !s_show_bg_delta && !s_show_time_delta;
+    layer_set_hidden(text_layer_get_layer(s_glucose_delta_layer), hidden);
+    
+    // Only update text layer if the string actually changed
+    if (strncmp(s_delta_buffer, new_delta, sizeof(s_delta_buffer)) != 0) {
+        strncpy(s_delta_buffer, new_delta, sizeof(s_delta_buffer));
+        s_delta_buffer[sizeof(s_delta_buffer) - 1] = '\0';
+        text_layer_set_text(s_glucose_delta_layer, s_delta_buffer);
+    }
 }
 
 /**
  * Handle minute tick from system
  */
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
-    update_time();
+    update_time(tick_time, false);
     
     // Update garbage indicator only when it changes:
     // - At midnight (day change)
     // - At 9am (collection time cutoff)
     if ((tick_time->tm_hour == 0 && tick_time->tm_min == 0) ||
         (tick_time->tm_hour == 9 && tick_time->tm_min == 0)) {
-        update_garbage_indicator();
+        update_garbage_indicator(tick_time);
     }
     
     time_t current_time = time(NULL);
@@ -418,6 +471,9 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     
     // Update delta display every minute
     update_delta_display();
+    
+    // Update step count every minute
+    update_steps();
     
     // Handle data fetching
     bool should_fetch = false;
@@ -446,6 +502,32 @@ static TextLayer *create_text_layer(GRect bounds, GFont font, GTextAlignment ali
     text_layer_set_text_alignment(layer, alignment);
     text_layer_set_font(layer, font);
     return layer;
+}
+
+/**
+ * Create and configure a bitmap icon layer with transparent compositing
+ * @param parent - Parent layer to add the icon to
+ * @param resource_id - Resource identifier for the bitmap
+ * @param bitmap_out - Pointer to store the created GBitmap (for later cleanup)
+ * @param bounds - Position and size of the icon layer
+ * @return The created BitmapLayer
+ */
+static BitmapLayer *create_icon_layer(Layer *parent, uint32_t resource_id,
+                                       GBitmap **bitmap_out, GRect bounds) {
+    *bitmap_out = gbitmap_create_with_resource(resource_id);
+    BitmapLayer *layer = bitmap_layer_create(bounds);
+    bitmap_layer_set_bitmap(layer, *bitmap_out);
+    bitmap_layer_set_compositing_mode(layer, GCompOpSet);
+    layer_add_child(parent, bitmap_layer_get_layer(layer));
+    return layer;
+}
+
+/**
+ * Destroy a bitmap icon layer and its associated bitmap
+ */
+static void destroy_icon_layer(BitmapLayer *layer, GBitmap *bitmap) {
+    if (layer) bitmap_layer_destroy(layer);
+    if (bitmap) gbitmap_destroy(bitmap);
 }
 
 static void main_window_load(Window *window) {
@@ -498,20 +580,14 @@ static void main_window_load(Window *window) {
     layer_add_child(window_layer, text_layer_get_layer(s_week_layer));
     
     // Create sun icon layer
-    s_sun_icon_bitmap = gbitmap_create_with_resource(RESOURCE_ID_SUN_ICON);
-    s_sun_icon_layer = bitmap_layer_create(RECT_SUN_ICON);
-    bitmap_layer_set_bitmap(s_sun_icon_layer, s_sun_icon_bitmap);
-    bitmap_layer_set_compositing_mode(s_sun_icon_layer, GCompOpSet);
-    layer_add_child(window_layer, bitmap_layer_get_layer(s_sun_icon_layer));
+    s_sun_icon_layer = create_icon_layer(window_layer, RESOURCE_ID_SUN_ICON,
+                                          &s_sun_icon_bitmap, RECT_SUN_ICON);
 
     // Create moon icon layer (default to new moon, updated when data arrives)
     int initial_moon_phase = persist_exists(PERSIST_KEY_MOON_PHASE) ? persist_read_int(PERSIST_KEY_MOON_PHASE) : 0;
-    s_moon_icon_bitmap = gbitmap_create_with_resource(get_moon_phase_resource(initial_moon_phase));
     s_current_moon_phase = initial_moon_phase;
-    s_moon_icon_layer = bitmap_layer_create(RECT_MOON_ICON);
-    bitmap_layer_set_bitmap(s_moon_icon_layer, s_moon_icon_bitmap);
-    bitmap_layer_set_compositing_mode(s_moon_icon_layer, GCompOpSet);
-    layer_add_child(window_layer, bitmap_layer_get_layer(s_moon_icon_layer));
+    s_moon_icon_layer = create_icon_layer(window_layer, get_moon_phase_resource(initial_moon_phase),
+                                           &s_moon_icon_bitmap, RECT_MOON_ICON);
 
     // Create sun time layer
     s_sun_time_layer = create_text_layer(RECT_SUN_LAYER, s_extra_info_font, GTextAlignmentRight);
@@ -534,11 +610,8 @@ static void main_window_load(Window *window) {
     layer_add_child(window_layer, text_layer_get_layer(s_moon_time_layer));
 
     // Create temperature icon layer (bottom-right, next to temp text)
-    s_temp_icon_bitmap = gbitmap_create_with_resource(RESOURCE_ID_TEMP_ICON);
-    s_temp_icon_layer = bitmap_layer_create(RECT_TEMP_ICON);
-    bitmap_layer_set_bitmap(s_temp_icon_layer, s_temp_icon_bitmap);
-    bitmap_layer_set_compositing_mode(s_temp_icon_layer, GCompOpSet);
-    layer_add_child(window_layer, bitmap_layer_get_layer(s_temp_icon_layer));
+    s_temp_icon_layer = create_icon_layer(window_layer, RESOURCE_ID_TEMP_ICON,
+                                           &s_temp_icon_bitmap, RECT_TEMP_ICON);
 
     // Create weather temperature layer (bottom-right, next to temp icon)
     s_weather_temp_layer = create_text_layer(RECT_WEATHER_TEMP_LAYER, s_extra_info_font, GTextAlignmentLeft);
@@ -549,11 +622,8 @@ static void main_window_load(Window *window) {
     layer_add_child(window_layer, text_layer_get_layer(s_weather_temp_layer));
 
     // Create wind icon layer
-    s_wind_icon_bitmap = gbitmap_create_with_resource(RESOURCE_ID_WIND_ICON);
-    s_wind_icon_layer = bitmap_layer_create(RECT_WIND_ICON);
-    bitmap_layer_set_bitmap(s_wind_icon_layer, s_wind_icon_bitmap);
-    bitmap_layer_set_compositing_mode(s_wind_icon_layer, GCompOpSet);
-    layer_add_child(window_layer, bitmap_layer_get_layer(s_wind_icon_layer));
+    s_wind_icon_layer = create_icon_layer(window_layer, RESOURCE_ID_WIND_ICON,
+                                           &s_wind_icon_bitmap, RECT_WIND_ICON);
 
     // Create weather wind layer (bottom-right, below temp)
     s_weather_wind_layer = create_text_layer(RECT_WEATHER_WIND_LAYER, s_extra_info_font, GTextAlignmentLeft);
@@ -563,41 +633,46 @@ static void main_window_load(Window *window) {
     }
     layer_add_child(window_layer, text_layer_get_layer(s_weather_wind_layer));
     
-    // Create battery indicator layer
-    s_battery_layer = layer_create(bounds);
+    // Create steps icon layer
+#if defined(PBL_HEALTH)
+    s_steps_icon_layer = create_icon_layer(window_layer, RESOURCE_ID_STEPS_ICON,
+                                            &s_steps_icon_bitmap, RECT_STEPS_ICON);
+
+    // Create steps text layer
+    s_steps_layer = create_text_layer(RECT_STEPS_LAYER, s_extra_info_font, GTextAlignmentLeft);
+    text_layer_set_text(s_steps_layer, "0");
+    layer_add_child(window_layer, text_layer_get_layer(s_steps_layer));
+#endif
+
+    // Create battery indicator layer (sized to actual draw area in top-right)
+    GRect battery_rect = GRect(bounds.size.w - BATTERY_WIDTH - 2, 0,
+                                BATTERY_WIDTH + 2, BATTERY_HEIGHT + 4);
+    s_battery_layer = layer_create(battery_rect);
     layer_set_update_proc(s_battery_layer, battery_draw_proc);
     layer_add_child(window_layer, s_battery_layer);
 
     // Create status bar icon layers (always visible, 12x12 each)
-    s_hourly_icon_bitmap = gbitmap_create_with_resource(RESOURCE_ID_HOURLY_ICON);
-    s_hourly_icon_layer = bitmap_layer_create(GRect(STATUS_HOURLY_X, STATUS_ICON_Y, STATUS_ICON_SIZE, STATUS_ICON_SIZE));
-    bitmap_layer_set_bitmap(s_hourly_icon_layer, s_hourly_icon_bitmap);
-    bitmap_layer_set_compositing_mode(s_hourly_icon_layer, GCompOpSet);
-    layer_add_child(window_layer, bitmap_layer_get_layer(s_hourly_icon_layer));
+    GRect status_icon_rect;
 
-    s_umbrella_icon_bitmap = gbitmap_create_with_resource(RESOURCE_ID_UMBRELLA_ICON);
-    s_umbrella_icon_layer = bitmap_layer_create(GRect(STATUS_UMBRELLA_X, STATUS_ICON_Y, STATUS_ICON_SIZE, STATUS_ICON_SIZE));
-    bitmap_layer_set_bitmap(s_umbrella_icon_layer, s_umbrella_icon_bitmap);
-    bitmap_layer_set_compositing_mode(s_umbrella_icon_layer, GCompOpSet);
-    layer_add_child(window_layer, bitmap_layer_get_layer(s_umbrella_icon_layer));
+    status_icon_rect = GRect(STATUS_HOURLY_X, STATUS_ICON_Y, STATUS_ICON_SIZE, STATUS_ICON_SIZE);
+    s_hourly_icon_layer = create_icon_layer(window_layer, RESOURCE_ID_HOURLY_ICON,
+                                             &s_hourly_icon_bitmap, status_icon_rect);
 
-    s_organic_icon_bitmap = gbitmap_create_with_resource(RESOURCE_ID_GARBAGE_ORGANIC);
-    s_organic_icon_layer = bitmap_layer_create(GRect(STATUS_ORGANIC_X, STATUS_ICON_Y, STATUS_ICON_SIZE, STATUS_ICON_SIZE));
-    bitmap_layer_set_bitmap(s_organic_icon_layer, s_organic_icon_bitmap);
-    bitmap_layer_set_compositing_mode(s_organic_icon_layer, GCompOpSet);
-    layer_add_child(window_layer, bitmap_layer_get_layer(s_organic_icon_layer));
+    status_icon_rect = GRect(STATUS_UMBRELLA_X, STATUS_ICON_Y, STATUS_ICON_SIZE, STATUS_ICON_SIZE);
+    s_umbrella_icon_layer = create_icon_layer(window_layer, RESOURCE_ID_UMBRELLA_ICON,
+                                               &s_umbrella_icon_bitmap, status_icon_rect);
 
-    s_grey_icon_bitmap = gbitmap_create_with_resource(RESOURCE_ID_GARBAGE_GREY);
-    s_grey_icon_layer = bitmap_layer_create(GRect(STATUS_GREY_X, STATUS_ICON_Y, STATUS_ICON_SIZE, STATUS_ICON_SIZE));
-    bitmap_layer_set_bitmap(s_grey_icon_layer, s_grey_icon_bitmap);
-    bitmap_layer_set_compositing_mode(s_grey_icon_layer, GCompOpSet);
-    layer_add_child(window_layer, bitmap_layer_get_layer(s_grey_icon_layer));
+    status_icon_rect = GRect(STATUS_ORGANIC_X, STATUS_ICON_Y, STATUS_ICON_SIZE, STATUS_ICON_SIZE);
+    s_organic_icon_layer = create_icon_layer(window_layer, RESOURCE_ID_GARBAGE_ORGANIC,
+                                              &s_organic_icon_bitmap, status_icon_rect);
 
-    s_black_icon_bitmap = gbitmap_create_with_resource(RESOURCE_ID_GARBAGE_BLACK);
-    s_black_icon_layer = bitmap_layer_create(GRect(STATUS_BLACK_X, STATUS_ICON_Y, STATUS_ICON_SIZE, STATUS_ICON_SIZE));
-    bitmap_layer_set_bitmap(s_black_icon_layer, s_black_icon_bitmap);
-    bitmap_layer_set_compositing_mode(s_black_icon_layer, GCompOpSet);
-    layer_add_child(window_layer, bitmap_layer_get_layer(s_black_icon_layer));
+    status_icon_rect = GRect(STATUS_GREY_X, STATUS_ICON_Y, STATUS_ICON_SIZE, STATUS_ICON_SIZE);
+    s_grey_icon_layer = create_icon_layer(window_layer, RESOURCE_ID_GARBAGE_GREY,
+                                           &s_grey_icon_bitmap, status_icon_rect);
+
+    status_icon_rect = GRect(STATUS_BLACK_X, STATUS_ICON_Y, STATUS_ICON_SIZE, STATUS_ICON_SIZE);
+    s_black_icon_layer = create_icon_layer(window_layer, RESOURCE_ID_GARBAGE_BLACK,
+                                            &s_black_icon_bitmap, status_icon_rect);
 
     // Create weekday abbreviation text layer in status bar
     s_weekday_layer = create_text_layer(RECT_WEEKDAY_LAYER, s_extra_info_font, GTextAlignmentLeft);
@@ -609,11 +684,12 @@ static void main_window_load(Window *window) {
     layer_add_child(window_layer, s_status_bar_layer);
     
     // Initialize garbage indicator
-    update_garbage_indicator();
+    update_garbage_indicator(NULL);
 }
 
 static void main_window_unload(Window *window)
 {
+    // Destroy text layers
     text_layer_destroy(s_time_layer);
     text_layer_destroy(s_glucose_layer);
     text_layer_destroy(s_glucose_delta_layer);
@@ -624,34 +700,37 @@ static void main_window_unload(Window *window)
     text_layer_destroy(s_weather_temp_layer);
     text_layer_destroy(s_weather_wind_layer);
     text_layer_destroy(s_weekday_layer);
+
+    // Destroy custom fonts
     fonts_unload_custom_font(s_time_font);
     fonts_unload_custom_font(s_main_font);
     fonts_unload_custom_font(s_extra_info_font);
+
+    // Destroy background
     bitmap_layer_destroy(s_background_layer);
     gbitmap_destroy(s_background_bitmap);
-    bitmap_layer_destroy(s_sun_icon_layer);
-    gbitmap_destroy(s_sun_icon_bitmap);
-    bitmap_layer_destroy(s_moon_icon_layer);
-    if (s_moon_icon_bitmap) {
-        gbitmap_destroy(s_moon_icon_bitmap);
-    }
+
+    // Destroy icon layers
+    destroy_icon_layer(s_sun_icon_layer, s_sun_icon_bitmap);
+    destroy_icon_layer(s_moon_icon_layer, s_moon_icon_bitmap);
+    destroy_icon_layer(s_temp_icon_layer, s_temp_icon_bitmap);
+    destroy_icon_layer(s_wind_icon_layer, s_wind_icon_bitmap);
+
+    // Destroy status bar icon layers
+    destroy_icon_layer(s_hourly_icon_layer, s_hourly_icon_bitmap);
+    destroy_icon_layer(s_umbrella_icon_layer, s_umbrella_icon_bitmap);
+    destroy_icon_layer(s_organic_icon_layer, s_organic_icon_bitmap);
+    destroy_icon_layer(s_grey_icon_layer, s_grey_icon_bitmap);
+    destroy_icon_layer(s_black_icon_layer, s_black_icon_bitmap);
+
+    // Destroy draw layers
     layer_destroy(s_battery_layer);
-    // Destroy status bar layers
-    bitmap_layer_destroy(s_hourly_icon_layer);
-    gbitmap_destroy(s_hourly_icon_bitmap);
-    bitmap_layer_destroy(s_umbrella_icon_layer);
-    gbitmap_destroy(s_umbrella_icon_bitmap);
-    bitmap_layer_destroy(s_organic_icon_layer);
-    gbitmap_destroy(s_organic_icon_bitmap);
-    bitmap_layer_destroy(s_grey_icon_layer);
-    gbitmap_destroy(s_grey_icon_bitmap);
-    bitmap_layer_destroy(s_black_icon_layer);
-    gbitmap_destroy(s_black_icon_bitmap);
-    bitmap_layer_destroy(s_wind_icon_layer);
-    gbitmap_destroy(s_wind_icon_bitmap);
-    bitmap_layer_destroy(s_temp_icon_layer);
-    gbitmap_destroy(s_temp_icon_bitmap);
     layer_destroy(s_status_bar_layer);
+
+#if defined(PBL_HEALTH)
+    text_layer_destroy(s_steps_layer);
+    destroy_icon_layer(s_steps_icon_layer, s_steps_icon_bitmap);
+#endif
 }
 
 /**
@@ -711,8 +790,10 @@ static void check_bg_threshold_vibration(const char *bg_str) {
     }
 }
 
-static void inbox_received_callback(DictionaryIterator *iterator, void *context) {
-    // Handle hourly vibration setting
+/**
+ * Process vibration and threshold settings from incoming message
+ */
+static void handle_settings(DictionaryIterator *iterator) {
     Tuple *hourly_vibe_tuple = dict_find(iterator, MESSAGE_KEY_HOURLY_VIBRATION);
     if (hourly_vibe_tuple) {
         bool new_hourly = hourly_vibe_tuple->value->int8 == 1;
@@ -724,32 +805,45 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
         }
     }
 
-    // Handle BG threshold vibration settings
     Tuple *bg_vibe_tuple = dict_find(iterator, MESSAGE_KEY_BG_VIBRATION);
     if (bg_vibe_tuple) {
         s_bg_vibration = bg_vibe_tuple->value->int8 == 1;
     }
+
     Tuple *bg_low_tuple = dict_find(iterator, MESSAGE_KEY_BG_LOW_THRESHOLD);
     if (bg_low_tuple) {
         s_bg_low_threshold = bg_low_tuple->value->int32;
     }
+
     Tuple *bg_high_tuple = dict_find(iterator, MESSAGE_KEY_BG_HIGH_THRESHOLD);
     if (bg_high_tuple) {
         s_bg_high_threshold = bg_high_tuple->value->int32;
     }
 
-    // Handle blood glucose data
-    Tuple *bgv_tuple = dict_find(iterator, MESSAGE_KEY_BG);
-    if (bgv_tuple) {
+    Tuple *date_format_tuple = dict_find(iterator, MESSAGE_KEY_DATE_FORMAT);
+    if (date_format_tuple && date_format_tuple->value->cstring) {
+        bool new_mmdd = strcmp(date_format_tuple->value->cstring, "mm.dd") == 0;
+        if (s_date_format_mmdd != new_mmdd) {
+            s_date_format_mmdd = new_mmdd;
+            update_time(NULL, true);
+        }
+    }
+}
 
+/**
+ * Process glucose reading and associated data (delta, timestamp, astronomy)
+ */
+static void handle_glucose_message(DictionaryIterator *iterator) {
+    Tuple *bgv_tuple = dict_find(iterator, MESSAGE_KEY_BG);
+    if (!bgv_tuple) return;
+
+    // Update glucose display
     snprintf(s_bg_buffer, sizeof(s_bg_buffer), "%s", bgv_tuple->value->cstring);
     text_layer_set_text(s_glucose_layer, s_bg_buffer);
-    persist_write_string(PERSIST_KEY_BG, s_bg_buffer);
-
-    // Check glucose thresholds and vibrate if needed
+    persist_write_string_if_changed(PERSIST_KEY_BG, s_bg_buffer, sizeof(s_bg_buffer));
     check_bg_threshold_vibration(s_bg_buffer);
     
-    // Handle BG delta setting
+    // Update glucose delta display
     Tuple *showdelta_tuple = dict_find(iterator, MESSAGE_KEY_BG_SHOW_DELTA);
     if (showdelta_tuple) {
         s_show_bg_delta = showdelta_tuple->value->int8 == 1;
@@ -757,18 +851,18 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
             Tuple *bgdelta_tuple = dict_find(iterator, MESSAGE_KEY_BGDELTA);
             if (bgdelta_tuple) {
                 snprintf(s_delta_raw_buffer, sizeof(s_delta_raw_buffer), "%s", bgdelta_tuple->value->cstring);
-                persist_write_string(PERSIST_KEY_BG_DELTA, s_delta_raw_buffer);
+                persist_write_string_if_changed(PERSIST_KEY_BG_DELTA, s_delta_raw_buffer, sizeof(s_delta_raw_buffer));
             }
         }
     }
 
-    // Handle time delta setting
+    // Update time delta display
     Tuple *show_timedelta_tuple = dict_find(iterator, MESSAGE_KEY_BG_SHOW_TIMEDELTA);
     if (show_timedelta_tuple) {
         s_show_time_delta = show_timedelta_tuple->value->int8 == 1;
     }
     
-    // Handle timestamp and update next fetch time
+    // Schedule next data fetch based on reading timestamp
     Tuple *timestamp_tuple = dict_find(iterator, MESSAGE_KEY_TIMESTAMP);
     if (timestamp_tuple) {
         s_last_reading_timestamp = timestamp_tuple->value->int32;
@@ -776,53 +870,62 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
         update_delta_display();
     }
     
-    // Handle astronomy data
+    // Update astronomy data (bundled with glucose message)
     Tuple *suntime_tuple = dict_find(iterator, MESSAGE_KEY_SUNTIME);
     if (suntime_tuple && suntime_tuple->value->cstring) {
         snprintf(s_sun_time_buffer, sizeof(s_sun_time_buffer), "%s", suntime_tuple->value->cstring);
         text_layer_set_text(s_sun_time_layer, s_sun_time_buffer);
-        persist_write_string(PERSIST_KEY_SUN_TIME, s_sun_time_buffer);
+        persist_write_string_if_changed(PERSIST_KEY_SUN_TIME, s_sun_time_buffer, sizeof(s_sun_time_buffer));
     }
     
     Tuple *moontime_tuple = dict_find(iterator, MESSAGE_KEY_MOONTIME);
     if (moontime_tuple && moontime_tuple->value->cstring) {
         snprintf(s_moon_time_buffer, sizeof(s_moon_time_buffer), "%s", moontime_tuple->value->cstring);
         text_layer_set_text(s_moon_time_layer, s_moon_time_buffer);
-        persist_write_string(PERSIST_KEY_MOON_TIME, s_moon_time_buffer);
+        persist_write_string_if_changed(PERSIST_KEY_MOON_TIME, s_moon_time_buffer, sizeof(s_moon_time_buffer));
     }
     
     Tuple *moon_phase_tuple = dict_find(iterator, MESSAGE_KEY_MOON_PHASE);
     if (moon_phase_tuple) {
         update_moon_icon(moon_phase_tuple->value->int32);
     }
+}
 
-    } // end if (bgv_tuple)
-
-    // Handle weather data (arrives as separate message from BG)
+/**
+ * Process weather data (arrives as separate message from glucose)
+ */
+static void handle_weather_message(DictionaryIterator *iterator) {
     Tuple *weather_temp_tuple = dict_find(iterator, MESSAGE_KEY_WEATHER_TEMP);
-    if (weather_temp_tuple && weather_temp_tuple->value->cstring) {
-        Tuple *weather_umbrella_tuple = dict_find(iterator, MESSAGE_KEY_WEATHER_UMBRELLA);
-        bool umbrella = weather_umbrella_tuple && weather_umbrella_tuple->value->int8 == 1;
-        
-        // Update umbrella status bar indicator
-        if (s_umbrella_active != umbrella) {
-            s_umbrella_active = umbrella;
-            if (s_status_bar_layer) {
-                layer_mark_dirty(s_status_bar_layer);
-            }
+    if (!weather_temp_tuple || !weather_temp_tuple->value->cstring) return;
+
+    // Update umbrella status indicator
+    Tuple *weather_umbrella_tuple = dict_find(iterator, MESSAGE_KEY_WEATHER_UMBRELLA);
+    bool umbrella = weather_umbrella_tuple && weather_umbrella_tuple->value->int8 == 1;
+    if (s_umbrella_active != umbrella) {
+        s_umbrella_active = umbrella;
+        if (s_status_bar_layer) {
+            layer_mark_dirty(s_status_bar_layer);
         }
-        
-        snprintf(s_weather_temp_buffer, sizeof(s_weather_temp_buffer), "%s", weather_temp_tuple->value->cstring);
-        text_layer_set_text(s_weather_temp_layer, s_weather_temp_buffer);
-        persist_write_string(PERSIST_KEY_WEATHER_TEMP, s_weather_temp_buffer);
     }
     
+    // Update temperature display
+    snprintf(s_weather_temp_buffer, sizeof(s_weather_temp_buffer), "%s", weather_temp_tuple->value->cstring);
+    text_layer_set_text(s_weather_temp_layer, s_weather_temp_buffer);
+    persist_write_string_if_changed(PERSIST_KEY_WEATHER_TEMP, s_weather_temp_buffer, sizeof(s_weather_temp_buffer));
+    
+    // Update wind speed display
     Tuple *weather_wind_tuple = dict_find(iterator, MESSAGE_KEY_WEATHER_WIND);
     if (weather_wind_tuple && weather_wind_tuple->value->cstring) {
         snprintf(s_weather_wind_buffer, sizeof(s_weather_wind_buffer), "%s", weather_wind_tuple->value->cstring);
         text_layer_set_text(s_weather_wind_layer, s_weather_wind_buffer);
-        persist_write_string(PERSIST_KEY_WEATHER_WIND, s_weather_wind_buffer);
+        persist_write_string_if_changed(PERSIST_KEY_WEATHER_WIND, s_weather_wind_buffer, sizeof(s_weather_wind_buffer));
     }
+}
+
+static void inbox_received_callback(DictionaryIterator *iterator, void *context) {
+    handle_settings(iterator);
+    handle_glucose_message(iterator);
+    handle_weather_message(iterator);
 }
 
 static void inbox_dropped_callback(AppMessageResult reason, void *context)
@@ -855,8 +958,8 @@ static void init(void) {
     tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
     battery_state_service_subscribe(battery_state_handler);
     
-    // Initialize time and battery
-    update_time();
+    // Initialize time (force date/week update) and battery
+    update_time(NULL, true);
     BatteryChargeState initial_state = battery_state_service_peek();
     battery_state_handler(initial_state);
 

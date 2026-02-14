@@ -1,140 +1,157 @@
-# Rat Scout - Dexcom Pebble Watchface
+# Rat Scout — Dexcom CGM Watchface for Pebble
 
-A feature-rich Pebble watchface that displays Dexcom glucose readings alongside weather, astronomy, and time information.
+A feature-rich Pebble watchface that displays Dexcom continuous glucose monitoring (CGM) data alongside weather, astronomy, and daily life information.
 
 ## Overview
 
-Rat Scout is a Pebble smartwatch application that connects to the Dexcom Share API to fetch and display continuous glucose monitoring (CGM) data. Beyond glucose tracking, it shows the current time, date, week number, weather conditions (temperature, wind, umbrella indicator), sunrise/sunset times, moonrise/moonset times, moon phase, garbage collection schedule, and battery status—all on a single elegant watchface.
+Rat Scout connects to the Dexcom Share API to display real-time blood glucose readings on your Pebble smartwatch. In addition to glucose tracking, it shows current time, date, week number, weather conditions (temperature, wind speed, umbrella indicator), sunrise/sunset and moonrise/moonset times, moon phase, step count, garbage collection schedule, and battery status — all on a single watchface.
 
 ## Features
 
 ### Glucose Monitoring
-- **Real-time glucose updates**: Displays current blood glucose with automatic updates every 5 minutes
-- **Glucose delta tracking**: Shows glucose rate of change with ± indicators
-- **Time since last reading**: Displays how many minutes have elapsed since the last CGM reading
-- **Configurable units**: Display glucose in mg/dL or mmol/L
-- **Flexible display options**: Toggle delta and time delta displays individually
-- **Threshold vibration alerts**: Configurable low and high BG threshold alerts with distinct vibration patterns
-- **Multi-region support**: Works with Dexcom US, Outside US (OUS), and Japan (JP) servers
+- **Real-time glucose display** with automatic 5-minute update cycle
+- **Glucose delta**: rate of change (±) from previous reading
+- **Time since reading**: minutes elapsed since last CGM data
+- **Configurable units**: mg/dL or mmol/L
+- **Threshold vibration alerts**: distinct vibration patterns for high and low BG
+  - High: short-long pattern
+  - Low: long-short pattern
+  - One-shot: vibrates only on zone transition, not repeatedly
+- **Multi-region Dexcom**: US, Outside-US (OUS), and Japan servers
 
-### Weather
-- **Current temperature**: Displays temperature in metric (°C) or imperial (°F) units
-- **Wind speed**: Shows current wind speed (m/s or mph)
-- **Umbrella indicator**: Alerts when rain is expected today based on current conditions and forecast
-- **Smart caching**: Configurable update interval (30 min to 3 hours) with location-aware cache invalidation
+### Weather (OpenWeatherMap)
+- **Temperature & wind speed** in metric or imperial units
+- **Umbrella indicator**: highlights when rain/snow is expected today (current conditions + 5-day forecast)
+- **Smart caching**: configurable interval (30 min – 3 hours) with location-aware cache invalidation (>5 km change)
+
+### Astronomy (ipgeolocation.io)
+- **Sunrise/Sunset**: shows the next upcoming event; after sunset shows tomorrow's sunrise
+- **Moonrise/Moonset**: handles both normal and inverted moon event ordering
+- **Moon phase icon**: 8 phases (new → waxing crescent → … → waning crescent)
+- **Daily cache**: fetched once per day, refreshes at midnight
 
 ### Time & Date
-- **Time display**: Shows current time in 12/24-hour format
-- **Date information**: Displays current date (day.month format)
-- **Week number**: Shows current week number with "W" prefix
+- **Time**: 12/24-hour format (follows system setting)
+- **Date**: day.month format
+- **Week number**: ISO week with "W" prefix
+- **Weekday**: 3-letter abbreviation in status bar
 
-### Astronomy Data
-- **Sunrise/Sunset times**: Shows the next upcoming sunrise or sunset based on your location
-- **Moonrise/Moonset times**: Displays the next upcoming lunar rise or set time
-- **Moon phase**: Shows current moon phase with graphical icon (new moon, waxing crescent, first quarter, waxing gibbous, full moon, waning gibbous, third quarter, waning crescent)
-- **Smart time display**: Automatically shows the next relevant event (e.g., after sunset, shows tomorrow's sunrise)
-- **Daily caching**: Astronomy data is fetched once per day and cached, refreshing at midnight
+### Status Bar
+- **Hourly vibration indicator**: shows when hourly chime is enabled
+- **Umbrella indicator**: highlights when rain is expected
+- **Garbage collection**: underscores the next bag type (Organic / Grey / Black) based on weekly schedule, rolls over at 9 AM
 
-### Additional Features
-- **Battery indicator**: Visual battery percentage display with charging status indicator
-- **Hourly vibration**: Optional hourly notification vibration
-- **Garbage collection indicator**: Shows the next garbage bag type (Organic/Black/Grey) based on a weekly schedule
-- **Persistent state**: Watchface data persists across app restarts using Pebble storage API
-- **Cross-platform**: Works on all Pebble platforms (Aplite, Basalt, Chalk, Diorite, Emery)
-- **Secure**: Credentials stored locally on phone, never transmitted to app servers
-- **Low battery impact**: Efficient data updates with smart caching and minimal power consumption
+### Other
+- **Battery indicator**: visual bar with charging animation
+- **Step count**: daily steps from Pebble Health (on supported platforms)
+- **Persistent state**: data persists across app restarts
+- **Cross-platform**: Aplite, Basalt, Chalk, Diorite, Emery
 
 ## Requirements
 
-- **Pebble Smartwatch**: Any Pebble platform (Time, Round, 2, Time Steel, etc.)
-- **Dexcom Account**: Active Dexcom Share account with a connected CGM device
-- **Pebble App**: Mobile app to pair with your watch and run the companion app
-- **Network**: Phone internet connection for Dexcom API, weather, and astronomy data access
+- **Pebble smartwatch** (any platform)
+- **Dexcom Share account** with a connected CGM transmitter
+- **Pebble/Rebble app** on your phone
+- **Internet connection** on phone for API access
 
 ## Configuration
 
-When you first open Rat Scout on your phone, you'll be prompted to configure:
+Open Rat Scout settings from the Pebble/Rebble app on your phone.
 
-### Dexcom Settings
-- **Dexcom Login**: Your Dexcom Share account email/username
-- **Dexcom Password**: Your Dexcom Share account password
+### Dexcom Account
+| Setting | Description |
+|---------|-------------|
+| Login | Dexcom Share account email/username |
+| Password | Dexcom Share account password |
 
-### Display Settings
-- **Blood Glucose Units**: Choose between mg/dL or mmol/L
-- **Show BG Delta**: Toggle display of glucose rate of change
-- **Show Time Delta**: Toggle display of time since last reading
+### Display
+| Setting | Description |
+|---------|-------------|
+| BG Units | mg/dL or mmol/L |
+| Show BG Delta | Toggle glucose rate of change |
+| Show Time Delta | Toggle time since last reading |
 
-### Notification Settings
-- **Hourly Vibration**: Enable/disable hourly notification vibration
-- **BG Threshold Vibration**: Enable/disable glucose threshold alerts
-- **Low BG Threshold**: Set low glucose alert threshold (in your preferred units)
-- **High BG Threshold**: Set high glucose alert threshold (in your preferred units)
+### Notifications
+| Setting | Description |
+|---------|-------------|
+| Hourly Vibration | Double-pulse every hour on the hour |
+| BG Threshold Vibration | Enable/disable glucose threshold alerts |
+| Low BG Threshold | Alert threshold in your preferred units |
+| High BG Threshold | Alert threshold in your preferred units |
 
-### Astronomy Data (Optional)
-- **API Key**: Enter your ipgeolocation.io API key to enable sunrise/sunset and moonrise/moonset displays
-- Get a free API key at [https://ipgeolocation.io/](https://ipgeolocation.io/)
+### Astronomy (Optional)
+| Setting | Description |
+|---------|-------------|
+| API Key | ipgeolocation.io API key ([free signup](https://ipgeolocation.io/)) |
 
 ### Weather (Optional)
-- **API Key**: Enter your OpenWeatherMap API key to display weather data
-- Get a free API key at [https://openweathermap.org/api](https://openweathermap.org/api)
-- **Weather Units**: Choose between Metric (°C, m/s) or Imperial (°F, mph)
-- **Update Interval**: Configure how often weather data refreshes (30 min, 1 hour, 2 hours, or 3 hours)
+| Setting | Description |
+|---------|-------------|
+| API Key | OpenWeatherMap API key ([free signup](https://openweathermap.org/api)) |
+| Units | Metric (°C, m/s) or Imperial (°F, mph) |
+| Update Interval | 30 min, 1 hour, 2 hours, or 3 hours |
 
-Settings are stored securely on your phone and synced to the watchface automatically.
+All settings are stored locally on your phone.
 
-## Technical Details
+## Architecture
 
-### Architecture
-
-- **C Watchface** (`src/c/rat_scout.c`): Lightweight display with UI rendering for all data, persistent storage, and vibration alerts
-- **JavaScript Companion** (`src/pkjs/index.js`): Orchestrates Dexcom API, weather, and astronomy data fetching with a message queue for reliable Pebble communication
-- **Dexcom Module** (`src/pkjs/dexcom.js`): Handles Dexcom Share API authentication (US/OUS/JP regions) and glucose data fetching with session caching
-- **Weather Module** (`src/pkjs/weather.js`): OpenWeatherMap API integration for current weather and 5-day forecast with umbrella prediction
-- **Geolocation Module** (`src/pkjs/geolocation.js`): ipgeolocation.io API integration for sunrise/sunset and moonrise/moonset times
-- **Configuration** (`src/pkjs/config.json`): Clay-based settings UI for user configuration
+```
+src/
+├── c/
+│   └── rat_scout.c          # Watchface UI, rendering, vibration alerts, persistent storage
+└── pkjs/
+    ├── index.js              # App orchestrator: settings, data fetching, message queue
+    ├── dexcom.js             # Dexcom Share API client (auth + glucose readings)
+    ├── weather.js            # OpenWeatherMap 2.5 API (current + forecast)
+    ├── geolocation.js        # ipgeolocation.io astronomy API client
+    ├── astronomy.js          # Astronomy time calculations (next sun/moon event logic)
+    └── config.json           # Clay settings UI definition
+```
 
 ### Data Flow
 
 ```
-Phone App → Dexcom API → Parse glucose readings → Calculate delta →
-         → Geolocation API → Astronomy data (cached daily) →
-         → OpenWeatherMap API → Weather data (cached per interval) →
-         → Message queue → Send to Pebble → Display on watchface
+Phone JS ─→ Dexcom Share API ─→ Parse glucose + calculate delta ─┐
+         ─→ ipgeolocation.io ─→ Astronomy data (cached daily)   ─┤
+         ─→ OpenWeatherMap   ─→ Weather data (cached per interval)─┤
+                                                                   ├─→ Message Queue ─→ Pebble Watch
+                                                Settings ──────────┘
 ```
 
-### Watchface Display Layout
+Glucose + astronomy data are sent as a single message. Weather data is sent as a separate message. A message queue ensures only one `sendAppMessage` call is in flight at a time.
 
-- **Top**: Current time (large 64px font)
-- **Top left**: Hourly vibration indicator (H symbol when enabled), separator, garbage collection bag type
-- **Top right**: Battery percentage indicator
-- **Left side**: Current glucose reading, glucose delta/time delta
-- **Right side**: Date (day.month), week number
-- **Bottom left**: Sun icon + next sunrise/sunset time, moon phase icon + next moonrise/moonset time
-- **Bottom right**: Temperature, wind speed
+### Watchface Layout
 
-## Building and Installation
+```
+┌──────────────────────────────┐
+│ [H][☂][O][G][B] DAY  [batt] │  ← Status bar (16px)
+│                              │
+│          HH:MM               │  ← Time (64px font)
+│                              │
+│   glucose    +delta 5m       │  ← BG value + delta + minutes
+│   dd.mm      W##             │  ← Date + week number
+│                              │
+│  ☀ HH:MM    🌡 ##   💨 ##    │  ← Sun time, temp, wind
+│  🌙 HH:MM   👟 ####         │  ← Moon time, steps
+└──────────────────────────────┘
+```
 
-This project uses the Pebble SDK 3. To build and install:
+## Building
+
+Requires Pebble SDK 3.
 
 ```bash
 pebble build
 pebble install --phone <phone_ip>
 ```
 
-Requires the wscript build configuration included in the project.
-
 ## Credits
 
-- Original Dexcom API implementation inspired by [pydexcom](https://github.com/gagebenne/pydexcom)
-- Built for [Pebble](https://www.pebble.com/) smartwatches
-- Uses [Pebble Clay](https://github.com/pebble/clay) for settings UI
-- Astronomy data provided by [ipgeolocation.io](https://ipgeolocation.io/)
-- Weather data provided by [OpenWeatherMap](https://openweathermap.org/)
-
-## License
-
-This project is provided as-is for personal use. Ensure you have proper authorization to use the Dexcom API with your account.
+- Dexcom API approach inspired by [pydexcom](https://github.com/gagebenne/pydexcom)
+- Settings UI powered by [Pebble Clay](https://github.com/pebble/clay)
+- Astronomy data by [ipgeolocation.io](https://ipgeolocation.io/)
+- Weather data by [OpenWeatherMap](https://openweathermap.org/)
 
 ## Disclaimer
 
-This is an unofficial, community-maintained project. It is not affiliated with or endorsed by Dexcom, Inc. Always verify glucose readings with an official Dexcom app or meter before making medical decisions. This watchface is a convenience tool only.
+This is an unofficial, community-maintained project not affiliated with or endorsed by Dexcom, Inc. Always verify glucose readings with an official Dexcom receiver or app before making medical decisions. This watchface is a convenience tool only.

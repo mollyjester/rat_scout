@@ -33,13 +33,13 @@
         "items": [
             {
                 "type": "heading",
-                "defaultValue": "Display Settings"
+                "defaultValue": "Blood Glucose"
             },
             {
                 "type": "select",
                 "messageKey": "BG_UNITS",
                 "defaultValue": "mg/dL",
-                "label": "Blood Glucose Units",
+                "label": "Units",
                 "options": [
                     {
                         "label": "mg/dL",
@@ -62,33 +62,18 @@
                 "messageKey": "BG_SHOW_TIMEDELTA",
                 "defaultValue": true,
                 "label": "Show Time Delta"
-            }
-        ]
-    },
-    {
-        "type": "section",
-        "items": [
-            {
-                "type": "heading",
-                "defaultValue": "Notifications"
-            },
-            {
-                "type": "toggle",
-                "messageKey": "HOURLY_VIBRATION",
-                "defaultValue": false,
-                "label": "Hourly Vibration"
             },
             {
                 "type": "toggle",
                 "messageKey": "BG_VIBRATION",
                 "defaultValue": false,
-                "label": "BG Threshold Vibration"
+                "label": "Threshold Vibration"
             },
             {
                 "type": "input",
                 "messageKey": "BG_LOW_THRESHOLD",
                 "defaultValue": "",
-                "label": "Low BG Threshold (in preferred units)",
+                "label": "Low Threshold (in preferred units)",
                 "attributes": {
                     "type": "number"
                 }
@@ -97,7 +82,7 @@
                 "type": "input",
                 "messageKey": "BG_HIGH_THRESHOLD",
                 "defaultValue": "",
-                "label": "High BG Threshold (in preferred units)",
+                "label": "High Threshold (in preferred units)",
                 "attributes": {
                     "type": "number"
                 }
@@ -109,17 +94,29 @@
         "items": [
             {
                 "type": "heading",
-                "defaultValue": "Astronomy Data (Sunrise/Sunset)"
+                "defaultValue": "Watchface"
             },
             {
-                "type": "text",
-                "defaultValue": "Enter your ipgeolocation.io API key to display sunrise/sunset and moonrise/moonset times. Get a free API key at https://ipgeolocation.io/"
+                "type": "select",
+                "messageKey": "DATE_FORMAT",
+                "defaultValue": "dd.mm",
+                "label": "Date Format",
+                "options": [
+                    {
+                        "label": "dd.mm",
+                        "value": "dd.mm"
+                    },
+                    {
+                        "label": "mm.dd",
+                        "value": "mm.dd"
+                    }
+                ]
             },
             {
-                "type": "input",
-                "messageKey": "ASTRO_API_KEY",
-                "defaultValue": "",
-                "label": "ipgeolocation.io API Key (Required)"
+                "type": "toggle",
+                "messageKey": "HOURLY_VIBRATION",
+                "defaultValue": false,
+                "label": "Hourly Vibration"
             }
         ]
     },
@@ -128,11 +125,11 @@
         "items": [
             {
                 "type": "heading",
-                "defaultValue": "Weather (OpenWeatherMap)"
+                "defaultValue": "Weather"
             },
             {
                 "type": "text",
-                "defaultValue": "Enter your OpenWeatherMap API key to display current weather. Get a free key at https://openweathermap.org/api (One Call API 3.0 subscription required)."
+                "defaultValue": "Enter your OpenWeatherMap API key to display current weather. Get a free key at https://openweathermap.org/api"
             },
             {
                 "type": "input",
@@ -144,7 +141,7 @@
                 "type": "select",
                 "messageKey": "WEATHER_UNITS",
                 "defaultValue": "metric",
-                "label": "Weather Units",
+                "label": "Units",
                 "options": [
                     {
                         "label": "Metric (°C, m/s)",
@@ -179,6 +176,25 @@
                         "value": "180"
                     }
                 ]
+            }
+        ]
+    },
+    {
+        "type": "section",
+        "items": [
+            {
+                "type": "heading",
+                "defaultValue": "Astronomy"
+            },
+            {
+                "type": "text",
+                "defaultValue": "Enter your ipgeolocation.io API key to display sunrise/sunset and moonrise/moonset times. Get a free API key at https://ipgeolocation.io/"
+            },
+            {
+                "type": "input",
+                "messageKey": "ASTRO_API_KEY",
+                "defaultValue": "",
+                "label": "ipgeolocation.io API Key"
             }
         ]
     },
