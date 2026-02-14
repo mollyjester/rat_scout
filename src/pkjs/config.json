@@ -237,47 +237,23 @@
             {
                 "type": "checkboxgroup",
                 "messageKey": "GARBAGE_ORGANIC_DAYS",
-                "defaultValue": [1, 3, 5],
+                "defaultValue": [false, true, false, true, false, true, false],
                 "label": "Organic (green bag) days",
-                "options": [
-                    {"label": "Sun", "value": 0},
-                    {"label": "Mon", "value": 1},
-                    {"label": "Tue", "value": 2},
-                    {"label": "Wed", "value": 3},
-                    {"label": "Thu", "value": 4},
-                    {"label": "Fri", "value": 5},
-                    {"label": "Sat", "value": 6}
-                ]
+                "options": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
             },
             {
                 "type": "checkboxgroup",
                 "messageKey": "GARBAGE_GREY_DAYS",
-                "defaultValue": [4],
+                "defaultValue": [false, false, false, false, true, false, false],
                 "label": "Grey bag days",
-                "options": [
-                    {"label": "Sun", "value": 0},
-                    {"label": "Mon", "value": 1},
-                    {"label": "Tue", "value": 2},
-                    {"label": "Wed", "value": 3},
-                    {"label": "Thu", "value": 4},
-                    {"label": "Fri", "value": 5},
-                    {"label": "Sat", "value": 6}
-                ]
+                "options": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
             },
             {
                 "type": "checkboxgroup",
                 "messageKey": "GARBAGE_BLACK_DAYS",
-                "defaultValue": [2, 6],
+                "defaultValue": [false, false, true, false, false, false, true],
                 "label": "Black bag days",
-                "options": [
-                    {"label": "Sun", "value": 0},
-                    {"label": "Mon", "value": 1},
-                    {"label": "Tue", "value": 2},
-                    {"label": "Wed", "value": 3},
-                    {"label": "Thu", "value": 4},
-                    {"label": "Fri", "value": 5},
-                    {"label": "Sat", "value": 6}
-                ]
+                "options": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
             }
         ]
     },
