@@ -141,6 +141,15 @@ function computeGarbageBag() {
 }
 
 /**
+ * Check whether a settings value has been filled in (not empty/undefined).
+ * @param {*} value - Settings value to check
+ * @returns {boolean} True if value is present and non-empty
+ */
+function hasSettingValue(value) {
+    return value !== undefined && value !== '';
+}
+
+/**
  * Check whether the current hour falls inside the configured night window.
  * Handles windows that cross midnight (e.g. start=22, end=7).
  * @returns {boolean} True if night thresholds are configured and currently active
@@ -151,11 +160,8 @@ function isNightWindow() {
 
     if (isNaN(nightStart) || isNaN(nightEnd)) return false;
 
-    var nightLow = appSettings.BG_NIGHT_LOW_THRESHOLD;
-    var nightHigh = appSettings.BG_NIGHT_HIGH_THRESHOLD;
-    var hasNightThresholds = (nightLow !== undefined && nightLow !== '') ||
-                             (nightHigh !== undefined && nightHigh !== '');
-    if (!hasNightThresholds) return false;
+    if (!hasSettingValue(appSettings.BG_NIGHT_LOW_THRESHOLD) &&
+        !hasSettingValue(appSettings.BG_NIGHT_HIGH_THRESHOLD)) return false;
 
     var hour = new Date().getHours();
 
@@ -172,11 +178,11 @@ function isNightWindow() {
 function sendSettings() {
     var useNight = isNightWindow();
 
-    var lowThreshold = useNight && appSettings.BG_NIGHT_LOW_THRESHOLD !== '' && appSettings.BG_NIGHT_LOW_THRESHOLD !== undefined
+    var lowThreshold = useNight && hasSettingValue(appSettings.BG_NIGHT_LOW_THRESHOLD)
         ? appSettings.BG_NIGHT_LOW_THRESHOLD
         : appSettings.BG_LOW_THRESHOLD;
 
-    var highThreshold = useNight && appSettings.BG_NIGHT_HIGH_THRESHOLD !== '' && appSettings.BG_NIGHT_HIGH_THRESHOLD !== undefined
+    var highThreshold = useNight && hasSettingValue(appSettings.BG_NIGHT_HIGH_THRESHOLD)
         ? appSettings.BG_NIGHT_HIGH_THRESHOLD
         : appSettings.BG_HIGH_THRESHOLD;
 
