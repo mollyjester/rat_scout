@@ -158,6 +158,12 @@
           "type": "bitmap",
           "name": "STEPS_ICON",
           "file": "img/steps.png"
+        },
+        {
+          "type": "png",
+          "name": "APP_SCREENSHOT",
+          "file": "img/rat_scout.png",
+          "menuIcon": true
         }
       ]
     }
