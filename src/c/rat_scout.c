@@ -41,10 +41,8 @@ const int BATTERY_SEGMENT_HEIGHT = 7;
 
 
 // Garbage collection schedule (next bag indicator)
-// Monday, Wednesday, Friday: Organic (O)
-// Tuesday, Saturday: Black (B)
-// Thursday: Grey (G)
-// Collection at 9am daily except Sunday
+// Configurable via settings: days for Organic (O), Grey (G), Black (B)
+// Collection time is configurable (default 9am), no collection on unconfigured days
 
 // Data fetch timing (in seconds)
 const int FETCH_INTERVAL_SECONDS = 300;
@@ -138,6 +136,13 @@ static Layer *s_status_bar_layer;
 static bool s_bg_vibration = false;
 static int s_bg_low_threshold = 0;
 static int s_bg_high_threshold = 0;
+
+// Garbage collection settings (bitmasks: bit 0=Sun, bit 1=Mon, ..., bit 6=Sat)
+// Defaults: Organic=Mon,Wed,Fri; Grey=Thu; Black=Tue,Sat; No collection on Sunday
+static int s_garbage_organic_days = 0x2A; // Mon(1),Wed(3),Fri(5) = bits 1,3,5
+static int s_garbage_grey_days = 0x10;    // Thu(4) = bit 4
+static int s_garbage_black_days = 0x44;   // Tue(2),Sat(6) = bits 2,6
+static int s_garbage_pickup_time = 9;     // 9am
 
 // BG zone tracking for one-shot vibration alerts
 typedef enum {
@@ -267,14 +272,19 @@ static void update_garbage_indicator(struct tm *tick_time) {
     
     // Cache the garbage bag type so draw_proc doesn't need time() calls
     int wday = tick_time->tm_wday;
-    if (tick_time->tm_hour >= 9) {
+    if (tick_time->tm_hour >= s_garbage_pickup_time) {
         wday = (wday + 1) % 7;
     }
-    switch (wday) {
-        case 1: case 3: case 5: case 0: s_cached_garbage_bag = 'O'; break;
-        case 2: case 6:                 s_cached_garbage_bag = 'B'; break;
-        case 4:                         s_cached_garbage_bag = 'G'; break;
-        default:                        s_cached_garbage_bag = '\0'; break;
+    
+    // Check configurable day bitmasks (bit 0=Sun, bit 1=Mon, ..., bit 6=Sat)
+    if (s_garbage_organic_days & (1 << wday)) {
+        s_cached_garbage_bag = 'O';
+    } else if (s_garbage_grey_days & (1 << wday)) {
+        s_cached_garbage_bag = 'G';
+    } else if (s_garbage_black_days & (1 << wday)) {
+        s_cached_garbage_bag = 'B';
+    } else {
+        s_cached_garbage_bag = '\0';
     }
     
     if (s_status_bar_layer) {
@@ -455,9 +465,9 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     
     // Update garbage indicator only when it changes:
     // - At midnight (day change)
-    // - At 9am (collection time cutoff)
+    // - At the configured garbage pickup time
     if ((tick_time->tm_hour == 0 && tick_time->tm_min == 0) ||
-        (tick_time->tm_hour == 9 && tick_time->tm_min == 0)) {
+        (tick_time->tm_hour == s_garbage_pickup_time && tick_time->tm_min == 0)) {
         update_garbage_indicator(tick_time);
     }
     
@@ -827,6 +837,37 @@ static void handle_settings(DictionaryIterator *iterator) {
             s_date_format_mmdd = new_mmdd;
             update_time(NULL, true);
         }
+    }
+
+    // Garbage collection settings
+    bool garbage_changed = false;
+
+    Tuple *organic_tuple = dict_find(iterator, MESSAGE_KEY_GARBAGE_ORGANIC_DAYS);
+    if (organic_tuple) {
+        s_garbage_organic_days = organic_tuple->value->int32;
+        garbage_changed = true;
+    }
+
+    Tuple *grey_tuple = dict_find(iterator, MESSAGE_KEY_GARBAGE_GREY_DAYS);
+    if (grey_tuple) {
+        s_garbage_grey_days = grey_tuple->value->int32;
+        garbage_changed = true;
+    }
+
+    Tuple *black_tuple = dict_find(iterator, MESSAGE_KEY_GARBAGE_BLACK_DAYS);
+    if (black_tuple) {
+        s_garbage_black_days = black_tuple->value->int32;
+        garbage_changed = true;
+    }
+
+    Tuple *pickup_tuple = dict_find(iterator, MESSAGE_KEY_GARBAGE_PICKUP_TIME);
+    if (pickup_tuple) {
+        s_garbage_pickup_time = pickup_tuple->value->int32;
+        garbage_changed = true;
+    }
+
+    if (garbage_changed) {
+        update_garbage_indicator(NULL);
     }
 }
 

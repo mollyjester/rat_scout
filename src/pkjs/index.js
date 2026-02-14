@@ -92,6 +92,24 @@ function sendToPebble(dictionary, messageType) {
 }
 
 /**
+ * Convert an array of day indices to a bitmask.
+ * Day 0 = Sunday, Day 1 = Monday, ..., Day 6 = Saturday.
+ * @param {Array} days - Array of day indices
+ * @returns {number} Bitmask
+ */
+function daysToBitmask(days) {
+    if (!Array.isArray(days)) return 0;
+    var mask = 0;
+    for (var i = 0; i < days.length; i++) {
+        var day = parseInt(days[i], 10);
+        if (day >= 0 && day <= 6) {
+            mask |= (1 << day);
+        }
+    }
+    return mask;
+}
+
+/**
  * Build and send settings to the watchface
  */
 function sendSettings() {
@@ -104,7 +122,11 @@ function sendSettings() {
         "BG_LOW_THRESHOLD": Math.round((parseFloat(appSettings.BG_LOW_THRESHOLD) || 0) * 10),
         "BG_HIGH_THRESHOLD": Math.round((parseFloat(appSettings.BG_HIGH_THRESHOLD) || 0) * 10),
         "ASTRO_API_KEY": appSettings.ASTRO_API_KEY || "",
-        "DATE_FORMAT": appSettings.DATE_FORMAT || "dd.mm"
+        "DATE_FORMAT": appSettings.DATE_FORMAT || "dd.mm",
+        "GARBAGE_ORGANIC_DAYS": daysToBitmask(appSettings.GARBAGE_ORGANIC_DAYS),
+        "GARBAGE_GREY_DAYS": daysToBitmask(appSettings.GARBAGE_GREY_DAYS),
+        "GARBAGE_BLACK_DAYS": daysToBitmask(appSettings.GARBAGE_BLACK_DAYS),
+        "GARBAGE_PICKUP_TIME": parseInt(appSettings.GARBAGE_PICKUP_TIME, 10) || 9
     };
     
     sendToPebble(dictionary, 'Settings');
@@ -223,7 +245,8 @@ function fetchGlucoseReading() {
 
             // Fetch and combine astronomy data
             fetchAndSendAstronomy(dictionary);
-        }
+        },
+        appSettings.DEX_REGION
     );
 
     if (accountId && sessionId) {
