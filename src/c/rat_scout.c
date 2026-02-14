@@ -415,22 +415,22 @@ static void status_bar_draw_proc(Layer *layer, GContext *ctx) {
 
 /**
  * Draw a 3-pixel corner indicator for rising/setting state.
- * Rising: top-right corner (base, 1 pixel right, 1 pixel down)
- * Setting: bottom-right corner (base, 1 pixel right, 1 pixel up)
+ * Rising: top-right corner (two pixels along top-right, one below)
+ * Setting: bottom-right corner (two pixels along bottom-right, one above)
  */
 static void sun_corner_draw_proc(Layer *layer, GContext *ctx) {
     GRect bounds = layer_get_bounds(layer);
     int right = bounds.size.w - 1;
     graphics_context_set_fill_color(ctx, GColorBlack);
     if (s_sun_is_rising) {
-        graphics_fill_rect(ctx, GRect(right - 1, 0, 1, 1), 0, GCornerNone);
         graphics_fill_rect(ctx, GRect(right, 0, 1, 1), 0, GCornerNone);
-        graphics_fill_rect(ctx, GRect(right - 1, 1, 1, 1), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(right - 1, 0, 1, 1), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(right, 1, 1, 1), 0, GCornerNone);
     } else {
         int bottom = bounds.size.h - 1;
-        graphics_fill_rect(ctx, GRect(right - 1, bottom, 1, 1), 0, GCornerNone);
         graphics_fill_rect(ctx, GRect(right, bottom, 1, 1), 0, GCornerNone);
-        graphics_fill_rect(ctx, GRect(right - 1, bottom - 1, 1, 1), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(right - 1, bottom, 1, 1), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(right, bottom - 1, 1, 1), 0, GCornerNone);
     }
 }
 
@@ -439,14 +439,14 @@ static void moon_corner_draw_proc(Layer *layer, GContext *ctx) {
     int right = bounds.size.w - 1;
     graphics_context_set_fill_color(ctx, GColorBlack);
     if (s_moon_is_rising) {
-        graphics_fill_rect(ctx, GRect(right - 1, 0, 1, 1), 0, GCornerNone);
         graphics_fill_rect(ctx, GRect(right, 0, 1, 1), 0, GCornerNone);
-        graphics_fill_rect(ctx, GRect(right - 1, 1, 1, 1), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(right - 1, 0, 1, 1), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(right, 1, 1, 1), 0, GCornerNone);
     } else {
         int bottom = bounds.size.h - 1;
-        graphics_fill_rect(ctx, GRect(right - 1, bottom, 1, 1), 0, GCornerNone);
         graphics_fill_rect(ctx, GRect(right, bottom, 1, 1), 0, GCornerNone);
-        graphics_fill_rect(ctx, GRect(right - 1, bottom - 1, 1, 1), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(right - 1, bottom, 1, 1), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(right, bottom - 1, 1, 1), 0, GCornerNone);
     }
 }
 
