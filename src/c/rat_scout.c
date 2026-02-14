@@ -9,8 +9,8 @@ const GRect RECT_DATE_LAYER = {{0, 87}, {66, 29}};
 const GRect RECT_WEEK_LAYER = {{76, 95}, {66, 25}};
 const GRect RECT_SUN_LAYER = {{25, 120}, {41, 25}};
 const GRect RECT_MOON_LAYER = {{25, 135}, {41, 25}};
-const GRect RECT_SUN_ICON = {{11, 129}, {12, 12}};
-const GRect RECT_MOON_ICON = {{11, 144}, {12, 12}};
+const GRect RECT_SUN_ICON = {{10, 129}, {12, 12}};
+const GRect RECT_MOON_ICON = {{10, 144}, {12, 12}};
 const GRect RECT_WEATHER_TEMP_LAYER = {{86, 120}, {25, 25}};
 const GRect RECT_TEMP_ICON = {{75, 129}, {12, 12}};
 const GRect RECT_WEATHER_WIND_LAYER = {{118, 120}, {48, 25}};
@@ -97,6 +97,10 @@ static GBitmap *s_sun_icon_bitmap;
 static BitmapLayer *s_moon_icon_layer;
 static GBitmap *s_moon_icon_bitmap;
 static int s_current_moon_phase = -1;
+static bool s_sun_is_rising = true;
+static bool s_moon_is_rising = true;
+static Layer *s_sun_corner_layer;
+static Layer *s_moon_corner_layer;
 
 static BitmapLayer *s_wind_icon_layer;
 static GBitmap *s_wind_icon_bitmap;
@@ -181,7 +185,9 @@ enum PersistKeys {
     PERSIST_KEY_MOON_TIME,
     PERSIST_KEY_WEATHER_TEMP,
     PERSIST_KEY_WEATHER_WIND,
-    PERSIST_KEY_MOON_PHASE
+    PERSIST_KEY_MOON_PHASE,
+    PERSIST_KEY_SUN_IS_RISING,
+    PERSIST_KEY_MOON_IS_RISING
 };
 
 /**
@@ -408,6 +414,41 @@ static void status_bar_draw_proc(Layer *layer, GContext *ctx) {
 }
 
 /**
+ * Draw a 3-pixel corner indicator for rising/setting state.
+ * Rising: top-left corner (base at origin, one right, one down)
+ * Setting: bottom-left corner (base at bottom-left, one right, one up)
+ */
+static void sun_corner_draw_proc(Layer *layer, GContext *ctx) {
+    GRect bounds = layer_get_bounds(layer);
+    graphics_context_set_fill_color(ctx, GColorBlack);
+    if (s_sun_is_rising) {
+        graphics_fill_rect(ctx, GRect(0, 0, 1, 1), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(1, 0, 1, 1), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(0, 1, 1, 1), 0, GCornerNone);
+    } else {
+        int bottom = bounds.size.h - 1;
+        graphics_fill_rect(ctx, GRect(0, bottom, 1, 1), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(1, bottom, 1, 1), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(0, bottom - 1, 1, 1), 0, GCornerNone);
+    }
+}
+
+static void moon_corner_draw_proc(Layer *layer, GContext *ctx) {
+    GRect bounds = layer_get_bounds(layer);
+    graphics_context_set_fill_color(ctx, GColorBlack);
+    if (s_moon_is_rising) {
+        graphics_fill_rect(ctx, GRect(0, 0, 1, 1), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(1, 0, 1, 1), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(0, 1, 1, 1), 0, GCornerNone);
+    } else {
+        int bottom = bounds.size.h - 1;
+        graphics_fill_rect(ctx, GRect(0, bottom, 1, 1), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(1, bottom, 1, 1), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(0, bottom - 1, 1, 1), 0, GCornerNone);
+    }
+}
+
+/**
  * Handle battery state changes
  */
 static void battery_state_handler(BatteryChargeState charge_state) {
@@ -583,11 +624,23 @@ static void main_window_load(Window *window) {
     s_sun_icon_layer = create_icon_layer(window_layer, RESOURCE_ID_SUN_ICON,
                                           &s_sun_icon_bitmap, RECT_SUN_ICON);
 
+    // Create sun corner indicator layer (overlays on sun icon)
+    s_sun_is_rising = persist_exists(PERSIST_KEY_SUN_IS_RISING) ? persist_read_bool(PERSIST_KEY_SUN_IS_RISING) : true;
+    s_sun_corner_layer = layer_create(RECT_SUN_ICON);
+    layer_set_update_proc(s_sun_corner_layer, sun_corner_draw_proc);
+    layer_add_child(window_layer, s_sun_corner_layer);
+
     // Create moon icon layer (default to new moon, updated when data arrives)
     int initial_moon_phase = persist_exists(PERSIST_KEY_MOON_PHASE) ? persist_read_int(PERSIST_KEY_MOON_PHASE) : 0;
     s_current_moon_phase = initial_moon_phase;
     s_moon_icon_layer = create_icon_layer(window_layer, get_moon_phase_resource(initial_moon_phase),
                                            &s_moon_icon_bitmap, RECT_MOON_ICON);
+
+    // Create moon corner indicator layer (overlays on moon icon)
+    s_moon_is_rising = persist_exists(PERSIST_KEY_MOON_IS_RISING) ? persist_read_bool(PERSIST_KEY_MOON_IS_RISING) : true;
+    s_moon_corner_layer = layer_create(RECT_MOON_ICON);
+    layer_set_update_proc(s_moon_corner_layer, moon_corner_draw_proc);
+    layer_add_child(window_layer, s_moon_corner_layer);
 
     // Create sun time layer
     s_sun_time_layer = create_text_layer(RECT_SUN_LAYER, s_extra_info_font, GTextAlignmentRight);
@@ -713,6 +766,8 @@ static void main_window_unload(Window *window)
     // Destroy icon layers
     destroy_icon_layer(s_sun_icon_layer, s_sun_icon_bitmap);
     destroy_icon_layer(s_moon_icon_layer, s_moon_icon_bitmap);
+    if (s_sun_corner_layer) layer_destroy(s_sun_corner_layer);
+    if (s_moon_corner_layer) layer_destroy(s_moon_corner_layer);
     destroy_icon_layer(s_temp_icon_layer, s_temp_icon_bitmap);
     destroy_icon_layer(s_wind_icon_layer, s_wind_icon_bitmap);
 
@@ -894,6 +949,31 @@ static void handle_glucose_message(DictionaryIterator *iterator) {
     Tuple *moon_phase_tuple = dict_find(iterator, MESSAGE_KEY_MOON_PHASE);
     if (moon_phase_tuple) {
         update_moon_icon(moon_phase_tuple->value->int32);
+    }
+    
+    // Update sun/moon rising/setting indicators
+    Tuple *sun_rising_tuple = dict_find(iterator, MESSAGE_KEY_SUN_IS_RISING);
+    if (sun_rising_tuple) {
+        bool rising = sun_rising_tuple->value->int8 == 1;
+        if (s_sun_is_rising != rising) {
+            s_sun_is_rising = rising;
+            persist_write_bool(PERSIST_KEY_SUN_IS_RISING, rising);
+            if (s_sun_corner_layer) {
+                layer_mark_dirty(s_sun_corner_layer);
+            }
+        }
+    }
+    
+    Tuple *moon_rising_tuple = dict_find(iterator, MESSAGE_KEY_MOON_IS_RISING);
+    if (moon_rising_tuple) {
+        bool rising = moon_rising_tuple->value->int8 == 1;
+        if (s_moon_is_rising != rising) {
+            s_moon_is_rising = rising;
+            persist_write_bool(PERSIST_KEY_MOON_IS_RISING, rising);
+            if (s_moon_corner_layer) {
+                layer_mark_dirty(s_moon_corner_layer);
+            }
+        }
     }
 }
 

@@ -44,30 +44,30 @@ function getNextSunEvent(sunrise, sunset) {
     var currentMinutes = getCurrentTimeInMinutes();
     
     if (sunriseMinutes === null && sunsetMinutes === null) {
-        return { time: sunrise, needsTomorrowData: false };
+        return { time: sunrise, needsTomorrowData: false, isRising: true };
     }
     
     if (sunriseMinutes !== null && sunsetMinutes === null) {
         if (currentMinutes < sunriseMinutes) {
-            return { time: sunrise, needsTomorrowData: false };
+            return { time: sunrise, needsTomorrowData: false, isRising: true };
         }
-        return { time: sunrise, needsTomorrowData: true };
+        return { time: sunrise, needsTomorrowData: true, isRising: true };
     }
     
     if (sunriseMinutes === null && sunsetMinutes !== null) {
         if (currentMinutes < sunsetMinutes) {
-            return { time: sunset, needsTomorrowData: false };
+            return { time: sunset, needsTomorrowData: false, isRising: false };
         }
-        return { time: sunset, needsTomorrowData: false };
+        return { time: sunset, needsTomorrowData: false, isRising: false };
     }
     
     // Both times available
     if (currentMinutes < sunriseMinutes) {
-        return { time: sunrise, needsTomorrowData: false };
+        return { time: sunrise, needsTomorrowData: false, isRising: true };
     } else if (currentMinutes < sunsetMinutes) {
-        return { time: sunset, needsTomorrowData: false };
+        return { time: sunset, needsTomorrowData: false, isRising: false };
     } else {
-        return { time: sunrise, needsTomorrowData: true };
+        return { time: sunrise, needsTomorrowData: true, isRising: true };
     }
 }
 
@@ -84,41 +84,41 @@ function getNextMoonEvent(moonrise, moonset) {
     var currentMinutes = getCurrentTimeInMinutes();
     
     if (moonriseMinutes === null && moonsetMinutes === null) {
-        return { time: moonset, needsTomorrowData: true };
+        return { time: moonset, needsTomorrowData: true, isRising: false };
     }
     
     if (moonriseMinutes !== null && moonsetMinutes === null) {
         if (currentMinutes < moonriseMinutes) {
-            return { time: moonrise, needsTomorrowData: false };
+            return { time: moonrise, needsTomorrowData: false, isRising: true };
         }
-        return { time: moonrise, needsTomorrowData: true };
+        return { time: moonrise, needsTomorrowData: true, isRising: true };
     }
     
     if (moonriseMinutes === null && moonsetMinutes !== null) {
         if (currentMinutes < moonsetMinutes) {
-            return { time: moonset, needsTomorrowData: false };
+            return { time: moonset, needsTomorrowData: false, isRising: false };
         }
-        return { time: moonset, needsTomorrowData: true };
+        return { time: moonset, needsTomorrowData: true, isRising: false };
     }
     
     // Both times available
     if (moonriseMinutes < moonsetMinutes) {
         // Normal: moonrise before moonset
         if (currentMinutes < moonriseMinutes) {
-            return { time: moonrise, needsTomorrowData: false };
+            return { time: moonrise, needsTomorrowData: false, isRising: true };
         } else if (currentMinutes < moonsetMinutes) {
-            return { time: moonset, needsTomorrowData: false };
+            return { time: moonset, needsTomorrowData: false, isRising: false };
         } else {
-            return { time: moonset, needsTomorrowData: true };
+            return { time: moonset, needsTomorrowData: true, isRising: true };
         }
     } else {
         // Inverted: moonset before moonrise (e.g. moonset just after midnight)
         if (currentMinutes < moonsetMinutes) {
-            return { time: moonset, needsTomorrowData: false };
+            return { time: moonset, needsTomorrowData: false, isRising: false };
         } else if (currentMinutes < moonriseMinutes) {
-            return { time: moonrise, needsTomorrowData: false };
+            return { time: moonrise, needsTomorrowData: false, isRising: true };
         } else {
-            return { time: moonrise, needsTomorrowData: true };
+            return { time: moonrise, needsTomorrowData: true, isRising: false };
         }
     }
 }
@@ -149,7 +149,7 @@ function moonPhaseToIndex(moonPhase) {
 /**
  * Extract and format the next sun/moon events from astronomy API data
  * @param {Object} astroData - Astronomy data with sunrise, sunset, moonrise, moonset, moonPhase
- * @returns {Object} { sunTime, moonTime, moonPhase, needsTomorrowSunData, needsTomorrowMoonData }
+ * @returns {Object} { sunTime, moonTime, moonPhase, needsTomorrowSunData, needsTomorrowMoonData, sunIsRising, moonIsRising }
  */
 function formatAstronomyTimes(astroData) {
     var sunResult = getNextSunEvent(astroData.sunrise, astroData.sunset);
@@ -160,7 +160,9 @@ function formatAstronomyTimes(astroData) {
         moonTime: moonResult.time,
         moonPhase: moonPhaseToIndex(astroData.moonPhase),
         needsTomorrowSunData: sunResult.needsTomorrowData,
-        needsTomorrowMoonData: moonResult.needsTomorrowData
+        needsTomorrowMoonData: moonResult.needsTomorrowData,
+        sunIsRising: sunResult.isRising,
+        moonIsRising: moonResult.isRising
     };
 }
 

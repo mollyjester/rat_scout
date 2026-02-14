@@ -45,6 +45,8 @@
       "SUNTIME",
       "MOONTIME",
       "MOON_PHASE",
+      "SUN_IS_RISING",
+      "MOON_IS_RISING",
       "ASTRO_API_KEY",
       "OWM_API_KEY",
       "WEATHER_UNITS",
