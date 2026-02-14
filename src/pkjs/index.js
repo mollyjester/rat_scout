@@ -109,6 +109,37 @@ function daysToBitmask(days) {
     return mask;
 }
 
+// Garbage bag type constants sent to C (matches status_bar_draw_proc expectations)
+var GARBAGE_BAG_NONE = 0;
+var GARBAGE_BAG_ORGANIC = 1;  // 'O'
+var GARBAGE_BAG_GREY = 2;     // 'G'
+var GARBAGE_BAG_BLACK = 3;    // 'B'
+
+/**
+ * Compute which garbage bag icon to underscore based on current time and settings.
+ * After the configured pickup hour, shows the next day's collection type.
+ * @returns {number} GARBAGE_BAG_NONE/ORGANIC/GREY/BLACK
+ */
+function computeGarbageBag() {
+    var now = new Date();
+    var wday = now.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+    var pickupHour = parseInt(appSettings.GARBAGE_PICKUP_TIME, 10);
+    if (isNaN(pickupHour)) pickupHour = 9;
+
+    if (now.getHours() >= pickupHour) {
+        wday = (wday + 1) % 7;
+    }
+
+    var organicMask = daysToBitmask(appSettings.GARBAGE_ORGANIC_DAYS);
+    var greyMask    = daysToBitmask(appSettings.GARBAGE_GREY_DAYS);
+    var blackMask   = daysToBitmask(appSettings.GARBAGE_BLACK_DAYS);
+
+    if (organicMask & (1 << wday)) return GARBAGE_BAG_ORGANIC;
+    if (greyMask    & (1 << wday)) return GARBAGE_BAG_GREY;
+    if (blackMask   & (1 << wday)) return GARBAGE_BAG_BLACK;
+    return GARBAGE_BAG_NONE;
+}
+
 /**
  * Build and send settings to the watchface
  */
@@ -123,10 +154,7 @@ function sendSettings() {
         "BG_HIGH_THRESHOLD": Math.round((parseFloat(appSettings.BG_HIGH_THRESHOLD) || 0) * 10),
         "ASTRO_API_KEY": appSettings.ASTRO_API_KEY || "",
         "DATE_FORMAT": appSettings.DATE_FORMAT || "dd.mm",
-        "GARBAGE_ORGANIC_DAYS": daysToBitmask(appSettings.GARBAGE_ORGANIC_DAYS),
-        "GARBAGE_GREY_DAYS": daysToBitmask(appSettings.GARBAGE_GREY_DAYS),
-        "GARBAGE_BLACK_DAYS": daysToBitmask(appSettings.GARBAGE_BLACK_DAYS),
-        "GARBAGE_PICKUP_TIME": parseInt(appSettings.GARBAGE_PICKUP_TIME, 10) || 9
+        "GARBAGE_BAG": computeGarbageBag()
     };
     
     sendToPebble(dictionary, 'Settings');

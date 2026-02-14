@@ -52,10 +52,7 @@
       "WEATHER_WIND",
       "WEATHER_UMBRELLA",
       "DATE_FORMAT",
-      "GARBAGE_ORGANIC_DAYS",
-      "GARBAGE_GREY_DAYS",
-      "GARBAGE_BLACK_DAYS",
-      "GARBAGE_PICKUP_TIME"
+      "GARBAGE_BAG"
     ],
     "resources": {
       "media": [
