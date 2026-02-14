@@ -92,18 +92,18 @@ function sendToPebble(dictionary, messageType) {
 }
 
 /**
- * Convert an array of day indices to a bitmask.
- * Day 0 = Sunday, Day 1 = Monday, ..., Day 6 = Saturday.
- * @param {Array} days - Array of day indices
+ * Convert an array of boolean checked-states to a bitmask.
+ * Index 0 = Sunday, Index 1 = Monday, ..., Index 6 = Saturday.
+ * Each element is true/false indicating whether that day is selected.
+ * @param {Array} days - Array of booleans from checkboxgroup
  * @returns {number} Bitmask
  */
 function daysToBitmask(days) {
     if (!Array.isArray(days)) return 0;
     var mask = 0;
     for (var i = 0; i < days.length; i++) {
-        var day = parseInt(days[i], 10);
-        if (day >= 0 && day <= 6) {
-            mask |= (1 << day);
+        if (days[i]) {
+            mask |= (1 << i);
         }
     }
     return mask;
