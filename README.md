@@ -17,6 +17,7 @@ Rat Scout connects to the Dexcom Share API to display real-time blood glucose re
   - High: short-long pattern
   - Low: long-short pattern
   - One-shot: vibrates only on zone transition, not repeatedly
+  - **Night thresholds**: optional separate thresholds during a configurable night window
 - **Multi-region Dexcom**: US, Outside-US (OUS), and Japan servers
 
 ### Weather (OpenWeatherMap)
@@ -78,6 +79,12 @@ Open Rat Scout settings from the Pebble/Rebble app on your phone.
 | BG Threshold Vibration | Enable/disable glucose threshold alerts |
 | Low BG Threshold | Alert threshold in your preferred units |
 | High BG Threshold | Alert threshold in your preferred units |
+| Night Low Threshold | Optional low threshold during the night window |
+| Night High Threshold | Optional high threshold during the night window |
+| Night Start | Hour when night thresholds activate (0-23) |
+| Night End | Hour when night thresholds deactivate (0-23) |
+
+Night thresholds allow you to use different alerting ranges while you sleep (e.g., wider range to avoid unnecessary vibrations). If the night threshold fields are left empty or no night time frame is set, the general thresholds are used around the clock. The night window supports crossing midnight (e.g., start=22, end=7).
 
 ### Astronomy (Optional)
 | Setting | Description |
