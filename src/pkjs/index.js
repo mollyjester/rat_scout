@@ -93,7 +93,7 @@ function sendToPebble(dictionary, messageType) {
 
 /**
  * Convert an array of boolean checked-states to a bitmask.
- * Index 0 = Sunday, Index 1 = Monday, ..., Index 6 = Saturday.
+ * Index 0 = Monday, Index 1 = Tuesday, ..., Index 6 = Sunday.
  * Each element is true/false indicating whether that day is selected.
  * @param {Array} days - Array of booleans from checkboxgroup
  * @returns {number} Bitmask
@@ -122,7 +122,7 @@ var GARBAGE_BAG_BLACK = 3;    // 'B'
  */
 function computeGarbageBag() {
     var now = new Date();
-    var wday = now.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+    var wday = (now.getDay() + 6) % 7; // Convert 0=Sun..6=Sat to 0=Mon..6=Sun
     var pickupHour = parseInt(appSettings.GARBAGE_PICKUP_TIME, 10);
     if (isNaN(pickupHour)) pickupHour = 9;
 
