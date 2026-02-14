@@ -7,14 +7,21 @@ on:
     workflows: ["Auto Tag on Merge"]
     types:
       - completed
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build and release (e.g., v1.0.0)'
+        required: true
+        type: string
 
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
-    # Run when triggered by a tag push, or when the Auto Tag workflow succeeded
+    # Run when triggered by a tag push, or when the Auto Tag workflow succeeded, or manually
     if: >
       github.event_name == 'push' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      github.event_name == 'workflow_dispatch'
     permissions:
       contents: write # Required to create the release and upload assets
     steps:
@@ -28,6 +35,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
             echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
           else
             TAG=$(git describe --tags --abbrev=0)
             echo "tag=$TAG" >> "$GITHUB_OUTPUT"
