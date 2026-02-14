@@ -6,7 +6,7 @@
 
 Rat Scout puts your Dexcom glucose readings front and center on your Pebble watch, surrounded by useful at-a-glance information:
 
-- **Blood Glucose** — Current reading, delta (rate of change), and minutes since last update. Supports mg/dL and mmol/L. Configurable vibration alerts for high and low thresholds.
+- **Blood Glucose** — Current reading, delta (rate of change), and minutes since last update. Supports mg/dL and mmol/L. Configurable vibration alerts for high and low thresholds, with optional separate night thresholds and a configurable night time window.
 - **Weather** — Temperature, wind speed, and an umbrella indicator that lights up when rain or snow is expected today.
 - **Astronomy** — Next sunrise/sunset and moonrise/moonset times with a moon phase icon.
 - **Daily Info** — Time, date, week number, step count, battery level, and a garbage collection reminder.

@@ -141,17 +141,59 @@ function computeGarbageBag() {
 }
 
 /**
+ * Check whether a settings value has been filled in (not empty/undefined).
+ * @param {*} value - Settings value to check
+ * @returns {boolean} True if value is present and non-empty
+ */
+function hasSettingValue(value) {
+    return value !== undefined && value !== '';
+}
+
+/**
+ * Check whether the current hour falls inside the configured night window.
+ * Handles windows that cross midnight (e.g. start=22, end=7).
+ * @returns {boolean} True if night thresholds are configured and currently active
+ */
+function isNightWindow() {
+    var nightStart = parseInt(appSettings.BG_NIGHT_START, 10);
+    var nightEnd = parseInt(appSettings.BG_NIGHT_END, 10);
+
+    if (isNaN(nightStart) || isNaN(nightEnd)) return false;
+
+    if (!hasSettingValue(appSettings.BG_NIGHT_LOW_THRESHOLD) &&
+        !hasSettingValue(appSettings.BG_NIGHT_HIGH_THRESHOLD)) return false;
+
+    var hour = new Date().getHours();
+
+    if (nightStart <= nightEnd) {
+        return hour >= nightStart && hour < nightEnd;
+    }
+    // Crosses midnight (e.g. 22 -> 7)
+    return hour >= nightStart || hour < nightEnd;
+}
+
+/**
  * Build and send settings to the watchface
  */
 function sendSettings() {
+    var useNight = isNightWindow();
+
+    var lowThreshold = useNight && hasSettingValue(appSettings.BG_NIGHT_LOW_THRESHOLD)
+        ? appSettings.BG_NIGHT_LOW_THRESHOLD
+        : appSettings.BG_LOW_THRESHOLD;
+
+    var highThreshold = useNight && hasSettingValue(appSettings.BG_NIGHT_HIGH_THRESHOLD)
+        ? appSettings.BG_NIGHT_HIGH_THRESHOLD
+        : appSettings.BG_HIGH_THRESHOLD;
+
     var dictionary = {
         "BG_SHOW_DELTA": appSettings.BG_SHOW_DELTA ? 1 : 0,
         "BG_SHOW_TIMEDELTA": appSettings.BG_SHOW_TIMEDELTA ? 1 : 0,
         "BG_UNITS": appSettings.BG_UNITS || CONFIG.DEFAULT_BG_UNITS,
         "HOURLY_VIBRATION": appSettings.HOURLY_VIBRATION ? 1 : 0,
         "BG_VIBRATION": appSettings.BG_VIBRATION ? 1 : 0,
-        "BG_LOW_THRESHOLD": Math.round((parseFloat(appSettings.BG_LOW_THRESHOLD) || 0) * 10),
-        "BG_HIGH_THRESHOLD": Math.round((parseFloat(appSettings.BG_HIGH_THRESHOLD) || 0) * 10),
+        "BG_LOW_THRESHOLD": Math.round((parseFloat(lowThreshold) || 0) * 10),
+        "BG_HIGH_THRESHOLD": Math.round((parseFloat(highThreshold) || 0) * 10),
         "ASTRO_API_KEY": appSettings.ASTRO_API_KEY || "",
         "DATE_FORMAT": appSettings.DATE_FORMAT || "dd.mm",
         "GARBAGE_BAG": computeGarbageBag()

@@ -106,6 +106,51 @@
                 "attributes": {
                     "type": "number"
                 }
+            },
+            {
+                "type": "heading",
+                "defaultValue": "Night Thresholds",
+                "size": 4
+            },
+            {
+                "type": "text",
+                "defaultValue": "Optional. Set separate thresholds for nighttime. If left empty, the general thresholds above are used."
+            },
+            {
+                "type": "input",
+                "messageKey": "BG_NIGHT_LOW_THRESHOLD",
+                "defaultValue": "",
+                "label": "Night Low Threshold (in preferred units)",
+                "attributes": {
+                    "type": "number"
+                }
+            },
+            {
+                "type": "input",
+                "messageKey": "BG_NIGHT_HIGH_THRESHOLD",
+                "defaultValue": "",
+                "label": "Night High Threshold (in preferred units)",
+                "attributes": {
+                    "type": "number"
+                }
+            },
+            {
+                "type": "input",
+                "messageKey": "BG_NIGHT_START",
+                "defaultValue": "",
+                "label": "Night Start (hour, 0-23)",
+                "attributes": {
+                    "type": "number"
+                }
+            },
+            {
+                "type": "input",
+                "messageKey": "BG_NIGHT_END",
+                "defaultValue": "",
+                "label": "Night End (hour, 0-23)",
+                "attributes": {
+                    "type": "number"
+                }
             }
         ]
     },
