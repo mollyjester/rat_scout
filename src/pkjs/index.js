@@ -187,6 +187,7 @@ Pebble.addEventListener('ready', function() {
 Pebble.addEventListener('appmessage', function() {
     console.log('AppMessage received!');
     appSettings = getSettings();
+    sendSettings();
     fetchAllData(debug);
 });
 
