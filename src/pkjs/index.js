@@ -6,7 +6,7 @@ var clayConfig = require('./config.json');
 var clay = new Clay(clayConfig);
 var appSettings = {};
 
-var debug = true;
+var debug = false;
 
 // Configuration constants
 var CONFIG = {

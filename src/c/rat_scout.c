@@ -7,13 +7,13 @@ const GRect RECT_GLUCOSE_LAYER = {{0, 59}, {66, 29}};
 const GRect RECT_DELTA_LAYER = {{76, 67}, {66, 25}};
 const GRect RECT_DATE_LAYER = {{0, 87}, {66, 29}};
 const GRect RECT_WEEK_LAYER = {{76, 95}, {66, 25}};
-const GRect RECT_SUN_LAYER = {{26, 120}, {41, 25}};
-const GRect RECT_MOON_LAYER = {{26, 135}, {41, 25}};
+const GRect RECT_SUN_LAYER = {{25, 120}, {41, 25}};
+const GRect RECT_MOON_LAYER = {{25, 135}, {41, 25}};
 const GRect RECT_SUN_ICON = {{11, 129}, {12, 12}};
 const GRect RECT_MOON_ICON = {{11, 144}, {12, 12}};
-const GRect RECT_WEATHER_TEMP_LAYER = {{92, 127}, {48, 29}};
+const GRect RECT_WEATHER_TEMP_LAYER = {{86, 120}, {25, 25}};
 const GRect RECT_TEMP_ICON = {{75, 129}, {12, 12}};
-const GRect RECT_WEATHER_WIND_LAYER = {{92, 142}, {48, 25}};
+const GRect RECT_WEATHER_WIND_LAYER = {{118, 120}, {48, 25}};
 const GRect RECT_WIND_ICON = {{105, 129}, {12, 12}};
 // Status bar layout (16px tall panel at top)
 // Icons are 12x12, active bars are 12x2
