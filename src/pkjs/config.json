@@ -237,23 +237,23 @@
             {
                 "type": "checkboxgroup",
                 "messageKey": "GARBAGE_ORGANIC_DAYS",
-                "defaultValue": [false, true, false, true, false, true, false],
+                "defaultValue": [true, false, true, false, true, false, false],
                 "label": "Organic (green bag) days",
-                "options": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+                "options": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
             },
             {
                 "type": "checkboxgroup",
                 "messageKey": "GARBAGE_GREY_DAYS",
-                "defaultValue": [false, false, false, false, true, false, false],
+                "defaultValue": [false, false, false, true, false, false, false],
                 "label": "Grey bag days",
-                "options": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+                "options": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
             },
             {
                 "type": "checkboxgroup",
                 "messageKey": "GARBAGE_BLACK_DAYS",
-                "defaultValue": [false, false, true, false, false, false, true],
+                "defaultValue": [false, true, false, false, false, true, false],
                 "label": "Black bag days",
-                "options": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+                "options": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
             }
         ]
     },
