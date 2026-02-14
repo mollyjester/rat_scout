@@ -334,6 +334,8 @@ function useCachedAstronomyData(bgDictionary) {
         console.log('No cached astronomy data available');
         bgDictionary.SUNTIME = "N/A";
         bgDictionary.MOONTIME = "N/A";
+        bgDictionary.SUN_IS_RISING = 1;
+        bgDictionary.MOON_IS_RISING = 1;
         sendToPebble(bgDictionary, 'BG (no cache)');
         return false;
     }
@@ -376,6 +378,8 @@ function useCachedAstronomyData(bgDictionary) {
         bgDictionary.SUNTIME = times.sunTime || "N/A";
         bgDictionary.MOONTIME = times.moonTime || "N/A";
         bgDictionary.MOON_PHASE = times.moonPhase !== undefined ? times.moonPhase : 0;
+        bgDictionary.SUN_IS_RISING = times.sunIsRising ? 1 : 0;
+        bgDictionary.MOON_IS_RISING = times.moonIsRising ? 1 : 0;
         
         console.log('Using cached astronomy data');
         sendToPebble(bgDictionary, 'BG with cached astronomy');
@@ -384,6 +388,8 @@ function useCachedAstronomyData(bgDictionary) {
         console.error(`Error parsing cached data: ${e.message}`);
         bgDictionary.SUNTIME = "N/A";
         bgDictionary.MOONTIME = "N/A";
+        bgDictionary.SUN_IS_RISING = 1;
+        bgDictionary.MOON_IS_RISING = 1;
         sendToPebble(bgDictionary, 'BG (cache error)');
         return false;
     }
@@ -467,6 +473,8 @@ function completeAstronomyUpdate(bgDictionary, times) {
     bgDictionary.SUNTIME = times.sunTime || "N/A";
     bgDictionary.MOONTIME = times.moonTime || "N/A";
     bgDictionary.MOON_PHASE = times.moonPhase !== undefined ? times.moonPhase : 0;
+    bgDictionary.SUN_IS_RISING = times.sunIsRising ? 1 : 0;
+    bgDictionary.MOON_IS_RISING = times.moonIsRising ? 1 : 0;
     sendToPebble(bgDictionary, 'BG with astronomy');
 }
 
@@ -487,6 +495,8 @@ function fetchAndSendAstronomy(bgDictionary, attemptCount) {
         console.log('No astronomy API key configured, sending BG only');
         bgDictionary.SUNTIME = "N/A";
         bgDictionary.MOONTIME = "N/A";
+        bgDictionary.SUN_IS_RISING = 1;
+        bgDictionary.MOON_IS_RISING = 1;
         sendToPebble(bgDictionary, 'BG (no API key)');
         return;
     }
