@@ -40,11 +40,8 @@ const int BATTERY_SEGMENT_HEIGHT = 7;
 
 
 
-// Garbage collection schedule (next bag indicator)
-// Monday, Wednesday, Friday: Organic (O)
-// Tuesday, Saturday: Black (B)
-// Thursday: Grey (G)
-// Collection at 9am daily except Sunday
+// Garbage collection indicator — the JS side computes which bag to underscore
+// and sends a single GARBAGE_BAG value (0=none, 1=Organic, 2=Grey, 3=Black)
 
 // Data fetch timing (in seconds)
 const int FETCH_INTERVAL_SECONDS = 300;
@@ -138,6 +135,12 @@ static Layer *s_status_bar_layer;
 static bool s_bg_vibration = false;
 static int s_bg_low_threshold = 0;
 static int s_bg_high_threshold = 0;
+
+// Garbage bag type constants (received from JS)
+#define GARBAGE_BAG_NONE    0
+#define GARBAGE_BAG_ORGANIC 1
+#define GARBAGE_BAG_GREY    2
+#define GARBAGE_BAG_BLACK   3
 
 // BG zone tracking for one-shot vibration alerts
 typedef enum {
@@ -254,31 +257,31 @@ static void update_time(struct tm *tick_time, bool force_date) {
 static char s_cached_garbage_bag = '\0';
 
 /**
- * Update garbage collection indicator and weekday.
+ * Update garbage collection underscore indicator from JS-computed value.
+ * @param garbage_bag - GARBAGE_BAG_NONE/ORGANIC/GREY/BLACK
+ */
+static void update_garbage_bag(int garbage_bag) {
+    switch (garbage_bag) {
+        case GARBAGE_BAG_ORGANIC: s_cached_garbage_bag = 'O'; break;
+        case GARBAGE_BAG_GREY:    s_cached_garbage_bag = 'G'; break;
+        case GARBAGE_BAG_BLACK:   s_cached_garbage_bag = 'B'; break;
+        default:                  s_cached_garbage_bag = '\0'; break;
+    }
+    if (s_status_bar_layer) {
+        layer_mark_dirty(s_status_bar_layer);
+    }
+}
+
+/**
+ * Update weekday abbreviation display.
  * Accepts tick_time to avoid redundant time()/localtime() calls.
  * @param tick_time - Current broken-down time (NULL triggers fresh lookup)
  */
-static void update_garbage_indicator(struct tm *tick_time) {
+static void update_weekday(struct tm *tick_time) {
     time_t now;
     if (!tick_time) {
         now = time(NULL);
         tick_time = localtime(&now);
-    }
-    
-    // Cache the garbage bag type so draw_proc doesn't need time() calls
-    int wday = tick_time->tm_wday;
-    if (tick_time->tm_hour >= 9) {
-        wday = (wday + 1) % 7;
-    }
-    switch (wday) {
-        case 1: case 3: case 5: case 0: s_cached_garbage_bag = 'O'; break;
-        case 2: case 6:                 s_cached_garbage_bag = 'B'; break;
-        case 4:                         s_cached_garbage_bag = 'G'; break;
-        default:                        s_cached_garbage_bag = '\0'; break;
-    }
-    
-    if (s_status_bar_layer) {
-        layer_mark_dirty(s_status_bar_layer);
     }
     
     // Update 3-letter weekday abbreviation (uppercase)
@@ -453,12 +456,9 @@ static void update_delta_display(void) {
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     update_time(tick_time, false);
     
-    // Update garbage indicator only when it changes:
-    // - At midnight (day change)
-    // - At 9am (collection time cutoff)
-    if ((tick_time->tm_hour == 0 && tick_time->tm_min == 0) ||
-        (tick_time->tm_hour == 9 && tick_time->tm_min == 0)) {
-        update_garbage_indicator(tick_time);
+    // Update weekday abbreviation at midnight
+    if (tick_time->tm_hour == 0 && tick_time->tm_min == 0) {
+        update_weekday(tick_time);
     }
     
     time_t current_time = time(NULL);
@@ -683,8 +683,8 @@ static void main_window_load(Window *window) {
     layer_set_update_proc(s_status_bar_layer, status_bar_draw_proc);
     layer_add_child(window_layer, s_status_bar_layer);
     
-    // Initialize garbage indicator
-    update_garbage_indicator(NULL);
+    // Initialize weekday display
+    update_weekday(NULL);
 }
 
 static void main_window_unload(Window *window)
@@ -827,6 +827,12 @@ static void handle_settings(DictionaryIterator *iterator) {
             s_date_format_mmdd = new_mmdd;
             update_time(NULL, true);
         }
+    }
+
+    // Garbage collection: receive pre-computed bag type from JS
+    Tuple *garbage_bag_tuple = dict_find(iterator, MESSAGE_KEY_GARBAGE_BAG);
+    if (garbage_bag_tuple) {
+        update_garbage_bag(garbage_bag_tuple->value->int32);
     }
 }
 

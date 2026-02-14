@@ -30,6 +30,7 @@
     "messageKeys": [
       "DEX_LOGIN",
       "DEX_PASSWORD",
+      "DEX_REGION",
       "BG_UNITS",
       "BG_SHOW_DELTA",
       "BG_SHOW_TIMEDELTA",
@@ -50,7 +51,8 @@
       "WEATHER_TEMP",
       "WEATHER_WIND",
       "WEATHER_UMBRELLA",
-      "DATE_FORMAT"
+      "DATE_FORMAT",
+      "GARBAGE_BAG"
     ],
     "resources": {
       "media": [
