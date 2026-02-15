@@ -187,7 +187,10 @@ enum PersistKeys {
     PERSIST_KEY_WEATHER_WIND,
     PERSIST_KEY_MOON_PHASE,
     PERSIST_KEY_SUN_IS_RISING,
-    PERSIST_KEY_MOON_IS_RISING
+    PERSIST_KEY_MOON_IS_RISING,
+    PERSIST_KEY_HOURLY_VIBRATION,
+    PERSIST_KEY_UMBRELLA_ACTIVE,
+    PERSIST_KEY_GARBAGE_BAG
 };
 
 /**
@@ -267,11 +270,16 @@ static char s_cached_garbage_bag = '\0';
  * @param garbage_bag - GARBAGE_BAG_NONE/ORGANIC/GREY/BLACK
  */
 static void update_garbage_bag(int garbage_bag) {
+    char new_bag;
     switch (garbage_bag) {
-        case GARBAGE_BAG_ORGANIC: s_cached_garbage_bag = 'O'; break;
-        case GARBAGE_BAG_GREY:    s_cached_garbage_bag = 'G'; break;
-        case GARBAGE_BAG_BLACK:   s_cached_garbage_bag = 'B'; break;
-        default:                  s_cached_garbage_bag = '\0'; break;
+        case GARBAGE_BAG_ORGANIC: new_bag = 'O'; break;
+        case GARBAGE_BAG_GREY:    new_bag = 'G'; break;
+        case GARBAGE_BAG_BLACK:   new_bag = 'B'; break;
+        default:                  new_bag = '\0'; break;
+    }
+    if (s_cached_garbage_bag != new_bag) {
+        s_cached_garbage_bag = new_bag;
+        persist_write_int(PERSIST_KEY_GARBAGE_BAG, garbage_bag);
     }
     if (s_status_bar_layer) {
         layer_mark_dirty(s_status_bar_layer);
@@ -733,6 +741,23 @@ static void main_window_load(Window *window) {
     s_weekday_layer = create_text_layer(RECT_WEEKDAY_LAYER, s_extra_info_font, GTextAlignmentLeft);
     layer_add_child(window_layer, text_layer_get_layer(s_weekday_layer));
 
+    // Restore persisted status bar state
+    if (persist_exists(PERSIST_KEY_HOURLY_VIBRATION)) {
+        s_hourly_vibration = persist_read_bool(PERSIST_KEY_HOURLY_VIBRATION);
+    }
+    if (persist_exists(PERSIST_KEY_UMBRELLA_ACTIVE)) {
+        s_umbrella_active = persist_read_bool(PERSIST_KEY_UMBRELLA_ACTIVE);
+    }
+    if (persist_exists(PERSIST_KEY_GARBAGE_BAG)) {
+        int persisted_bag = persist_read_int(PERSIST_KEY_GARBAGE_BAG);
+        switch (persisted_bag) {
+            case GARBAGE_BAG_ORGANIC: s_cached_garbage_bag = 'O'; break;
+            case GARBAGE_BAG_GREY:    s_cached_garbage_bag = 'G'; break;
+            case GARBAGE_BAG_BLACK:   s_cached_garbage_bag = 'B'; break;
+            default:                  s_cached_garbage_bag = '\0'; break;
+        }
+    }
+
     // Create status bar underscore layer (draws active indicator bars)
     s_status_bar_layer = layer_create(RECT_STATUS_BAR);
     layer_set_update_proc(s_status_bar_layer, status_bar_draw_proc);
@@ -856,6 +881,7 @@ static void handle_settings(DictionaryIterator *iterator) {
         bool new_hourly = hourly_vibe_tuple->value->int8 == 1;
         if (s_hourly_vibration != new_hourly) {
             s_hourly_vibration = new_hourly;
+            persist_write_bool(PERSIST_KEY_HOURLY_VIBRATION, new_hourly);
             if (s_status_bar_layer) {
                 layer_mark_dirty(s_status_bar_layer);
             }
@@ -991,6 +1017,7 @@ static void handle_weather_message(DictionaryIterator *iterator) {
     bool umbrella = weather_umbrella_tuple && weather_umbrella_tuple->value->int8 == 1;
     if (s_umbrella_active != umbrella) {
         s_umbrella_active = umbrella;
+        persist_write_bool(PERSIST_KEY_UMBRELLA_ACTIVE, umbrella);
         if (s_status_bar_layer) {
             layer_mark_dirty(s_status_bar_layer);
         }
