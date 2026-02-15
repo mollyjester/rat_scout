@@ -749,7 +749,13 @@ static void main_window_load(Window *window) {
         s_umbrella_active = persist_read_bool(PERSIST_KEY_UMBRELLA_ACTIVE);
     }
     if (persist_exists(PERSIST_KEY_GARBAGE_BAG)) {
-        update_garbage_bag(persist_read_int(PERSIST_KEY_GARBAGE_BAG));
+        int persisted_bag = persist_read_int(PERSIST_KEY_GARBAGE_BAG);
+        switch (persisted_bag) {
+            case GARBAGE_BAG_ORGANIC: s_cached_garbage_bag = 'O'; break;
+            case GARBAGE_BAG_GREY:    s_cached_garbage_bag = 'G'; break;
+            case GARBAGE_BAG_BLACK:   s_cached_garbage_bag = 'B'; break;
+            default:                  s_cached_garbage_bag = '\0'; break;
+        }
     }
 
     // Create status bar underscore layer (draws active indicator bars)
