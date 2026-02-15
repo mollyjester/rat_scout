@@ -10,8 +10,8 @@
     "pebble-clay": "^1.0.4"
   },
   "pebble": {
-    "displayName": "Rat scout",
-    "uuid": "00000000-0000-0000-0000-000000000001",
+    "displayName": "Rat Scout",
+    "uuid": "f41022a2-b149-42ac-a98d-2afbf84ca841",
     "sdkVersion": "3",
     "enableMultiJS": true,
     "capabilities": [
