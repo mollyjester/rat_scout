@@ -2,8 +2,8 @@
 
 // ===== Configuration Constants =====
 // Layer dimensions and positioning
-const GRect RECT_TIME_LAYER = {{1, -1}, {144, 66}};
-const GRect RECT_GLUCOSE_LAYER = {{0, 59}, {66, 29}};
+const GRect RECT_TIME_LAYER = {{1, -7}, {144, 66}};
+const GRect RECT_GLUCOSE_LAYER = {{0, 54}, {66, 34}};
 const GRect RECT_DELTA_LAYER = {{76, 67}, {66, 25}};
 const GRect RECT_DATE_LAYER = {{0, 87}, {66, 29}};
 const GRect RECT_WEEK_LAYER = {{76, 95}, {66, 25}};
@@ -38,8 +38,6 @@ const int BATTERY_HEIGHT = 9;
 const int BATTERY_BORDER = 1;
 const int BATTERY_SEGMENT_HEIGHT = 7;
 
-
-
 // Garbage collection indicator — the JS side computes which bag to underscore
 // and sends a single GARBAGE_BAG value (0=none, 1=Organic, 2=Grey, 3=Black)
 
@@ -73,6 +71,7 @@ const int APPMESSAGE_OUTBOX = 512;
 static Window *s_main_window;
 static GFont s_time_font;
 static GFont s_main_font;
+static GFont s_glucose_font;
 static GFont s_extra_info_font;
 
 static TextLayer *s_time_layer;
@@ -595,6 +594,7 @@ static void main_window_load(Window *window) {
     s_time_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_HUMAROID_64));
     s_main_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_HUMAROID_28));
     s_extra_info_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_HUMAROID_20));
+    s_glucose_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_HUMAROID_32));
 
     // Create time layer
     s_time_layer = create_text_layer(RECT_TIME_LAYER, s_time_font, GTextAlignmentCenter);
@@ -602,7 +602,7 @@ static void main_window_load(Window *window) {
     layer_add_child(window_layer, text_layer_get_layer(s_time_layer));
 
     // Create glucose layer
-    s_glucose_layer = create_text_layer(RECT_GLUCOSE_LAYER, s_main_font, GTextAlignmentRight);
+    s_glucose_layer = create_text_layer(RECT_GLUCOSE_LAYER, s_glucose_font, GTextAlignmentRight);
     if (persist_exists(PERSIST_KEY_BG)) {
         persist_read_string(PERSIST_KEY_BG, s_bg_buffer, sizeof(s_bg_buffer));
         text_layer_set_text(s_glucose_layer, s_bg_buffer);
