@@ -708,7 +708,7 @@ static void main_window_load(Window *window) {
 #endif
 
     // Create battery indicator layer (sized to actual draw area in top-right)
-    GRect battery_rect = GRect(bounds.size.w - BATTERY_WIDTH - 2, 0,
+    GRect battery_rect = GRect(bounds.size.w - BATTERY_WIDTH - 2, 2,
                                 BATTERY_WIDTH + 2, BATTERY_HEIGHT + 4);
     s_battery_layer = layer_create(battery_rect);
     layer_set_update_proc(s_battery_layer, battery_draw_proc);
