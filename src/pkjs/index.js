@@ -7,7 +7,7 @@ var clayConfig = require('./config.json');
 var clay = new Clay(clayConfig);
 var appSettings = {};
 
-var debug = false;
+var designMode = false;
 
 // Configuration constants
 var CONFIG = {
@@ -203,16 +203,59 @@ function sendSettings() {
 }
 
 /**
- * Fetch all watchface data (glucose reading and weather)
- * @param {boolean} isTestMode - Whether to use test data
+ * Send fixed data to the watchface for layout/design verification.
+ * Populates every field with sensible placeholder values so all UI
+ * elements are visible and can be inspected.
  */
-function fetchAllData(isTestMode) {
-    if (isTestMode) {
-        console.log('Debug mode enabled, using test data');
-        fetchTestGlucoseReading();
-    } else {
-        fetchGlucoseReading();
-    }
+function sendDesignModeData() {
+    console.log('Design mode: sending fixed layout data');
+
+    // Fixed settings
+    var settingsDictionary = {
+        "BG_SHOW_DELTA": 1,
+        "BG_SHOW_TIMEDELTA": 1,
+        "BG_UNITS": "mg/dL",
+        "HOURLY_VIBRATION": 1,
+        "BG_VIBRATION": 0,
+        "BG_LOW_THRESHOLD": 700,
+        "BG_HIGH_THRESHOLD": 1800,
+        "ASTRO_API_KEY": "",
+        "DATE_FORMAT": "dd.mm",
+        "GARBAGE_BAG": GARBAGE_BAG_ORGANIC
+    };
+    sendToPebble(settingsDictionary, 'Design settings');
+
+    // Fixed BG + astronomy
+    var bgDictionary = {
+        "BG_UNITS": "mg/dL",
+        "BG_SHOW_DELTA": 1,
+        "BG_SHOW_TIMEDELTA": 1,
+        "BG": "120",
+        "BGDELTA": "+5",
+        "TIMEDELTA": 240,
+        "TIMESTAMP": Math.floor((Date.now() - 4 * 60 * 1000) / 1000),
+        "SUNTIME": "06:45",
+        "MOONTIME": "21:30",
+        "MOON_PHASE": 4,
+        "SUN_IS_RISING": 1,
+        "MOON_IS_RISING": 0
+    };
+    sendToPebble(bgDictionary, 'Design BG + astronomy');
+
+    // Fixed weather
+    var weatherDictionary = {
+        "WEATHER_TEMP": "22",
+        "WEATHER_WIND": "12",
+        "WEATHER_UMBRELLA": 1
+    };
+    sendToPebble(weatherDictionary, 'Design weather');
+}
+
+/**
+ * Fetch all watchface data (glucose reading and weather)
+ */
+function fetchAllData() {
+    fetchGlucoseReading();
     // Fetch weather independently (sent as separate message)
     fetchAndSendWeather();
 }
@@ -220,25 +263,37 @@ function fetchAllData(isTestMode) {
 // Listen for when the watchface is opened
 Pebble.addEventListener('ready', function() {
     console.log('PebbleKit JS ready!');
+    if (designMode) {
+        sendDesignModeData();
+        return;
+    }
     appSettings = getSettings();
     sendSettings();
-    fetchAllData(debug);
+    fetchAllData();
 });
 
 // Listen for AppMessage from watchface
 Pebble.addEventListener('appmessage', function() {
     console.log('AppMessage received!');
+    if (designMode) {
+        sendDesignModeData();
+        return;
+    }
     appSettings = getSettings();
     sendSettings();
-    fetchAllData(debug);
+    fetchAllData();
 });
 
 // Listen for when the settings form is closed (saved)
 Pebble.addEventListener('webviewclosed', function() {
     console.log('Settings form closed');
+    if (designMode) {
+        sendDesignModeData();
+        return;
+    }
     appSettings = getSettings();
     sendSettings();
-    fetchAllData(debug);
+    fetchAllData();
 });
 
 /**
@@ -738,21 +793,3 @@ function sendWeatherToPebble(data) {
     sendToPebble(dictionary, 'Weather');
 }
 
-/**
- * Fetch a test glucose reading (for debugging)
- */
-function fetchTestGlucoseReading() {
-    var readingTimestamp = (Date.now() - (4.3 * 60 * 1000)) / 1000;
-    
-    var dictionary = {
-        "BG_UNITS": "mmol/L",
-        "BG_SHOW_DELTA": 1,
-        "BG_SHOW_TIMEDELTA": 0,
-        "BG": (259.2 / CONFIG.MMOL_CONVERSION_FACTOR).toFixed(1),
-        "BGDELTA": formatBGDelta(16.2, "mmol/L"),
-        "TIMEDELTA": 1000,
-        "TIMESTAMP": readingTimestamp
-    };
-
-    fetchAndSendAstronomy(dictionary);
-}

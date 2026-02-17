@@ -60,22 +60,26 @@
         {
           "type": "font",
           "name": "FONT_HUMAROID_64",
-          "file": "fonts/Humaroid.ttf"
+          "file": "fonts/Humaroid.ttf",
+          "characterRegex": "[0-9:]"
         },
         {
           "type": "font",
           "name": "FONT_HUMAROID_20",
-          "file": "fonts/Humaroid.ttf"
+          "file": "fonts/Humaroid.ttf",
+          "characterRegex": "[0-9.:+/m ADEFHIMNORSTUW-]"
         },
         {
           "type": "font",
           "name": "FONT_HUMAROID_28",
-          "file": "fonts/Humaroid.ttf"
+          "file": "fonts/Humaroid.ttf",
+          "characterRegex": "[0-9. ]"
         },
         {
           "type": "font",
           "name": "FONT_HUMAROID_32",
-          "file": "fonts/Humaroid.ttf"
+          "file": "fonts/Humaroid.ttf",
+          "characterRegex": "[0-9.Ladgino]"
         },
         {
           "type": "bitmap",
