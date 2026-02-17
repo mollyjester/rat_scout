@@ -91,8 +91,8 @@ function fetchAstronomyData(apiKey, latOrCallback, lonOrCallback, dateOrCallback
         // fetchAstronomyData(apiKey, lat, lon, onSuccess, onError)
         lat = latOrCallback;
         lon = lonOrCallback;
-        onSuccess = dateOrCallback;
         onError = onSuccess;
+        onSuccess = dateOrCallback;
         date = undefined;
     } else if (typeof onSuccess === 'undefined' && typeof onError === 'function') {
         // fetchAstronomyData(apiKey, lat, lon, date, onSuccess)

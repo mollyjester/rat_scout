@@ -7,7 +7,7 @@ var clayConfig = require('./config.json');
 var clay = new Clay(clayConfig);
 var appSettings = {};
 
-var designMode = false;
+var designMode = true;
 
 // Configuration constants
 var CONFIG = {
@@ -306,7 +306,7 @@ function formatBGValue(value, units) {
     if (units === 'mmol/L') {
         return (value / CONFIG.MMOL_CONVERSION_FACTOR).toFixed(1);
     }
-    return value;
+    return String(value);
 }
 
 /**
@@ -318,8 +318,8 @@ function formatBGValue(value, units) {
 function formatBGDelta(delta, units) {
     var formatted = units === 'mmol/L' 
         ? (delta / CONFIG.MMOL_CONVERSION_FACTOR).toFixed(1) 
-        : delta;
-    return formatted > 0 ? `+${formatted}` : formatted;
+        : String(delta);
+    return delta > 0 ? `+${formatted}` : formatted;
 }
 
 /**

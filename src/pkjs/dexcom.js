@@ -415,9 +415,10 @@ Dexcom.prototype._handleServerError = function(error) {
                 self.getLatestGlucoseWithDelta();
             });
         } else {
-            console.error(`Session error: ${error.Code}, max retries reached (${this.retryCount})`);
+            var attempts = this.retryCount;
             this.retryCount = 0;
-            throw new Error(`Session validation failed after ${this.retryCount} attempts`);
+            console.error(`Session error: ${error.Code}, max retries reached (${attempts})`);
+            throw new Error(`Session validation failed after ${attempts} attempts`);
         }
     } else {
         this.retryCount = 0;
