@@ -4,10 +4,56 @@
 static uint8_t s_battery_level = 100;
 static bool s_is_charging = false;
 
+// ===== Charging Symbol Helpers =====
+
+/**
+ * Draw a single pixel with color inverted against the charge fill.
+ * Pixels over the filled (black) area are drawn white;
+ * pixels over the unfilled (white) area are drawn black.
+ */
+static void draw_charging_pixel(GContext *ctx, int x, int y, int boundary_x) {
+    graphics_context_set_stroke_color(ctx, x < boundary_x ? GColorWhite : GColorBlack);
+    graphics_draw_pixel(ctx, GPoint(x, y));
+}
+
+/**
+ * Draw a horizontal line split at the charge boundary with inverted colors.
+ */
+static void draw_charging_hline(GContext *ctx, int x1, int x2, int y, int boundary_x) {
+    int min_x = x1 < x2 ? x1 : x2;
+    int max_x = x1 > x2 ? x1 : x2;
+
+    if (max_x < boundary_x) {
+        // Entirely in charged (black) area -> draw white
+        graphics_context_set_stroke_color(ctx, GColorWhite);
+        graphics_draw_line(ctx, GPoint(min_x, y), GPoint(max_x, y));
+    } else if (min_x >= boundary_x) {
+        // Entirely in uncharged (white) area -> draw black
+        graphics_context_set_stroke_color(ctx, GColorBlack);
+        graphics_draw_line(ctx, GPoint(min_x, y), GPoint(max_x, y));
+    } else {
+        // Crosses boundary - split into two segments
+        graphics_context_set_stroke_color(ctx, GColorWhite);
+        graphics_draw_line(ctx, GPoint(min_x, y), GPoint(boundary_x - 1, y));
+        graphics_context_set_stroke_color(ctx, GColorBlack);
+        graphics_draw_line(ctx, GPoint(boundary_x, y), GPoint(max_x, y));
+    }
+}
+
+/**
+ * Draw a vertical line with color inverted against the charge fill.
+ */
+static void draw_charging_vline(GContext *ctx, int x, int y1, int y2, int boundary_x) {
+    graphics_context_set_stroke_color(ctx, x < boundary_x ? GColorWhite : GColorBlack);
+    graphics_draw_line(ctx, GPoint(x, y1), GPoint(x, y2));
+}
+
 // ===== Drawing Callbacks =====
 
 /**
- * Render battery indicator (layer is sized to fit exactly)
+ * Render battery indicator (layer is sized to fit exactly).
+ * When charging, the charge level fill is shown and the charging symbols
+ * (arrow + plus) are drawn with colors inverted at the fill boundary.
  */
 void battery_draw_proc(Layer *layer, GContext *ctx) {
     int x_start = 0;
@@ -21,30 +67,41 @@ void battery_draw_proc(Layer *layer, GContext *ctx) {
     // Draw battery terminal (small nub on right side)
     graphics_draw_rect(ctx, GRect(x_start + BATTERY_WIDTH - 4, y_start + 2, 3, BATTERY_HEIGHT - 4));
     
-    // Draw charging state or battery level
+    // Calculate and draw battery charge level (used for both states)
+    int usable_width = BATTERY_WIDTH - 3 - 2;
+    int filled_width = (s_battery_level * usable_width) / 100;
+    graphics_context_set_fill_color(ctx, GColorBlack);
+    graphics_fill_rect(ctx, GRect(x_start + 1, y_start + 1, filled_width, BATTERY_SEGMENT_HEIGHT),
+                      0, GCornerNone);
+
     if (s_is_charging) {
+        // Charge boundary: x where filled (black) meets unfilled (white)
+        int boundary_x = x_start + 1 + filled_width;
         int ch_x = x_start + 4;
         int ch_y = y_start + 2;
-        
-        graphics_context_set_stroke_color(ctx, GColorBlack);
-        graphics_context_set_stroke_width(ctx, BATTERY_BORDER);
-        
-        // Arrow pointing left
-        graphics_draw_line(ctx, GPoint(ch_x, ch_y + 2), GPoint(ch_x + 2, ch_y));
-        graphics_draw_line(ctx, GPoint(ch_x + 2, ch_y), GPoint(ch_x + 2, ch_y + 4));
-        graphics_draw_line(ctx, GPoint(ch_x + 2, ch_y + 4), GPoint(ch_x, ch_y + 2));
-        graphics_draw_line(ctx, GPoint(ch_x, ch_y + 2), GPoint(ch_x + 9, ch_y + 2));
 
-        // Plus sign next to arrow
-        graphics_draw_line(ctx, GPoint(ch_x + 12, ch_y + 2), GPoint(ch_x + 14, ch_y + 2));
-        graphics_draw_line(ctx, GPoint(ch_x + 13, ch_y + 1), GPoint(ch_x + 13, ch_y + 3));
-    } else {
-        // Calculate and draw battery charge level
-        int usable_width = BATTERY_WIDTH - 3 - 2;
-        int filled_width = (s_battery_level * usable_width) / 100;
-        graphics_context_set_fill_color(ctx, GColorBlack);
-        graphics_fill_rect(ctx, GRect(x_start + 1, y_start + 1, filled_width, BATTERY_SEGMENT_HEIGHT), 
-                          0, GCornerNone);
+        graphics_context_set_stroke_width(ctx, 1);
+
+        // Arrow head - top diagonal pixels: (ch_x, ch_y+2) to (ch_x+2, ch_y)
+        draw_charging_pixel(ctx, ch_x,     ch_y + 2, boundary_x);
+        draw_charging_pixel(ctx, ch_x + 1, ch_y + 1, boundary_x);
+        draw_charging_pixel(ctx, ch_x + 2, ch_y,     boundary_x);
+
+        // Arrow head - right side vertical: (ch_x+2, ch_y) to (ch_x+2, ch_y+4)
+        draw_charging_vline(ctx, ch_x + 2, ch_y, ch_y + 4, boundary_x);
+
+        // Arrow head - bottom diagonal pixels: (ch_x+2, ch_y+4) to (ch_x, ch_y+2)
+        draw_charging_pixel(ctx, ch_x + 2, ch_y + 4, boundary_x);
+        draw_charging_pixel(ctx, ch_x + 1, ch_y + 3, boundary_x);
+
+        // Arrow shaft: horizontal from (ch_x, ch_y+2) to (ch_x+9, ch_y+2)
+        draw_charging_hline(ctx, ch_x, ch_x + 9, ch_y + 2, boundary_x);
+
+        // Plus sign horizontal: (ch_x+12, ch_y+2) to (ch_x+14, ch_y+2)
+        draw_charging_hline(ctx, ch_x + 12, ch_x + 14, ch_y + 2, boundary_x);
+
+        // Plus sign vertical: (ch_x+13, ch_y+1) to (ch_x+13, ch_y+3)
+        draw_charging_vline(ctx, ch_x + 13, ch_y + 1, ch_y + 3, boundary_x);
     }
 }
 
