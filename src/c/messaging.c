@@ -86,7 +86,12 @@ static void handle_glucose_message(DictionaryIterator *iterator) {
     if (timestamp_tuple) {
         s_last_reading_timestamp = timestamp_tuple->value->int32;
         persist_write_int(PERSIST_KEY_TIMESTAMP, s_last_reading_timestamp);
-        s_next_fetch_time = s_last_reading_timestamp + FETCH_INTERVAL_SECONDS + FETCH_INTERVAL_JITTER;
+        if (s_last_reading_timestamp > 0) {
+            s_next_fetch_time = s_last_reading_timestamp + FETCH_INTERVAL_SECONDS + FETCH_INTERVAL_JITTER;
+        } else {
+            // No valid timestamp — fall back to periodic fetch pattern
+            s_next_fetch_time = 0;
+        }
         update_delta_display();
     }
     

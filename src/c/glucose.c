@@ -24,16 +24,31 @@ static char s_time_delta_buffer[BUFFER_TIME_DELTA];
 /**
  * Update delta display based on current settings.
  * Implements progressive staleness indication:
- *   < 20 min:  show real BG value + delta + time-since-reading
- *   >= 20 min: replace BG with "---", show only time-since-reading
- *   >= 60 min: wipe persisted BG/delta/timestamp data
+ *   no timestamp: show "---", hide deltas (JS returned no data)
+ *   < 20 min:    show real BG value + delta + time-since-reading
+ *   >= 20 min:   replace BG with "---", value and time deltas remain
+ *   >= 60 min:   wipe persisted BG/delta/timestamp, show only "---"
  * Skips text layer update if the formatted string hasn't changed.
  */
 void update_delta_display(void) {
-    if (s_last_reading_timestamp <= 0) return;
+    // No valid timestamp — JS never returned data or data was wiped
+    if (s_last_reading_timestamp <= 0) {
+        if (strcmp(s_bg_buffer, "---") != 0) {
+            snprintf(s_bg_buffer, sizeof(s_bg_buffer), "---");
+            text_layer_set_text(s_glucose_layer, s_bg_buffer);
+        }
+        s_delta_buffer[0] = '\0';
+        text_layer_set_text(s_glucose_delta_layer, s_delta_buffer);
+        layer_set_hidden(text_layer_get_layer(s_glucose_delta_layer), true);
+        return;
+    }
     
     time_t current_time = time(NULL);
-    int minutes_since_reading = (current_time - s_last_reading_timestamp) / 60;
+    
+    // Guard against future timestamps (clock sync / timezone issues)
+    int minutes_since_reading = (current_time > s_last_reading_timestamp)
+        ? (int)((current_time - s_last_reading_timestamp) / 60)
+        : 0;
     
     // Tier 3: Very stale — wipe persisted data to prevent ghost readings
     if (minutes_since_reading >= STALE_WIPE_THRESHOLD_MINUTES) {
@@ -53,7 +68,7 @@ void update_delta_display(void) {
     
     bool is_stale = minutes_since_reading >= STALE_THRESHOLD_MINUTES;
     
-    // Tier 2: Stale — replace BG with "---" (CGM community standard)
+    // Tier 2: Stale — replace BG with "---", keep deltas visible
     if (is_stale) {
         if (strcmp(s_bg_buffer, "---") != 0) {
             snprintf(s_bg_buffer, sizeof(s_bg_buffer), "---");
@@ -63,12 +78,10 @@ void update_delta_display(void) {
     
     snprintf(s_time_delta_buffer, sizeof(s_time_delta_buffer), "%dm", minutes_since_reading);
     
-    // Build new delta string into a temp buffer and compare before updating
-    // When stale, show only time delta (BG delta is meaningless for old data)
+    // Build new delta string — same logic for stale and fresh readings.
+    // When stale (20-60 min), value and time deltas remain visible.
     char new_delta[BUFFER_DELTA];
-    if (is_stale) {
-        snprintf(new_delta, sizeof(new_delta), "%s", s_time_delta_buffer);
-    } else if (s_show_bg_delta && s_show_time_delta) {
+    if (s_show_bg_delta && s_show_time_delta) {
         snprintf(new_delta, sizeof(new_delta), "%s %s", s_delta_raw_buffer, s_time_delta_buffer);
     } else if (s_show_bg_delta) {
         snprintf(new_delta, sizeof(new_delta), "%s", s_delta_raw_buffer);
@@ -78,7 +91,7 @@ void update_delta_display(void) {
         new_delta[0] = '\0';
     }
     
-    bool hidden = !is_stale && !s_show_bg_delta && !s_show_time_delta;
+    bool hidden = !s_show_bg_delta && !s_show_time_delta;
     layer_set_hidden(text_layer_get_layer(s_glucose_delta_layer), hidden);
     
     // Only update text layer if the string actually changed
@@ -103,14 +116,18 @@ void check_bg_threshold_vibration(const char *bg_str) {
     // Parse BG string to x10 integer (e.g. "120" -> 1200, "6.7" -> 67)
     int bg_x10 = 0;
     int decimal_places = -1;
+    bool has_digit = false;
     for (int i = 0; bg_str[i] != '\0'; i++) {
         if (bg_str[i] == '.') {
             decimal_places = 0;
         } else if (bg_str[i] >= '0' && bg_str[i] <= '9') {
+            has_digit = true;
             bg_x10 = bg_x10 * 10 + (bg_str[i] - '0');
             if (decimal_places >= 0) decimal_places++;
         }
     }
+    // Skip non-numeric values (e.g., "---" for stale readings)
+    if (!has_digit) return;
     // Scale to x10: if no decimal, multiply by 10; if 1 decimal place, already x10
     if (decimal_places <= 0) {
         bg_x10 *= 10;

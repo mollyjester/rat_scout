@@ -38,8 +38,9 @@ var AppIDs = {
  * @param {string} password - Dexcom password
  * @param {Function} onResults - Callback on successful glucose fetch
  * @param {string} region - Region code (us, ous, jp)
+ * @param {Function} onError - Optional callback on fetch failure
  */
-function Dexcom(username, password, onResults, region) {
+function Dexcom(username, password, onResults, region, onError) {
     this.username = username;
     this.password = password;
     this.region = (region || Regions.OUS).toLowerCase();
@@ -48,6 +49,7 @@ function Dexcom(username, password, onResults, region) {
     this.sessionId = null;
     this.accountId = null;
     this.onResults = onResults;
+    this.onError = onError || function() {};
 }
 
 /**
@@ -326,17 +328,20 @@ Dexcom.prototype._fetchGlucoseReadings = function() {
                 }
             } catch (error) {
                 console.error(`Error processing response: ${error.message}`);
+                self.onError(error.message || 'Unknown error');
             }
         };
 
         req.onerror = function() {
             if (timeoutHandle) clearTimeout(timeoutHandle);
             console.error('Network error fetching glucose readings');
+            self.onError('Network error');
         };
 
         req.ontimeout = function() {
             if (timeoutHandle) clearTimeout(timeoutHandle);
             console.error('Timeout fetching glucose readings (15s)');
+            self.onError('Timeout');
         };
 
         // Fallback timeout using setTimeout for better compatibility

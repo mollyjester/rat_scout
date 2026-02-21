@@ -344,6 +344,18 @@ function buildGlucoseDictionary(result, settings) {
 }
 
 /**
+ * Send "no data" indication to the watchface.
+ * Sets BG to "---" and timestamp to 0 so the C side shows stale state.
+ */
+function sendNoGlucoseData() {
+    var dictionary = {
+        "BG": "---",
+        "TIMESTAMP": 0
+    };
+    sendToPebble(dictionary, 'No glucose data');
+}
+
+/**
  * Fetch glucose reading from Dexcom Share API
  */
 function fetchGlucoseReading() {
@@ -351,6 +363,7 @@ function fetchGlucoseReading() {
 
     if (!appSettings || !appSettings.DEX_LOGIN || !appSettings.DEX_PASSWORD) {
         console.error('No Dexcom login credentials configured');
+        sendNoGlucoseData();
         return;
     }
 
@@ -372,7 +385,11 @@ function fetchGlucoseReading() {
             // Fetch and combine astronomy data
             fetchAndSendAstronomy(dictionary);
         },
-        appSettings.DEX_REGION
+        appSettings.DEX_REGION,
+        function(error) {
+            console.error('Glucose fetch failed: ' + error);
+            sendNoGlucoseData();
+        }
     );
 
     if (accountId && sessionId) {
@@ -384,6 +401,7 @@ function fetchGlucoseReading() {
         dex.getLatestGlucoseWithDelta();
     } catch (error) {
         console.error(`Error fetching glucose: ${error.message || error}`);
+        sendNoGlucoseData();
     }
 }
 
