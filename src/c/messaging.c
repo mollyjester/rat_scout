@@ -34,7 +34,7 @@ static void handle_settings(DictionaryIterator *iterator) {
     }
 
     Tuple *date_format_tuple = dict_find(iterator, MESSAGE_KEY_DATE_FORMAT);
-    if (date_format_tuple && date_format_tuple->value->cstring) {
+    if (date_format_tuple && date_format_tuple->length > 0) {
         bool new_mmdd = strcmp(date_format_tuple->value->cstring, "mm.dd") == 0;
         if (s_date_format_mmdd != new_mmdd) {
             s_date_format_mmdd = new_mmdd;
@@ -92,14 +92,14 @@ static void handle_glucose_message(DictionaryIterator *iterator) {
     
     // Update astronomy data (bundled with glucose message)
     Tuple *suntime_tuple = dict_find(iterator, MESSAGE_KEY_SUNTIME);
-    if (suntime_tuple && suntime_tuple->value->cstring) {
+    if (suntime_tuple && suntime_tuple->length > 0) {
         snprintf(s_sun_time_buffer, sizeof(s_sun_time_buffer), "%s", suntime_tuple->value->cstring);
         text_layer_set_text(s_sun_time_layer, s_sun_time_buffer);
         persist_write_string_if_changed(PERSIST_KEY_SUN_TIME, s_sun_time_buffer, sizeof(s_sun_time_buffer));
     }
     
     Tuple *moontime_tuple = dict_find(iterator, MESSAGE_KEY_MOONTIME);
-    if (moontime_tuple && moontime_tuple->value->cstring) {
+    if (moontime_tuple && moontime_tuple->length > 0) {
         snprintf(s_moon_time_buffer, sizeof(s_moon_time_buffer), "%s", moontime_tuple->value->cstring);
         text_layer_set_text(s_moon_time_layer, s_moon_time_buffer);
         persist_write_string_if_changed(PERSIST_KEY_MOON_TIME, s_moon_time_buffer, sizeof(s_moon_time_buffer));
@@ -141,7 +141,7 @@ static void handle_glucose_message(DictionaryIterator *iterator) {
  */
 static void handle_weather_message(DictionaryIterator *iterator) {
     Tuple *weather_temp_tuple = dict_find(iterator, MESSAGE_KEY_WEATHER_TEMP);
-    if (!weather_temp_tuple || !weather_temp_tuple->value->cstring) return;
+    if (!weather_temp_tuple || weather_temp_tuple->length == 0) return;
 
     // Update umbrella status indicator
     Tuple *weather_umbrella_tuple = dict_find(iterator, MESSAGE_KEY_WEATHER_UMBRELLA);
@@ -161,7 +161,7 @@ static void handle_weather_message(DictionaryIterator *iterator) {
     
     // Update wind speed display
     Tuple *weather_wind_tuple = dict_find(iterator, MESSAGE_KEY_WEATHER_WIND);
-    if (weather_wind_tuple && weather_wind_tuple->value->cstring) {
+    if (weather_wind_tuple && weather_wind_tuple->length > 0) {
         snprintf(s_weather_wind_buffer, sizeof(s_weather_wind_buffer), "%s", weather_wind_tuple->value->cstring);
         text_layer_set_text(s_weather_wind_layer, s_weather_wind_buffer);
         persist_write_string_if_changed(PERSIST_KEY_WEATHER_WIND, s_weather_wind_buffer, sizeof(s_weather_wind_buffer));
