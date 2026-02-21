@@ -55,7 +55,7 @@ void update_delta_display(void) {
     
     // Tier 2: Stale — replace BG with "---" (CGM community standard)
     if (is_stale) {
-        if (strncmp(s_bg_buffer, "---", sizeof(s_bg_buffer)) != 0) {
+        if (strcmp(s_bg_buffer, "---") != 0) {
             snprintf(s_bg_buffer, sizeof(s_bg_buffer), "---");
             text_layer_set_text(s_glucose_layer, s_bg_buffer);
         }
