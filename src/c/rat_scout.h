@@ -31,7 +31,8 @@ enum PersistKeys {
     PERSIST_KEY_MOON_IS_RISING,
     PERSIST_KEY_HOURLY_VIBRATION,
     PERSIST_KEY_UMBRELLA_ACTIVE,
-    PERSIST_KEY_GARBAGE_BAG
+    PERSIST_KEY_GARBAGE_BAG,
+    PERSIST_KEY_TIMESTAMP
 };
 
 // ===== Layout Constants (defined in layout.c) =====

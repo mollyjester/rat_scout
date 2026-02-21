@@ -314,9 +314,11 @@ static void main_window_load(Window *window) {
     s_glucose_delta_layer = create_text_layer(RECT_DELTA_LAYER, s_extra_info_font, GTextAlignmentLeft);
     if (persist_exists(PERSIST_KEY_BG_DELTA)) {
         persist_read_string(PERSIST_KEY_BG_DELTA, s_delta_raw_buffer, sizeof(s_delta_raw_buffer));
-        snprintf(s_delta_buffer, sizeof(s_delta_buffer), "%s", s_delta_raw_buffer);
-        text_layer_set_text(s_glucose_delta_layer, s_delta_buffer);
     }
+    if (persist_exists(PERSIST_KEY_TIMESTAMP)) {
+        s_last_reading_timestamp = persist_read_int(PERSIST_KEY_TIMESTAMP);
+    }
+    update_delta_display();
     layer_add_child(window_layer, text_layer_get_layer(s_glucose_delta_layer));
     
     // Create date layer (day, month)
