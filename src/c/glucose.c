@@ -23,6 +23,10 @@ static char s_time_delta_buffer[BUFFER_TIME_DELTA];
 
 /**
  * Update delta display based on current settings.
+ * Implements progressive staleness indication:
+ *   < 20 min:  show real BG value + delta + time-since-reading
+ *   >= 20 min: replace BG with "---", show only time-since-reading
+ *   >= 60 min: wipe persisted BG/delta/timestamp data
  * Skips text layer update if the formatted string hasn't changed.
  */
 void update_delta_display(void) {
@@ -30,11 +34,41 @@ void update_delta_display(void) {
     
     time_t current_time = time(NULL);
     int minutes_since_reading = (current_time - s_last_reading_timestamp) / 60;
+    
+    // Tier 3: Very stale — wipe persisted data to prevent ghost readings
+    if (minutes_since_reading >= STALE_WIPE_THRESHOLD_MINUTES) {
+        persist_delete(PERSIST_KEY_BG);
+        persist_delete(PERSIST_KEY_BG_DELTA);
+        persist_delete(PERSIST_KEY_TIMESTAMP);
+        s_last_reading_timestamp = 0;
+        
+        snprintf(s_bg_buffer, sizeof(s_bg_buffer), "---");
+        text_layer_set_text(s_glucose_layer, s_bg_buffer);
+        
+        s_delta_buffer[0] = '\0';
+        text_layer_set_text(s_glucose_delta_layer, s_delta_buffer);
+        layer_set_hidden(text_layer_get_layer(s_glucose_delta_layer), true);
+        return;
+    }
+    
+    bool is_stale = minutes_since_reading >= STALE_THRESHOLD_MINUTES;
+    
+    // Tier 2: Stale — replace BG with "---" (CGM community standard)
+    if (is_stale) {
+        if (strncmp(s_bg_buffer, "---", sizeof(s_bg_buffer)) != 0) {
+            snprintf(s_bg_buffer, sizeof(s_bg_buffer), "---");
+            text_layer_set_text(s_glucose_layer, s_bg_buffer);
+        }
+    }
+    
     snprintf(s_time_delta_buffer, sizeof(s_time_delta_buffer), "%dm", minutes_since_reading);
     
     // Build new delta string into a temp buffer and compare before updating
+    // When stale, show only time delta (BG delta is meaningless for old data)
     char new_delta[BUFFER_DELTA];
-    if (s_show_bg_delta && s_show_time_delta) {
+    if (is_stale) {
+        snprintf(new_delta, sizeof(new_delta), "%s", s_time_delta_buffer);
+    } else if (s_show_bg_delta && s_show_time_delta) {
         snprintf(new_delta, sizeof(new_delta), "%s %s", s_delta_raw_buffer, s_time_delta_buffer);
     } else if (s_show_bg_delta) {
         snprintf(new_delta, sizeof(new_delta), "%s", s_delta_raw_buffer);
@@ -44,7 +78,7 @@ void update_delta_display(void) {
         new_delta[0] = '\0';
     }
     
-    bool hidden = !s_show_bg_delta && !s_show_time_delta;
+    bool hidden = !is_stale && !s_show_bg_delta && !s_show_time_delta;
     layer_set_hidden(text_layer_get_layer(s_glucose_delta_layer), hidden);
     
     // Only update text layer if the string actually changed
