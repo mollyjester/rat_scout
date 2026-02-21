@@ -85,6 +85,7 @@ static void handle_glucose_message(DictionaryIterator *iterator) {
     Tuple *timestamp_tuple = dict_find(iterator, MESSAGE_KEY_TIMESTAMP);
     if (timestamp_tuple) {
         s_last_reading_timestamp = timestamp_tuple->value->int32;
+        persist_write_int(PERSIST_KEY_TIMESTAMP, s_last_reading_timestamp);
         s_next_fetch_time = s_last_reading_timestamp + FETCH_INTERVAL_SECONDS + FETCH_INTERVAL_JITTER;
         update_delta_display();
     }

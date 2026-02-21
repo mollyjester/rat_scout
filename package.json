@@ -79,7 +79,7 @@
           "type": "font",
           "name": "FONT_HUMAROID_32",
           "file": "fonts/Humaroid.ttf",
-          "characterRegex": "[0-9.Ladgino]"
+          "characterRegex": "[0-9.Ladgino-]"
         },
         {
           "type": "bitmap",

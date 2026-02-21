@@ -12,6 +12,10 @@
 #define BUFFER_WEATHER 16
 #define BUFFER_STEPS 12
 
+// ===== Staleness Thresholds =====
+#define STALE_THRESHOLD_MINUTES 20
+#define STALE_WIPE_THRESHOLD_MINUTES 60
+
 // ===== Garbage Bag Constants =====
 #define GARBAGE_BAG_NONE    0
 #define GARBAGE_BAG_ORGANIC 1
@@ -31,7 +35,8 @@ enum PersistKeys {
     PERSIST_KEY_MOON_IS_RISING,
     PERSIST_KEY_HOURLY_VIBRATION,
     PERSIST_KEY_UMBRELLA_ACTIVE,
-    PERSIST_KEY_GARBAGE_BAG
+    PERSIST_KEY_GARBAGE_BAG,
+    PERSIST_KEY_TIMESTAMP
 };
 
 // ===== Layout Constants (defined in layout.c) =====
