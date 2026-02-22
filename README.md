@@ -150,3 +150,5 @@ pebble install --phone <phone_ip>
 ## Disclaimer
 
 This is an unofficial, community-maintained project not affiliated with or endorsed by Dexcom, Inc. Always verify glucose readings with an official Dexcom receiver or app before making medical decisions. This watchface is a convenience tool only.
+
+> **Credential storage notice:** Your Dexcom username and password are stored in plain text in the Pebble app's local storage on your phone. This is a limitation of the Pebble SDK and cannot be worked around. Your Dexcom Share credentials provide access to your full glucose history — treat them with the same care as any medical account password and ensure your phone is protected with a screen lock.

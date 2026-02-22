@@ -24,7 +24,10 @@
                 "type": "input",
                 "messageKey": "DEX_PASSWORD",
                 "defaultValue": "",
-                "label": "Dexcom Password"
+                "label": "Dexcom Password",
+                "attributes": {
+                    "type": "password"
+                }
             },
             {
                 "type": "select",

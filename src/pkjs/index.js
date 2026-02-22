@@ -9,6 +9,16 @@ var appSettings = {};
 
 var designMode = false;
 
+// Message type discriminators (Fix 6)
+var MSG_TYPE_SETTINGS  = 0;
+var MSG_TYPE_GLUCOSE   = 1;
+var MSG_TYPE_WEATHER   = 2;
+var MSG_TYPE_ASTRONOMY = 3;
+
+// Retry cancellation guards (Fix 8)
+var astronomyRetryPending = false;
+var weatherRetryPending   = false;
+
 // Configuration constants
 var CONFIG = {
     GLUCOSE_THRESHOLDS: {
@@ -187,6 +197,7 @@ function sendSettings() {
         : appSettings.BG_HIGH_THRESHOLD;
 
     var dictionary = {
+        "MSG_TYPE": MSG_TYPE_SETTINGS,
         "BG_SHOW_DELTA": appSettings.BG_SHOW_DELTA ? 1 : 0,
         "BG_SHOW_TIMEDELTA": appSettings.BG_SHOW_TIMEDELTA ? 1 : 0,
         "BG_UNITS": appSettings.BG_UNITS || CONFIG.DEFAULT_BG_UNITS,
@@ -194,7 +205,6 @@ function sendSettings() {
         "BG_VIBRATION": appSettings.BG_VIBRATION ? 1 : 0,
         "BG_LOW_THRESHOLD": Math.round((parseFloat(lowThreshold) || 0) * 10),
         "BG_HIGH_THRESHOLD": Math.round((parseFloat(highThreshold) || 0) * 10),
-        "ASTRO_API_KEY": appSettings.ASTRO_API_KEY || "",
         "DATE_FORMAT": appSettings.DATE_FORMAT || "dd.mm",
         "GARBAGE_BAG": computeGarbageBag()
     };
@@ -212,6 +222,7 @@ function sendDesignModeData() {
 
     // Fixed settings
     var settingsDictionary = {
+        "MSG_TYPE": MSG_TYPE_SETTINGS,
         "BG_SHOW_DELTA": 1,
         "BG_SHOW_TIMEDELTA": 1,
         "BG_UNITS": "mg/dL",
@@ -219,31 +230,37 @@ function sendDesignModeData() {
         "BG_VIBRATION": 0,
         "BG_LOW_THRESHOLD": 700,
         "BG_HIGH_THRESHOLD": 1800,
-        "ASTRO_API_KEY": "",
         "DATE_FORMAT": "dd.mm",
         "GARBAGE_BAG": GARBAGE_BAG_ORGANIC
     };
     sendToPebble(settingsDictionary, 'Design settings');
 
-    // Fixed BG + astronomy
+    // Fixed BG
     var bgDictionary = {
+        "MSG_TYPE": MSG_TYPE_GLUCOSE,
         "BG_UNITS": "mg/dL",
         "BG_SHOW_DELTA": 1,
         "BG_SHOW_TIMEDELTA": 1,
         "BG": "120",
         "BGDELTA": "+5",
-        "TIMEDELTA": 240,
-        "TIMESTAMP": Math.floor((Date.now() - 4 * 60 * 1000) / 1000),
+        "TIMESTAMP": Math.floor((Date.now() - 4 * 60 * 1000) / 1000)
+    };
+    sendToPebble(bgDictionary, 'Design BG');
+
+    // Fixed astronomy
+    var astroDictionary = {
+        "MSG_TYPE": MSG_TYPE_ASTRONOMY,
         "SUNTIME": "06:45",
         "MOONTIME": "21:30",
         "MOON_PHASE": 4,
         "SUN_IS_RISING": 1,
         "MOON_IS_RISING": 0
     };
-    sendToPebble(bgDictionary, 'Design BG + astronomy');
+    sendToPebble(astroDictionary, 'Design astronomy');
 
     // Fixed weather
     var weatherDictionary = {
+        "MSG_TYPE": MSG_TYPE_WEATHER,
         "WEATHER_TEMP": "22",
         "WEATHER_WIND": "12",
         "WEATHER_UMBRELLA": 1
@@ -333,12 +350,12 @@ function buildGlucoseDictionary(result, settings) {
     var readingTimestamp = Math.floor(result.current._datetime.getTime() / 1000);
     
     return {
+        "MSG_TYPE": MSG_TYPE_GLUCOSE,
         "BG_UNITS": bgUnits,
         "BG_SHOW_DELTA": settings.BG_SHOW_DELTA ? 1 : 0,
         "BG_SHOW_TIMEDELTA": settings.BG_SHOW_TIMEDELTA ? 1 : 0,
         "BG": formatBGValue(result.current._value, bgUnits),
         "BGDELTA": formatBGDelta(result.current._delta, bgUnits),
-        "TIMEDELTA": result.current._delta_time,
         "TIMESTAMP": readingTimestamp
     };
 }
@@ -349,6 +366,7 @@ function buildGlucoseDictionary(result, settings) {
  */
 function sendNoGlucoseData() {
     var dictionary = {
+        "MSG_TYPE": MSG_TYPE_GLUCOSE,
         "BG": "---",
         "TIMESTAMP": 0
     };
@@ -382,8 +400,11 @@ function fetchGlucoseReading() {
             window.localStorage.setItem(CONFIG.STORAGE_KEYS.ACCOUNT_ID, dex.accountId);
             window.localStorage.setItem(CONFIG.STORAGE_KEYS.SESSION_ID, dex.sessionId);
 
-            // Fetch and combine astronomy data
-            fetchAndSendAstronomy(dictionary);
+            // Send BG data immediately without waiting for astronomy
+            sendToPebble(dictionary, 'BG');
+
+            // Fetch astronomy as a separate independent message
+            fetchAndSendAstronomy();
         },
         appSettings.DEX_REGION,
         function(error) {
@@ -439,19 +460,20 @@ function cacheAstronomyData(cacheData) {
 
 /**
  * Load and use cached astronomy data
- * @param {Object} bgDictionary - BG data to supplement
  * @returns {boolean} True if cache was successfully used, false if fresh data is needed
  */
-function useCachedAstronomyData(bgDictionary) {
+function useCachedAstronomyData() {
     var cachedData = window.localStorage.getItem(CONFIG.TIME_CACHE_KEYS.ASTRONOMY_DATA);
     
     if (!cachedData) {
         console.log('No cached astronomy data available');
-        bgDictionary.SUNTIME = "N/A";
-        bgDictionary.MOONTIME = "N/A";
-        bgDictionary.SUN_IS_RISING = 1;
-        bgDictionary.MOON_IS_RISING = 1;
-        sendToPebble(bgDictionary, 'BG (no cache)');
+        sendToPebble({
+            "MSG_TYPE": MSG_TYPE_ASTRONOMY,
+            "SUNTIME": "N/A",
+            "MOONTIME": "N/A",
+            "SUN_IS_RISING": 1,
+            "MOON_IS_RISING": 1
+        }, 'Astronomy (no cache)');
         return false;
     }
     
@@ -490,22 +512,25 @@ function useCachedAstronomyData(bgDictionary) {
             times.sunTime = astroData.tomorrowSunrise;
         }
         
-        bgDictionary.SUNTIME = times.sunTime || "N/A";
-        bgDictionary.MOONTIME = times.moonTime || "N/A";
-        bgDictionary.MOON_PHASE = times.moonPhase !== undefined ? times.moonPhase : 0;
-        bgDictionary.SUN_IS_RISING = times.sunIsRising ? 1 : 0;
-        bgDictionary.MOON_IS_RISING = times.moonIsRising ? 1 : 0;
-        
         console.log('Using cached astronomy data');
-        sendToPebble(bgDictionary, 'BG with cached astronomy');
+        sendToPebble({
+            "MSG_TYPE": MSG_TYPE_ASTRONOMY,
+            "SUNTIME": times.sunTime || "N/A",
+            "MOONTIME": times.moonTime || "N/A",
+            "MOON_PHASE": times.moonPhase !== undefined ? times.moonPhase : 0,
+            "SUN_IS_RISING": times.sunIsRising ? 1 : 0,
+            "MOON_IS_RISING": times.moonIsRising ? 1 : 0
+        }, 'Astronomy (cached)');
         return true;
     } catch (e) {
         console.error(`Error parsing cached data: ${e.message}`);
-        bgDictionary.SUNTIME = "N/A";
-        bgDictionary.MOONTIME = "N/A";
-        bgDictionary.SUN_IS_RISING = 1;
-        bgDictionary.MOON_IS_RISING = 1;
-        sendToPebble(bgDictionary, 'BG (cache error)');
+        sendToPebble({
+            "MSG_TYPE": MSG_TYPE_ASTRONOMY,
+            "SUNTIME": "N/A",
+            "MOONTIME": "N/A",
+            "SUN_IS_RISING": 1,
+            "MOON_IS_RISING": 1
+        }, 'Astronomy (cache error)');
         return false;
     }
 }
@@ -513,11 +538,10 @@ function useCachedAstronomyData(bgDictionary) {
 /**
  * Handle successful astronomy data fetch
  * @param {Object} todayData - Today's astronomy data
- * @param {Object} bgDictionary - BG data to supplement
  * @param {string} apiKey - API key for subsequent requests
  * @param {number} attemptCount - Retry counter to prevent infinite loops
  */
-function handleTodayAstronomyData(todayData, bgDictionary, apiKey, attemptCount) {
+function handleTodayAstronomyData(todayData, apiKey, attemptCount) {
     attemptCount = attemptCount || 0;
     
     var times = Astronomy.formatAstronomyTimes(todayData);
@@ -556,7 +580,7 @@ function handleTodayAstronomyData(todayData, bgDictionary, apiKey, attemptCount)
                 }
                 
                 cacheAstronomyData(cacheData);
-                completeAstronomyUpdate(bgDictionary, times);
+                completeAstronomyUpdate(times);
             },
             function(error) {
                 console.log(`Error fetching tomorrow data (attempt ${attemptCount + 1}): ${error}`);
@@ -564,62 +588,65 @@ function handleTodayAstronomyData(todayData, bgDictionary, apiKey, attemptCount)
                 // Limit retries for tomorrow data to prevent infinite loops
                 if (attemptCount < 1) {
                     console.log('Retrying tomorrow data fetch...');
-                    handleTodayAstronomyData(todayData, bgDictionary, apiKey, attemptCount + 1);
+                    handleTodayAstronomyData(todayData, apiKey, attemptCount + 1);
                 } else {
                     console.log('Max retries for tomorrow data reached, using today data');
                     cacheAstronomyData(cacheData);
-                    completeAstronomyUpdate(bgDictionary, times);
+                    completeAstronomyUpdate(times);
                 }
             }
         );
     } else {
         // No need for tomorrow's data
         cacheAstronomyData(cacheData);
-        completeAstronomyUpdate(bgDictionary, times);
+        completeAstronomyUpdate(times);
     }
 }
 
 /**
  * Complete astronomy data update and send to Pebble
- * @param {Object} bgDictionary - BG data
  * @param {Object} times - Formatted sun/moon times
  */
-function completeAstronomyUpdate(bgDictionary, times) {
-    bgDictionary.SUNTIME = times.sunTime || "N/A";
-    bgDictionary.MOONTIME = times.moonTime || "N/A";
-    bgDictionary.MOON_PHASE = times.moonPhase !== undefined ? times.moonPhase : 0;
-    bgDictionary.SUN_IS_RISING = times.sunIsRising ? 1 : 0;
-    bgDictionary.MOON_IS_RISING = times.moonIsRising ? 1 : 0;
-    sendToPebble(bgDictionary, 'BG with astronomy');
+function completeAstronomyUpdate(times) {
+    sendToPebble({
+        "MSG_TYPE": MSG_TYPE_ASTRONOMY,
+        "SUNTIME": times.sunTime || "N/A",
+        "MOONTIME": times.moonTime || "N/A",
+        "MOON_PHASE": times.moonPhase !== undefined ? times.moonPhase : 0,
+        "SUN_IS_RISING": times.sunIsRising ? 1 : 0,
+        "MOON_IS_RISING": times.moonIsRising ? 1 : 0
+    }, 'Astronomy');
 }
 
 /**
- * Fetch astronomy data and combine with glucose data before sending to watchface
- * @param {Object} bgDictionary - Blood glucose data to supplement
+ * Fetch astronomy data and send to watchface as a separate message
  * @param {number} attemptCount - Internal retry counter (starts at 0)
  */
-function fetchAndSendAstronomy(bgDictionary, attemptCount) {
+function fetchAndSendAstronomy(attemptCount) {
+    astronomyRetryPending = false;
     attemptCount = attemptCount || 0;
     
     console.log('Processing astronomy data (attempt ' + (attemptCount + 1) + ')');
     
     var apiKey = appSettings.ASTRO_API_KEY;
     
-    // If no API key, send BG data only
+    // If no API key, send N/A astronomy data
     if (!apiKey) {
-        console.log('No astronomy API key configured, sending BG only');
-        bgDictionary.SUNTIME = "N/A";
-        bgDictionary.MOONTIME = "N/A";
-        bgDictionary.SUN_IS_RISING = 1;
-        bgDictionary.MOON_IS_RISING = 1;
-        sendToPebble(bgDictionary, 'BG (no API key)');
+        console.log('No astronomy API key configured, sending N/A astronomy');
+        sendToPebble({
+            "MSG_TYPE": MSG_TYPE_ASTRONOMY,
+            "SUNTIME": "N/A",
+            "MOONTIME": "N/A",
+            "SUN_IS_RISING": 1,
+            "MOON_IS_RISING": 1
+        }, 'Astronomy (no API key)');
         return;
     }
     
     // Check if we need fresh data
     if (!shouldRefreshAstronomyData()) {
         console.log('Checking cached astronomy data');
-        var cacheUsed = useCachedAstronomyData(bgDictionary);
+        var cacheUsed = useCachedAstronomyData();
         
         // If cache didn't have tomorrow's data when needed, fetch fresh data
         if (!cacheUsed) {
@@ -636,7 +663,7 @@ function fetchAndSendAstronomy(bgDictionary, attemptCount) {
             console.log('Today astronomy data received');
             // Reset retry counter on success
             attemptCount = 0;
-            handleTodayAstronomyData(todayData, bgDictionary, apiKey);
+            handleTodayAstronomyData(todayData, apiKey);
         },
         function(error) {
             console.log(`Error fetching astronomy (attempt ${attemptCount + 1}): ${error}`);
@@ -645,12 +672,15 @@ function fetchAndSendAstronomy(bgDictionary, attemptCount) {
             if (attemptCount < CONFIG.MAX_FETCH_RETRIES) {
                 console.log(`Will retry astronomy fetch (${CONFIG.MAX_FETCH_RETRIES - attemptCount - 1} attempts remaining)`);
                 // Retry after 2 second delay to allow network recovery
+                astronomyRetryPending = true;
                 setTimeout(function() {
-                    fetchAndSendAstronomy(bgDictionary, attemptCount + 1);
+                    if (!astronomyRetryPending) return;
+                    astronomyRetryPending = false;
+                    fetchAndSendAstronomy(attemptCount + 1);
                 }, 2000);
             } else {
                 console.log(`Max retries reached (${CONFIG.MAX_FETCH_RETRIES}), falling back to cache`);
-                useCachedAstronomyData(bgDictionary);
+                useCachedAstronomyData();
             }
         }
     );
@@ -682,6 +712,7 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
  * @param {number} attemptCount - Internal retry counter
  */
 function fetchAndSendWeather(attemptCount) {
+    weatherRetryPending = false;
     attemptCount = attemptCount || 0;
     
     var apiKey = appSettings.OWM_API_KEY;
@@ -759,7 +790,10 @@ function fetchAndSendWeather(attemptCount) {
                             console.error('Weather fetch error (attempt ' + (attemptCount + 1) + '): ' + error);
                             
                             if (attemptCount < CONFIG.MAX_FETCH_RETRIES) {
+                                weatherRetryPending = true;
                                 setTimeout(function() {
+                                    if (!weatherRetryPending) return;
+                                    weatherRetryPending = false;
                                     fetchAndSendWeather(attemptCount + 1);
                                 }, 2000);
                             } else {
@@ -803,6 +837,7 @@ function fetchAndSendWeather(attemptCount) {
  */
 function sendWeatherToPebble(data) {
     var dictionary = {
+        "MSG_TYPE": MSG_TYPE_WEATHER,
         "WEATHER_TEMP": String(data.temp),
         "WEATHER_WIND": String(data.windSpeed),
         "WEATHER_UMBRELLA": data.needsUmbrella ? 1 : 0

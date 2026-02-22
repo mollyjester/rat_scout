@@ -21,11 +21,6 @@ const GRect RECT_STEPS_LAYER = {{118, 183}, {78, 25}};
 const GRect RECT_STEPS_ICON = {{103, 192}, {12, 12}};
 // Status bar layout (16px tall panel at top)
 // Icons are 12x12, active bars are 12x2
-const int STATUS_ICON_SIZE = 12;
-const int STATUS_BAR_WIDTH = 12;
-const int STATUS_BAR_HEIGHT = 2;
-const int STATUS_ICON_Y = 1;
-const int STATUS_BAR_Y = 14;
 const int STATUS_HOURLY_X = 3;
 const int STATUS_UMBRELLA_X = 22;   // 3 + 12 + 7
 const int STATUS_ORGANIC_X = 47;    // 22 + 12 + 13
@@ -51,11 +46,6 @@ const GRect RECT_STEPS_LAYER = {{87, 135}, {56, 25}};
 const GRect RECT_STEPS_ICON = {{74, 144}, {12, 12}};
 // Status bar layout (16px tall panel at top)
 // Icons are 12x12, active bars are 12x2
-const int STATUS_ICON_SIZE = 12;
-const int STATUS_BAR_WIDTH = 12;
-const int STATUS_BAR_HEIGHT = 2;
-const int STATUS_ICON_Y = 1;
-const int STATUS_BAR_Y = 14;
 const int STATUS_HOURLY_X = 2;
 const int STATUS_UMBRELLA_X = 16;   // 2 + 12 + 2
 const int STATUS_ORGANIC_X = 34;    // 16 + 12 + 6
@@ -65,17 +55,3 @@ const GRect RECT_WEEKDAY_LAYER = {{81, -9}, {40, 21}}; // 62 + 12 + 7
 const GRect RECT_STATUS_BAR = {{0, 0}, {144, 16}};
 #endif
 
-// ===== Battery Indicator Dimensions =====
-const int BATTERY_WIDTH = 24;
-const int BATTERY_HEIGHT = 9;
-const int BATTERY_BORDER = 1;
-const int BATTERY_SEGMENT_HEIGHT = 7;
-
-// ===== Data Fetch Timing (in seconds) =====
-const int FETCH_INTERVAL_SECONDS = 300;
-const int FETCH_INTERVAL_JITTER = 5;
-const int FALLBACK_FETCH_MINUTES = 4;
-
-// ===== AppMessage Buffer Sizes =====
-const int APPMESSAGE_INBOX = 1024;
-const int APPMESSAGE_OUTBOX = 512;

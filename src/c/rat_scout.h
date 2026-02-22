@@ -58,28 +58,34 @@ extern const GRect RECT_STEPS_ICON;
 extern const GRect RECT_WEEKDAY_LAYER;
 extern const GRect RECT_STATUS_BAR;
 
-extern const int STATUS_ICON_SIZE;
-extern const int STATUS_BAR_WIDTH;
-extern const int STATUS_BAR_HEIGHT;
-extern const int STATUS_ICON_Y;
-extern const int STATUS_BAR_Y;
+// Status bar icon X positions differ between Emery and non-Emery platforms
 extern const int STATUS_HOURLY_X;
 extern const int STATUS_UMBRELLA_X;
 extern const int STATUS_ORGANIC_X;
 extern const int STATUS_GREY_X;
 extern const int STATUS_BLACK_X;
 
-extern const int BATTERY_WIDTH;
-extern const int BATTERY_HEIGHT;
-extern const int BATTERY_BORDER;
-extern const int BATTERY_SEGMENT_HEIGHT;
+// Platform-invariant layout constants (zero RAM cost)
+#define STATUS_ICON_SIZE       12
+#define STATUS_BAR_WIDTH       12
+#define STATUS_BAR_HEIGHT       2
+#define STATUS_ICON_Y           1
+#define STATUS_BAR_Y           14
+#define BATTERY_WIDTH          24
+#define BATTERY_HEIGHT          9
+#define BATTERY_BORDER          1
+#define BATTERY_SEGMENT_HEIGHT  7
+#define FETCH_INTERVAL_SECONDS 300
+#define FETCH_INTERVAL_JITTER    5
+#define FALLBACK_FETCH_MINUTES   5
+#define APPMESSAGE_INBOX      1024
+#define APPMESSAGE_OUTBOX      512
 
-extern const int FETCH_INTERVAL_SECONDS;
-extern const int FETCH_INTERVAL_JITTER;
-extern const int FALLBACK_FETCH_MINUTES;
-
-extern const int APPMESSAGE_INBOX;
-extern const int APPMESSAGE_OUTBOX;
+// ===== Message Type Discriminators =====
+#define MSG_TYPE_SETTINGS  0
+#define MSG_TYPE_GLUCOSE   1
+#define MSG_TYPE_WEATHER   2
+#define MSG_TYPE_ASTRONOMY 3
 
 // ===== Shared Global State (defined in rat_scout.c) =====
 

@@ -2,25 +2,11 @@
 // API Documentation: https://openweathermap.org/current
 //                     https://openweathermap.org/forecast5
 
+var utils = require('../common/utils');
 var OWM_WEATHER_URL = 'https://api.openweathermap.org/data/2.5/weather';
 var OWM_FORECAST_URL = 'https://api.openweathermap.org/data/2.5/forecast';
 var REQUEST_TIMEOUT_MS = 15000;
 var GEOLOCATION_MAX_AGE_MS = 300000;
-
-/**
- * Build query string from params object
- * @param {Object} params - Query parameters
- * @returns {string} Encoded query string
- */
-function buildQueryString(params) {
-    var parts = [];
-    Object.keys(params).forEach(function(key) {
-        if (params[key] !== undefined && params[key] !== null) {
-            parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(params[key]));
-        }
-    });
-    return parts.length > 0 ? '?' + parts.join('&') : '';
-}
 
 /**
  * Check if weather conditions indicate precipitation
@@ -157,8 +143,8 @@ function fetchWeatherData(apiKey, units, onSuccess, onError) {
                 units: units || 'metric'
             };
 
-            var weatherUrl = OWM_WEATHER_URL + buildQueryString(params);
-            var forecastUrl = OWM_FORECAST_URL + buildQueryString(params);
+            var weatherUrl = OWM_WEATHER_URL + utils.buildQueryString(params);
+            var forecastUrl = OWM_FORECAST_URL + utils.buildQueryString(params);
 
             console.log('Fetching weather from OpenWeatherMap 2.5 API');
 
