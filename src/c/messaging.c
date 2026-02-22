@@ -94,8 +94,12 @@ static void handle_glucose_message(DictionaryIterator *iterator) {
         }
         update_delta_display();
     }
-    
-    // Update astronomy data (bundled with glucose message)
+}
+
+/**
+ * Process astronomy data (arrives as separate message from glucose)
+ */
+static void handle_astronomy_message(DictionaryIterator *iterator) {
     Tuple *suntime_tuple = dict_find(iterator, MESSAGE_KEY_SUNTIME);
     if (suntime_tuple && suntime_tuple->length > 0) {
         snprintf(s_sun_time_buffer, sizeof(s_sun_time_buffer), "%s", suntime_tuple->value->cstring);
@@ -176,9 +180,18 @@ static void handle_weather_message(DictionaryIterator *iterator) {
 // ===== AppMessage Callbacks =====
 
 void inbox_received_callback(DictionaryIterator *iterator, void *context) {
-    handle_settings(iterator);
-    handle_glucose_message(iterator);
-    handle_weather_message(iterator);
+    Tuple *type_tuple = dict_find(iterator, MESSAGE_KEY_MSG_TYPE);
+    if (!type_tuple) return;
+    switch (type_tuple->value->int8) {
+        case MSG_TYPE_SETTINGS:  handle_settings(iterator);         break;
+        case MSG_TYPE_GLUCOSE:   handle_glucose_message(iterator);  break;
+        case MSG_TYPE_WEATHER:   handle_weather_message(iterator);  break;
+        case MSG_TYPE_ASTRONOMY: handle_astronomy_message(iterator); break;
+        default:
+            APP_LOG(APP_LOG_LEVEL_WARNING, "Unknown message type: %d",
+                    (int)type_tuple->value->int8);
+            break;
+    }
 }
 
 void inbox_dropped_callback(AppMessageResult reason, void *context)

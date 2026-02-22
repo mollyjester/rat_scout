@@ -1,24 +1,8 @@
 // ipgeolocation.io API integration for sunrise/sunset and moonrise/moonset times
 // API Documentation: https://ipgeolocation.io/astronomy-api.html
 
+var utils = require('../common/utils');
 var IPGEOLOCATION_API_URL = 'https://api.ipgeolocation.io/v2/astronomy';
-
-/**
- * Build query string for astronomy API
- * @param {Object} params - Query parameters
- * @returns {string} Query string
- */
-function buildQueryString(params) {
-    var parts = [];
-    
-    Object.keys(params).forEach(function(key) {
-        if (params[key] !== undefined && params[key] !== null) {
-            parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(params[key]));
-        }
-    });
-    
-    return parts.length > 0 ? '?' + parts.join('&') : '';
-}
 
 /**
  * Parse astronomy response
@@ -120,7 +104,7 @@ function fetchAstronomyData(apiKey, latOrCallback, lonOrCallback, dateOrCallback
         queryParams.date = date;
     }
     
-    var url = IPGEOLOCATION_API_URL + buildQueryString(queryParams);
+    var url = IPGEOLOCATION_API_URL + utils.buildQueryString(queryParams);
     console.log('Fetching astronomy data from API');
     
     var xhr = new XMLHttpRequest();
