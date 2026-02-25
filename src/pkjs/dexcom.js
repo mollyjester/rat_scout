@@ -187,7 +187,7 @@ Dexcom.prototype.authenticate = function(callback) {
             callback.call(self);
         }
     } catch (error) {
-        throw new Error(`Authentication error: ${error.message}`);
+        self.onError(`Authentication error: ${error.message}`);
     }
 };
 
@@ -208,12 +208,13 @@ Dexcom.prototype._getAccountId = function(callback) {
             console.log(`Account ID: ${self.accountId}`);
 
             if (self.accountId === '00000000-0000-0000-0000-000000000000') {
-                throw new Error('Invalid credentials');
+                self.onError('Invalid credentials');
+                return;
             }
 
             callback.call(self);
         } else {
-            throw new Error(`Error fetching account ID: ${req.status}`);
+            self.onError(`Error fetching account ID: ${req.status}`);
         }
     };
 
@@ -246,25 +247,26 @@ Dexcom.prototype._getSessionId = function(callback) {
             console.log(`Session ID: ${self.sessionId}`);
 
             if (self.sessionId === '00000000-0000-0000-0000-000000000000') {
-                throw new Error('Login failed');
+                self.onError('Login failed');
+                return;
             }
 
             callback.call(self);
         } else {
-            throw new Error(`Error fetching session ID: ${loginReq.status}`);
+            self.onError(`Error fetching session ID: ${loginReq.status}`);
         }
     };
 
     loginReq.onerror = function() {
         if (timeoutHandle) clearTimeout(timeoutHandle);
         console.error('Network error fetching session ID');
-        throw new Error('Network error fetching session ID');
+        self.onError('Network error fetching session ID');
     };
 
     loginReq.ontimeout = function() {
         if (timeoutHandle) clearTimeout(timeoutHandle);
         console.error('Timeout fetching session ID (15s)');
-        throw new Error('Timeout fetching session ID');
+        self.onError('Timeout fetching session ID');
     };
 
     // Fallback timeout using setTimeout for better compatibility
