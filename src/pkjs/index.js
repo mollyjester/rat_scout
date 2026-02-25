@@ -409,6 +409,9 @@ function fetchGlucoseReading() {
         appSettings.DEX_REGION,
         function(error) {
             console.error('Glucose fetch failed: ' + error);
+            // Clear stale cached session to force full re-authentication on next attempt
+            window.localStorage.removeItem(CONFIG.STORAGE_KEYS.ACCOUNT_ID);
+            window.localStorage.removeItem(CONFIG.STORAGE_KEYS.SESSION_ID);
             sendNoGlucoseData();
         }
     );
