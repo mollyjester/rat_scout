@@ -302,9 +302,17 @@ Pebble.addEventListener('appmessage', function() {
     fetchAllData();
 });
 
+// Open the Clay settings page (required when autoHandleEvents is false)
+Pebble.addEventListener('showConfiguration', function() {
+    Pebble.openURL(clay.generateUrl());
+});
+
 // Listen for when the settings form is closed (saved)
-Pebble.addEventListener('webviewclosed', function() {
+Pebble.addEventListener('webviewclosed', function(e) {
     console.log('Settings form closed');
+    if (e && e.response) {
+        clay.getSettings(e.response);
+    }
     if (designMode) {
         sendDesignModeData();
         return;
