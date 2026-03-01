@@ -15,6 +15,7 @@ var MSG_TYPE_SETTINGS  = 0;
 var MSG_TYPE_GLUCOSE   = 1;
 var MSG_TYPE_WEATHER   = 2;
 var MSG_TYPE_ASTRONOMY = 3;
+var MSG_TYPE_VIBE_TEST = 4;
 
 // Retry cancellation guards (Fix 8)
 var astronomyRetryPending = false;
@@ -311,7 +312,28 @@ Pebble.addEventListener('showConfiguration', function() {
 Pebble.addEventListener('webviewclosed', function(e) {
     console.log('Settings form closed');
     if (e && e.response) {
+        // Check for vibe test request in raw response before Clay processes it
+        var vibePattern = 0;
+        try {
+            var raw = JSON.parse(decodeURIComponent(e.response));
+            if (raw && raw._vibeTest) {
+                vibePattern = raw._vibeTest;
+            }
+        } catch (err) {
+            // Not valid JSON or not our format — let Clay handle it
+        }
+
+        // Let Clay process settings normally
         clay.getSettings(e.response);
+
+        // Send vibe test command if requested
+        if (vibePattern > 0) {
+            Pebble.sendAppMessage(
+                { 'MSG_TYPE': MSG_TYPE_VIBE_TEST, 'VIBE_TEST': vibePattern },
+                function() { console.log('Vibe test sent: pattern ' + vibePattern); },
+                function() { console.error('Vibe test send failed'); }
+            );
+        }
     }
     if (designMode) {
         sendDesignModeData();

@@ -93,20 +93,6 @@
                 "label": "Threshold Vibration"
             },
             {
-                "type": "text",
-                "defaultValue": "Test alert vibration patterns on the watch:"
-            },
-            {
-                "type": "button",
-                "id": "vibe-test-high",
-                "defaultValue": "▶ Test High Alert"
-            },
-            {
-                "type": "button",
-                "id": "vibe-test-low",
-                "defaultValue": "▶ Test Low Alert"
-            },
-            {
                 "type": "input",
                 "messageKey": "BG_LOW_THRESHOLD",
                 "defaultValue": "",
@@ -200,15 +186,6 @@
                 "defaultValue": false,
                 "label": "Hourly Vibration"
             },
-            {
-                "type": "text",
-                "defaultValue": "Test hourly vibration pattern on the watch:"
-            },
-            {
-                "type": "button",
-                "id": "vibe-test-hourly",
-                "defaultValue": "▶ Test Hourly Vibration"
-            }
         ]
     },
     {
@@ -325,6 +302,34 @@
                 "defaultValue": [false, true, false, false, false, true, false],
                 "label": "Black bag days",
                 "options": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+            }
+        ]
+    },
+    {
+        "type": "section",
+        "items": [
+            {
+                "type": "heading",
+                "defaultValue": "Vibration Test"
+            },
+            {
+                "type": "text",
+                "defaultValue": "Tap a button below to save your settings and test the vibration pattern on the watch. The settings page will close — reopen it from the app to continue editing."
+            },
+            {
+                "type": "button",
+                "id": "vibe-test-high",
+                "defaultValue": "▶ Test High BG Alert"
+            },
+            {
+                "type": "button",
+                "id": "vibe-test-low",
+                "defaultValue": "▶ Test Low BG Alert"
+            },
+            {
+                "type": "button",
+                "id": "vibe-test-hourly",
+                "defaultValue": "▶ Test Hourly Vibration"
             }
         ]
     },
