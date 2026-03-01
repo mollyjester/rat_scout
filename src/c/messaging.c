@@ -199,7 +199,7 @@ static void handle_vibe_test(DictionaryIterator *iterator) {
             .num_segments = BG_LOW_VIBE_PATTERN_LEN
         });
     } else if (pattern_id == 3) {
-        vibes_short_pulse();
+        vibes_double_pulse();
     }
 }
 
