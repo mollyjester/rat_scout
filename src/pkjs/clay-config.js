@@ -1,6 +1,4 @@
 module.exports = function(minifiedClay) {
-  var MSG_TYPE_VIBE_TEST = 4;
-
   this.on(this.EVENTS.AFTER_BUILD, function() {
     var clayConfig = this;
 
@@ -11,11 +9,13 @@ module.exports = function(minifiedClay) {
         return;
       }
       item.on('click', function() {
-        Pebble.sendAppMessage(
-          { 'MSG_TYPE': MSG_TYPE_VIBE_TEST, 'VIBE_TEST': patternId },
-          function() { console.log('Vibe test sent: ' + id); },
-          function() { console.error('Vibe test failed: ' + id); }
-        );
+        // Serialize current settings and add the vibe test flag
+        var settings = clayConfig.serialize();
+        settings._vibeTest = patternId;
+
+        // Close the config page with the settings + vibe test payload
+        var returnTo = window.returnTo || 'pebblejs://close#';
+        location.href = returnTo + encodeURIComponent(JSON.stringify(settings));
       });
     }
 

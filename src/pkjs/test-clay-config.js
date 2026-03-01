@@ -1,7 +1,8 @@
 /**
  * Tests for clay-config.js vibration test buttons.
  * Verifies that AFTER_BUILD attaches click handlers to each button
- * and that clicking them sends the correct Pebble.sendAppMessage calls.
+ * and that clicking them calls serialize() and sets location.href
+ * with the correct _vibeTest value in the payload.
  *
  * Run: node src/pkjs/test-clay-config.js
  */
@@ -42,6 +43,7 @@ function MockClayConfig() {
     this._listeners = {};
     this._itemsById = {};
     this.EVENTS = { AFTER_BUILD: 'AFTER_BUILD' };
+    this._serialized = { foo: 'bar' };
 }
 MockClayConfig.prototype.on = function(event, handler) {
     if (!this._listeners[event]) {
@@ -63,14 +65,17 @@ MockClayConfig.prototype.registerItem = function(id) {
     this._itemsById[id] = item;
     return item;
 };
+MockClayConfig.prototype.serialize = function() {
+    // Return a copy so mutations don't affect the stored object
+    return JSON.parse(JSON.stringify(this._serialized));
+};
 
-// --- Mock Pebble ---
-var sendAppMessageCalls = [];
-global.Pebble = {
-    sendAppMessage: function(data, success, failure) {
-        sendAppMessageCalls.push(data);
-        if (success) { success(); }
-    }
+// --- Mock window / location ---
+global.window = { returnTo: 'pebblejs://close#' };
+var lastHref = null;
+global.location = {
+    get href() { return lastHref; },
+    set href(val) { lastHref = val; }
 };
 
 // --- Load the module under test ---
@@ -107,9 +112,9 @@ console.log('clay-config.js vibration test button tests\n');
     );
 })();
 
-// Test 2: Clicking vibe-test-high sends MSG_TYPE=4, VIBE_TEST=1
+// Test 2: Clicking vibe-test-high sets location.href with _vibeTest=1
 (function() {
-    console.log('Test: Click vibe-test-high sends correct message');
+    console.log('Test: Click vibe-test-high sets location.href with _vibeTest=1');
     var config = new MockClayConfig();
     config.registerItem('vibe-test-high');
     config.registerItem('vibe-test-low');
@@ -118,17 +123,18 @@ console.log('clay-config.js vibration test button tests\n');
     customFn.call(config, {});
     config.trigger('AFTER_BUILD');
 
-    sendAppMessageCalls = [];
+    lastHref = null;
     config.getItemById('vibe-test-high').trigger('click');
 
-    assert(sendAppMessageCalls.length === 1, 'sendAppMessage called once');
-    assert(sendAppMessageCalls[0].MSG_TYPE === 4, 'MSG_TYPE is 4');
-    assert(sendAppMessageCalls[0].VIBE_TEST === 1, 'VIBE_TEST is 1');
+    assert(lastHref !== null, 'location.href was set');
+    var payload = JSON.parse(decodeURIComponent(lastHref.replace('pebblejs://close#', '')));
+    assert(payload._vibeTest === 1, '_vibeTest is 1');
+    assert(payload.foo === 'bar', 'serialized settings are included');
 })();
 
-// Test 3: Clicking vibe-test-low sends MSG_TYPE=4, VIBE_TEST=2
+// Test 3: Clicking vibe-test-low sets location.href with _vibeTest=2
 (function() {
-    console.log('Test: Click vibe-test-low sends correct message');
+    console.log('Test: Click vibe-test-low sets location.href with _vibeTest=2');
     var config = new MockClayConfig();
     config.registerItem('vibe-test-high');
     config.registerItem('vibe-test-low');
@@ -137,17 +143,18 @@ console.log('clay-config.js vibration test button tests\n');
     customFn.call(config, {});
     config.trigger('AFTER_BUILD');
 
-    sendAppMessageCalls = [];
+    lastHref = null;
     config.getItemById('vibe-test-low').trigger('click');
 
-    assert(sendAppMessageCalls.length === 1, 'sendAppMessage called once');
-    assert(sendAppMessageCalls[0].MSG_TYPE === 4, 'MSG_TYPE is 4');
-    assert(sendAppMessageCalls[0].VIBE_TEST === 2, 'VIBE_TEST is 2');
+    assert(lastHref !== null, 'location.href was set');
+    var payload = JSON.parse(decodeURIComponent(lastHref.replace('pebblejs://close#', '')));
+    assert(payload._vibeTest === 2, '_vibeTest is 2');
+    assert(payload.foo === 'bar', 'serialized settings are included');
 })();
 
-// Test 4: Clicking vibe-test-hourly sends MSG_TYPE=4, VIBE_TEST=3
+// Test 4: Clicking vibe-test-hourly sets location.href with _vibeTest=3
 (function() {
-    console.log('Test: Click vibe-test-hourly sends correct message');
+    console.log('Test: Click vibe-test-hourly sets location.href with _vibeTest=3');
     var config = new MockClayConfig();
     config.registerItem('vibe-test-high');
     config.registerItem('vibe-test-low');
@@ -156,12 +163,13 @@ console.log('clay-config.js vibration test button tests\n');
     customFn.call(config, {});
     config.trigger('AFTER_BUILD');
 
-    sendAppMessageCalls = [];
+    lastHref = null;
     config.getItemById('vibe-test-hourly').trigger('click');
 
-    assert(sendAppMessageCalls.length === 1, 'sendAppMessage called once');
-    assert(sendAppMessageCalls[0].MSG_TYPE === 4, 'MSG_TYPE is 4');
-    assert(sendAppMessageCalls[0].VIBE_TEST === 3, 'VIBE_TEST is 3');
+    assert(lastHref !== null, 'location.href was set');
+    var payload = JSON.parse(decodeURIComponent(lastHref.replace('pebblejs://close#', '')));
+    assert(payload._vibeTest === 3, '_vibeTest is 3');
+    assert(payload.foo === 'bar', 'serialized settings are included');
 })();
 
 // Test 5: Missing item does not throw
