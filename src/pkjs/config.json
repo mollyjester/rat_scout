@@ -97,12 +97,12 @@
                 "defaultValue": "Test alert vibration patterns on the watch:"
             },
             {
-                "type": "button",
+                "type": "text",
                 "id": "vibe-test-high",
                 "defaultValue": "▶ Test High Alert"
             },
             {
-                "type": "button",
+                "type": "text",
                 "id": "vibe-test-low",
                 "defaultValue": "▶ Test Low Alert"
             },
@@ -205,7 +205,7 @@
                 "defaultValue": "Test hourly vibration pattern on the watch:"
             },
             {
-                "type": "button",
+                "type": "text",
                 "id": "vibe-test-hourly",
                 "defaultValue": "▶ Test Hourly Vibration"
             }
