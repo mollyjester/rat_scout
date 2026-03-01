@@ -177,6 +177,32 @@ static void handle_weather_message(DictionaryIterator *iterator) {
     }
 }
 
+/**
+ * Handle a vibration test command sent from the config page.
+ * VIBE_TEST value:
+ *   1 = high BG alert pattern
+ *   2 = low BG alert pattern
+ *   3 = hourly vibration (single short pulse)
+ */
+static void handle_vibe_test(DictionaryIterator *iterator) {
+    Tuple *vibe_tuple = dict_find(iterator, MESSAGE_KEY_VIBE_TEST);
+    if (!vibe_tuple) return;
+    int32_t pattern_id = vibe_tuple->value->int32;
+    if (pattern_id == 1) {
+        vibes_enqueue_custom_pattern((VibePattern){
+            .durations = BG_HIGH_VIBE_PATTERN,
+            .num_segments = BG_HIGH_VIBE_PATTERN_LEN
+        });
+    } else if (pattern_id == 2) {
+        vibes_enqueue_custom_pattern((VibePattern){
+            .durations = BG_LOW_VIBE_PATTERN,
+            .num_segments = BG_LOW_VIBE_PATTERN_LEN
+        });
+    } else if (pattern_id == 3) {
+        vibes_short_pulse();
+    }
+}
+
 // ===== AppMessage Callbacks =====
 
 void inbox_received_callback(DictionaryIterator *iterator, void *context) {
@@ -187,6 +213,7 @@ void inbox_received_callback(DictionaryIterator *iterator, void *context) {
         case MSG_TYPE_GLUCOSE:   handle_glucose_message(iterator);  break;
         case MSG_TYPE_WEATHER:   handle_weather_message(iterator);  break;
         case MSG_TYPE_ASTRONOMY: handle_astronomy_message(iterator); break;
+        case MSG_TYPE_VIBE_TEST: handle_vibe_test(iterator);         break;
         default:
             APP_LOG(APP_LOG_LEVEL_WARNING, "Unknown message type: %d",
                     (int)type_tuple->value->int8);

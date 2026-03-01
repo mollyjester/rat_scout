@@ -86,6 +86,13 @@ extern const int STATUS_BLACK_X;
 #define MSG_TYPE_GLUCOSE   1
 #define MSG_TYPE_WEATHER   2
 #define MSG_TYPE_ASTRONOMY 3
+#define MSG_TYPE_VIBE_TEST 4
+
+// ===== Vibration Pattern Arrays (defined in glucose.c) =====
+extern const uint32_t BG_HIGH_VIBE_PATTERN[];
+extern const uint32_t BG_LOW_VIBE_PATTERN[];
+#define BG_HIGH_VIBE_PATTERN_LEN 3
+#define BG_LOW_VIBE_PATTERN_LEN  3
 
 // ===== Shared Global State (defined in rat_scout.c) =====
 

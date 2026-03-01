@@ -4,9 +4,9 @@
 
 // BG threshold vibration patterns
 // High threshold: short vibration, pause, long vibration
-static const uint32_t BG_HIGH_VIBE_PATTERN[] = {100, 200, 400};
+const uint32_t BG_HIGH_VIBE_PATTERN[] = {100, 200, 400};
 // Low threshold: long vibration, pause, short vibration
-static const uint32_t BG_LOW_VIBE_PATTERN[] = {400, 200, 100};
+const uint32_t BG_LOW_VIBE_PATTERN[] = {400, 200, 100};
 
 // BG zone tracking for one-shot vibration alerts
 typedef enum {
