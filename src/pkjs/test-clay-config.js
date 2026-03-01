@@ -1,6 +1,6 @@
 /**
  * Tests for clay-config.js vibration test buttons.
- * Verifies that AFTER_BUILD attaches DOM click handlers to each text item
+ * Verifies that AFTER_BUILD attaches click handlers to each button
  * and that clicking them sends the correct Pebble.sendAppMessage calls.
  *
  * Run: node src/pkjs/test-clay-config.js
@@ -19,31 +19,23 @@ function assert(condition, message) {
     }
 }
 
-// --- Mock DOM element ---
-function MockElement() {
+// --- Mock ClayItem ---
+function MockClayItem(id) {
+    this._id = id;
     this._listeners = {};
-    this.style = {};
 }
-MockElement.prototype.addEventListener = function(event, handler) {
+MockClayItem.prototype.on = function(event, handler) {
     if (!this._listeners[event]) {
         this._listeners[event] = [];
     }
     this._listeners[event].push(handler);
 };
-MockElement.prototype.dispatchClick = function() {
-    var handlers = this._listeners['click'] || [];
+MockClayItem.prototype.trigger = function(event) {
+    var handlers = this._listeners[event] || [];
     for (var i = 0; i < handlers.length; i++) {
         handlers[i]();
     }
 };
-
-// --- Mock ClayItem with $element ---
-function MockClayItem(id) {
-    this._id = id;
-    this._element = new MockElement();
-    this.$element = [this._element];
-    this.config = { defaultValue: 'Test' };
-}
 
 // --- Mock ClayConfig ---
 function MockClayConfig() {
@@ -87,9 +79,9 @@ var customFn = require('./clay-config');
 // ---- Tests ----
 console.log('clay-config.js vibration test button tests\n');
 
-// Test 1: DOM click handlers attached after AFTER_BUILD
+// Test 1: Click handlers attached after AFTER_BUILD
 (function() {
-    console.log('Test: DOM click handlers attached after AFTER_BUILD');
+    console.log('Test: Click handlers attached after AFTER_BUILD');
     var config = new MockClayConfig();
     var highItem = config.registerItem('vibe-test-high');
     var lowItem = config.registerItem('vibe-test-low');
@@ -102,16 +94,16 @@ console.log('clay-config.js vibration test button tests\n');
     config.trigger('AFTER_BUILD');
 
     assert(
-        highItem._element._listeners.click && highItem._element._listeners.click.length === 1,
-        'vibe-test-high has a DOM click listener'
+        highItem._listeners.click && highItem._listeners.click.length === 1,
+        'vibe-test-high has a click listener'
     );
     assert(
-        lowItem._element._listeners.click && lowItem._element._listeners.click.length === 1,
-        'vibe-test-low has a DOM click listener'
+        lowItem._listeners.click && lowItem._listeners.click.length === 1,
+        'vibe-test-low has a click listener'
     );
     assert(
-        hourlyItem._element._listeners.click && hourlyItem._element._listeners.click.length === 1,
-        'vibe-test-hourly has a DOM click listener'
+        hourlyItem._listeners.click && hourlyItem._listeners.click.length === 1,
+        'vibe-test-hourly has a click listener'
     );
 })();
 
@@ -127,7 +119,7 @@ console.log('clay-config.js vibration test button tests\n');
     config.trigger('AFTER_BUILD');
 
     sendAppMessageCalls = [];
-    config.getItemById('vibe-test-high')._element.dispatchClick();
+    config.getItemById('vibe-test-high').trigger('click');
 
     assert(sendAppMessageCalls.length === 1, 'sendAppMessage called once');
     assert(sendAppMessageCalls[0].MSG_TYPE === 4, 'MSG_TYPE is 4');
@@ -146,7 +138,7 @@ console.log('clay-config.js vibration test button tests\n');
     config.trigger('AFTER_BUILD');
 
     sendAppMessageCalls = [];
-    config.getItemById('vibe-test-low')._element.dispatchClick();
+    config.getItemById('vibe-test-low').trigger('click');
 
     assert(sendAppMessageCalls.length === 1, 'sendAppMessage called once');
     assert(sendAppMessageCalls[0].MSG_TYPE === 4, 'MSG_TYPE is 4');
@@ -165,7 +157,7 @@ console.log('clay-config.js vibration test button tests\n');
     config.trigger('AFTER_BUILD');
 
     sendAppMessageCalls = [];
-    config.getItemById('vibe-test-hourly')._element.dispatchClick();
+    config.getItemById('vibe-test-hourly').trigger('click');
 
     assert(sendAppMessageCalls.length === 1, 'sendAppMessage called once');
     assert(sendAppMessageCalls[0].MSG_TYPE === 4, 'MSG_TYPE is 4');
@@ -186,20 +178,6 @@ console.log('clay-config.js vibration test button tests\n');
         threw = true;
     }
     assert(!threw, 'No error thrown when items are missing');
-})();
-
-// Test 6: cursor style is set to pointer
-(function() {
-    console.log('Test: cursor style is set to pointer');
-    var config = new MockClayConfig();
-    var highItem = config.registerItem('vibe-test-high');
-    config.registerItem('vibe-test-low');
-    config.registerItem('vibe-test-hourly');
-
-    customFn.call(config, {});
-    config.trigger('AFTER_BUILD');
-
-    assert(highItem._element.style.cursor === 'pointer', 'cursor style is pointer');
 })();
 
 // --- Results ---
