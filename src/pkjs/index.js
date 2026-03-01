@@ -5,7 +5,7 @@ var Astronomy = require('./astronomy');
 var Clay = require('pebble-clay');
 var clayConfig = require('./config.json');
 var customFn = require('./clay-config');
-var clay = new Clay(clayConfig, customFn);
+var clay = new Clay(clayConfig, customFn, { autoHandleEvents: false });
 var appSettings = {};
 
 var designMode = false;
