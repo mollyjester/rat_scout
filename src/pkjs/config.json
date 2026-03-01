@@ -93,6 +93,22 @@
                 "label": "Threshold Vibration"
             },
             {
+                "type": "text",
+                "defaultValue": "Test alert vibration patterns on the watch:"
+            },
+            {
+                "type": "button",
+                "id": "vibe-test-high",
+                "defaultValue": "▶ Test High Alert",
+                "label": ""
+            },
+            {
+                "type": "button",
+                "id": "vibe-test-low",
+                "defaultValue": "▶ Test Low Alert",
+                "label": ""
+            },
+            {
                 "type": "input",
                 "messageKey": "BG_LOW_THRESHOLD",
                 "defaultValue": "",
@@ -185,6 +201,16 @@
                 "messageKey": "HOURLY_VIBRATION",
                 "defaultValue": false,
                 "label": "Hourly Vibration"
+            },
+            {
+                "type": "text",
+                "defaultValue": "Test hourly vibration pattern on the watch:"
+            },
+            {
+                "type": "button",
+                "id": "vibe-test-hourly",
+                "defaultValue": "▶ Test Hourly Vibration",
+                "label": ""
             }
         ]
     },

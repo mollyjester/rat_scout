@@ -49,7 +49,8 @@
       "WEATHER_WIND",
       "WEATHER_UMBRELLA",
       "DATE_FORMAT",
-      "GARBAGE_BAG"
+      "GARBAGE_BAG",
+      "VIBE_TEST"
     ],
     "resources": {
       "media": [
