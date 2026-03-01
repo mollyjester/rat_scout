@@ -185,7 +185,7 @@
                 "messageKey": "HOURLY_VIBRATION",
                 "defaultValue": false,
                 "label": "Hourly Vibration"
-            },
+            }
         ]
     },
     {
