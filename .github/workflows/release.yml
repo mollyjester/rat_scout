@@ -1,49 +1,69 @@
 name: Build and Release
 on:
   push:
-    tags:
-      - 'v*' # Triggers on tags like v1.0.1, v2.0, etc.
-  workflow_run:
-    workflows: ["Auto Tag on Merge"]
-    types:
-      - completed
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to build and release (e.g., v1.0.0)'
-        required: true
+        description: 'Tag to build and release (e.g., v1.0.0) — leave blank to auto-compute'
+        required: false
         type: string
 
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
-    # Run when triggered by a tag push, or when the Auto Tag workflow succeeded, or manually
-    if: >
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
-      github.event_name == 'workflow_dispatch'
+    if: github.actor != 'github-actions[bot]'
     permissions:
-      contents: write # Required to create the release and upload assets
+      contents: write
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Determine tag
+      - name: Compute next version
         id: get_tag
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
             echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
           else
-            TAG=$(git describe --tags --abbrev=0)
-            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+            LATEST=$(git tag --list 'v*' --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
+            if [ -z "$LATEST" ]; then
+              NEXT="v1.0.0"
+            else
+              VERSION="${LATEST#v}"
+              MAJOR=$(echo "$VERSION" | cut -d. -f1)
+              MINOR=$(echo "$VERSION" | cut -d. -f2)
+              NEXT="v${MAJOR}.$((MINOR + 1)).0"
+            fi
+            echo "tag=$NEXT" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Checkout tag
-        run: git checkout "${{ steps.get_tag.outputs.tag }}"
+      - name: Update package.json version
+        run: |
+          VERSION="${{ steps.get_tag.outputs.tag }}"
+          PKG_VERSION="${VERSION#v}"
+          node -e "
+            var fs = require('fs');
+            var pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = '$PKG_VERSION';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git commit -m "chore: bump version to ${{ steps.get_tag.outputs.tag }} [skip ci]"
+          git push origin main
+
+      - name: Create and push tag
+        run: |
+          git tag "${{ steps.get_tag.outputs.tag }}"
+          git push origin "${{ steps.get_tag.outputs.tag }}"
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -67,7 +87,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.get_tag.outputs.tag }}
-          files: build/*.pbw # Automatically attaches the compiled watchface
-          generate_release_notes: true # Auto-generates notes from your commit history
+          files: build/*.pbw
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

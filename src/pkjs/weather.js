@@ -182,4 +182,9 @@ function fetchWeatherData(apiKey, units, onSuccess, onError) {
     );
 }
 
-module.exports.fetchWeatherData = fetchWeatherData;
+module.exports = {
+    fetchWeatherData: fetchWeatherData,
+    hasPrecipitation: hasPrecipitation,
+    parseWeatherData: parseWeatherData,
+    checkForecastPrecipitation: checkForecastPrecipitation
+};
