@@ -246,7 +246,8 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
         update_weekday(tick_time);
     }
     
-    time_t current_time = time(NULL);
+    // Derive current_time from tick_time — avoids a redundant time() syscall
+    time_t current_time = mktime(tick_time);
     
     // Handle hourly vibration
     if (s_hourly_vibration && tick_time->tm_min == 0 && s_last_vibration_hour != tick_time->tm_hour) {
@@ -254,11 +255,13 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
         vibes_double_pulse();
     }
     
-    // Update delta display every minute
-    update_delta_display();
+    // Update delta display every minute (pass derived time to avoid extra syscall)
+    update_delta_display(current_time);
     
-    // Update step count every minute
-    update_steps();
+    // Update step count every 5 minutes (health data rarely changes faster)
+    if (tick_time->tm_min % STEPS_UPDATE_INTERVAL == 0) {
+        update_steps();
+    }
     
     // Handle data fetching
     bool should_fetch = false;
@@ -318,7 +321,7 @@ static void main_window_load(Window *window) {
     if (persist_exists(PERSIST_KEY_TIMESTAMP)) {
         s_last_reading_timestamp = persist_read_int(PERSIST_KEY_TIMESTAMP);
     }
-    update_delta_display();
+    update_delta_display(0);
     layer_add_child(window_layer, text_layer_get_layer(s_glucose_delta_layer));
     
     // Create date layer (day, month)

@@ -1,0 +1,11 @@
+{
+    "name": "Rat Scout Pebble Dev",
+    "forwardPorts": [6080],
+    "portsAttributes": {
+        "6080": {
+            "label": "Pebble Emulator (noVNC)",
+            "visibility": "public",
+            "onAutoForward": "notify"
+        }
+    }
+}

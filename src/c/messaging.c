@@ -92,7 +92,7 @@ static void handle_glucose_message(DictionaryIterator *iterator) {
             // No valid timestamp — fall back to periodic fetch pattern
             s_next_fetch_time = 0;
         }
-        update_delta_display();
+        update_delta_display(0);  // 0 = let function call time() internally
     }
 }
 
@@ -233,5 +233,5 @@ void outbox_failed_callback(DictionaryIterator *iterator, AppMessageResult reaso
 
 void outbox_sent_callback(DictionaryIterator *iterator, void *context)
 {
-    APP_LOG(APP_LOG_LEVEL_INFO, "Outbox send success!");
+    // Intentionally silent — avoid flash I/O on every successful send
 }

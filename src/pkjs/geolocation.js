@@ -2,7 +2,7 @@
 // API Documentation: https://ipgeolocation.io/astronomy-api.html
 
 var utils = require('../common/utils');
-var IPGEOLOCATION_API_URL = 'https://api.ipgeolocation.io/v2/astronomy';
+var IPGEOLOCATION_API_URL = 'https://api.ipgeolocation.io/v3/astronomy';
 
 /**
  * Parse astronomy response
@@ -97,7 +97,7 @@ function fetchAstronomyData(apiKey, latOrCallback, lonOrCallback, dateOrCallback
     
     if (lat !== undefined && lon !== undefined) {
         queryParams.lat = lat;
-        queryParams.lng = lon;
+        queryParams.long = lon;
     }
     
     if (date !== undefined) {

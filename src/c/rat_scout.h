@@ -78,6 +78,7 @@ extern const int STATUS_BLACK_X;
 #define FETCH_INTERVAL_SECONDS 300
 #define FETCH_INTERVAL_JITTER    5
 #define FALLBACK_FETCH_MINUTES   5
+#define STEPS_UPDATE_INTERVAL    5
 #define APPMESSAGE_INBOX      1024
 #define APPMESSAGE_OUTBOX      512
 
@@ -159,7 +160,7 @@ void moon_corner_draw_proc(Layer *layer, GContext *ctx);
 void battery_state_handler(BatteryChargeState charge_state);
 
 // glucose.c
-void update_delta_display(void);
+void update_delta_display(time_t current_time);
 void check_bg_threshold_vibration(const char *bg_str);
 
 // rat_scout.c

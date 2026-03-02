@@ -30,7 +30,7 @@ static char s_time_delta_buffer[BUFFER_TIME_DELTA];
  *   >= 60 min:   wipe persisted BG/delta/timestamp, show only "---"
  * Skips text layer update if the formatted string hasn't changed.
  */
-void update_delta_display(void) {
+void update_delta_display(time_t current_time) {
     // No valid timestamp — JS never returned data or data was wiped
     if (s_last_reading_timestamp <= 0) {
         if (strcmp(s_bg_buffer, "---") != 0) {
@@ -43,7 +43,10 @@ void update_delta_display(void) {
         return;
     }
     
-    time_t current_time = time(NULL);
+    // Use caller-provided time to avoid redundant time() syscall
+    if (current_time <= 0) {
+        current_time = time(NULL);
+    }
     
     // Guard against future timestamps (clock sync / timezone issues)
     int minutes_since_reading = (current_time > s_last_reading_timestamp)

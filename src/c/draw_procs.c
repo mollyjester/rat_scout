@@ -144,32 +144,32 @@ void status_bar_draw_proc(Layer *layer, GContext *ctx) {
 void sun_corner_draw_proc(Layer *layer, GContext *ctx) {
     GRect bounds = layer_get_bounds(layer);
     int right = bounds.size.w - 1;
-    graphics_context_set_fill_color(ctx, GColorBlack);
+    graphics_context_set_stroke_color(ctx, GColorBlack);
     if (s_sun_is_rising) {
-        graphics_fill_rect(ctx, GRect(right, 0, 1, 1), 0, GCornerNone);
-        graphics_fill_rect(ctx, GRect(right - 1, 0, 1, 1), 0, GCornerNone);
-        graphics_fill_rect(ctx, GRect(right, 1, 1, 1), 0, GCornerNone);
+        graphics_draw_pixel(ctx, GPoint(right, 0));
+        graphics_draw_pixel(ctx, GPoint(right - 1, 0));
+        graphics_draw_pixel(ctx, GPoint(right, 1));
     } else {
         int bottom = bounds.size.h - 1;
-        graphics_fill_rect(ctx, GRect(right, bottom, 1, 1), 0, GCornerNone);
-        graphics_fill_rect(ctx, GRect(right - 1, bottom, 1, 1), 0, GCornerNone);
-        graphics_fill_rect(ctx, GRect(right, bottom - 1, 1, 1), 0, GCornerNone);
+        graphics_draw_pixel(ctx, GPoint(right, bottom));
+        graphics_draw_pixel(ctx, GPoint(right - 1, bottom));
+        graphics_draw_pixel(ctx, GPoint(right, bottom - 1));
     }
 }
 
 void moon_corner_draw_proc(Layer *layer, GContext *ctx) {
     GRect bounds = layer_get_bounds(layer);
     int right = bounds.size.w - 1;
-    graphics_context_set_fill_color(ctx, GColorBlack);
+    graphics_context_set_stroke_color(ctx, GColorBlack);
     if (s_moon_is_rising) {
-        graphics_fill_rect(ctx, GRect(right, 0, 1, 1), 0, GCornerNone);
-        graphics_fill_rect(ctx, GRect(right - 1, 0, 1, 1), 0, GCornerNone);
-        graphics_fill_rect(ctx, GRect(right, 1, 1, 1), 0, GCornerNone);
+        graphics_draw_pixel(ctx, GPoint(right, 0));
+        graphics_draw_pixel(ctx, GPoint(right - 1, 0));
+        graphics_draw_pixel(ctx, GPoint(right, 1));
     } else {
         int bottom = bounds.size.h - 1;
-        graphics_fill_rect(ctx, GRect(right, bottom, 1, 1), 0, GCornerNone);
-        graphics_fill_rect(ctx, GRect(right - 1, bottom, 1, 1), 0, GCornerNone);
-        graphics_fill_rect(ctx, GRect(right, bottom - 1, 1, 1), 0, GCornerNone);
+        graphics_draw_pixel(ctx, GPoint(right, bottom));
+        graphics_draw_pixel(ctx, GPoint(right - 1, bottom));
+        graphics_draw_pixel(ctx, GPoint(right, bottom - 1));
     }
 }
 
