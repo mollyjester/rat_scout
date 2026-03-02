@@ -28,12 +28,12 @@ function parseAstronomyResponse(response) {
  */
 function logAstronomyData(data) {
     console.log('Astronomy data received:');
-    console.log(`  Sunrise: ${data.sunrise}`);
-    console.log(`  Sunset: ${data.sunset}`);
-    console.log(`  Moonrise: ${data.moonrise}`);
-    console.log(`  Moonset: ${data.moonset}`);
-    console.log(`  Moon Phase: ${data.moonPhase}`);
-    console.log(`  Moon Illumination: ${data.moonIllumination}`);
+    console.log('  Sunrise: ' + data.sunrise);
+    console.log('  Sunset: ' + data.sunset);
+    console.log('  Moonrise: ' + data.moonrise);
+    console.log('  Moonset: ' + data.moonset);
+    console.log('  Moon Phase: ' + data.moonPhase);
+    console.log('  Moon Illumination: ' + data.moonIllumination);
 }
 
 /**
@@ -127,15 +127,15 @@ function fetchAstronomyData(apiKey, latOrCallback, lonOrCallback, dateOrCallback
                     onSuccess(data);
                 }
             } catch (e) {
-                console.error(`Error parsing astronomy response: ${e.message}`);
+                console.error('Error parsing astronomy response: ' + e.message);
                 if (onError) {
-                    onError(`Failed to parse response: ${e.message}`);
+                    onError('Failed to parse response: ' + e.message);
                 }
             }
         } else {
-            console.error(`Astronomy API error: ${xhr.status}`);
+            console.error('Astronomy API error: ' + xhr.status);
             if (onError) {
-                onError(`API error: ${xhr.status}`);
+                onError('API error: ' + xhr.status);
             }
         }
     };

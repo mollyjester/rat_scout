@@ -2,6 +2,8 @@ var Dexcom = require('./dexcom');
 var Geolocation = require('./geolocation');
 var Weather = require('./weather');
 var Astronomy = require('./astronomy');
+var Garbage = require('./garbage');
+var Glucose = require('./glucose');
 var Clay = require('pebble-clay');
 var clayConfig = require('./config.json');
 var customFn = require('./clay-config');
@@ -55,7 +57,7 @@ function getSettings() {
     try {
         return JSON.parse(window.localStorage.getItem('clay-settings')) || {};
     } catch (e) {
-        console.error(`Error parsing settings: ${e.message}`);
+        console.error('Error parsing settings: ' + e.message);
         return {};
     }
 }
@@ -101,55 +103,6 @@ function sendToPebble(dictionary, messageType) {
     
     messageQueue.push({ dictionary: dictionary, messageType: messageType });
     processMessageQueue();
-}
-
-/**
- * Convert an array of boolean checked-states to a bitmask.
- * Index 0 = Monday, Index 1 = Tuesday, ..., Index 6 = Sunday.
- * Each element is true/false indicating whether that day is selected.
- * @param {Array} days - Array of booleans from checkboxgroup
- * @returns {number} Bitmask
- */
-function daysToBitmask(days) {
-    if (!Array.isArray(days)) return 0;
-    var mask = 0;
-    for (var i = 0; i < days.length; i++) {
-        if (days[i]) {
-            mask |= (1 << i);
-        }
-    }
-    return mask;
-}
-
-// Garbage bag type constants sent to C (matches status_bar_draw_proc expectations)
-var GARBAGE_BAG_NONE = 0;
-var GARBAGE_BAG_ORGANIC = 1;  // 'O'
-var GARBAGE_BAG_GREY = 2;     // 'G'
-var GARBAGE_BAG_BLACK = 3;    // 'B'
-
-/**
- * Compute which garbage bag icon to underscore based on current time and settings.
- * After the configured pickup hour, shows the next day's collection type.
- * @returns {number} GARBAGE_BAG_NONE/ORGANIC/GREY/BLACK
- */
-function computeGarbageBag() {
-    var now = new Date();
-    var wday = (now.getDay() + 6) % 7; // Convert 0=Sun..6=Sat to 0=Mon..6=Sun
-    var pickupHour = parseInt(appSettings.GARBAGE_PICKUP_TIME, 10);
-    if (isNaN(pickupHour)) pickupHour = 9;
-
-    if (now.getHours() >= pickupHour) {
-        wday = (wday + 1) % 7;
-    }
-
-    var organicMask = daysToBitmask(appSettings.GARBAGE_ORGANIC_DAYS);
-    var greyMask    = daysToBitmask(appSettings.GARBAGE_GREY_DAYS);
-    var blackMask   = daysToBitmask(appSettings.GARBAGE_BLACK_DAYS);
-
-    if (organicMask & (1 << wday)) return GARBAGE_BAG_ORGANIC;
-    if (greyMask    & (1 << wday)) return GARBAGE_BAG_GREY;
-    if (blackMask   & (1 << wday)) return GARBAGE_BAG_BLACK;
-    return GARBAGE_BAG_NONE;
 }
 
 /**
@@ -208,7 +161,7 @@ function sendSettings() {
         "BG_LOW_THRESHOLD": Math.round((parseFloat(lowThreshold) || 0) * 10),
         "BG_HIGH_THRESHOLD": Math.round((parseFloat(highThreshold) || 0) * 10),
         "DATE_FORMAT": appSettings.DATE_FORMAT || "dd.mm",
-        "GARBAGE_BAG": computeGarbageBag()
+        "GARBAGE_BAG": Garbage.computeGarbageBag(appSettings)
     };
     
     sendToPebble(dictionary, 'Settings');
@@ -233,7 +186,7 @@ function sendDesignModeData() {
         "BG_LOW_THRESHOLD": 700,
         "BG_HIGH_THRESHOLD": 1800,
         "DATE_FORMAT": "dd.mm",
-        "GARBAGE_BAG": GARBAGE_BAG_ORGANIC
+        "GARBAGE_BAG": Garbage.GARBAGE_BAG_ORGANIC
     };
     sendToPebble(settingsDictionary, 'Design settings');
 
@@ -274,7 +227,7 @@ function sendDesignModeData() {
  * Fetch all watchface data (glucose reading and weather)
  */
 function fetchAllData() {
-    fetchGlucoseReading();
+    Glucose.fetchGlucoseReading(appSettings, CONFIG, sendToPebble, fetchAndSendAstronomy, Dexcom, MSG_TYPE_GLUCOSE);
     // Fetch weather independently (sent as separate message)
     fetchAndSendWeather();
 }
@@ -343,122 +296,6 @@ Pebble.addEventListener('webviewclosed', function(e) {
     sendSettings();
     fetchAllData();
 });
-
-/**
- * Format blood glucose value based on units
- * @param {number} value - Raw value
- * @param {string} units - 'mg/dL' or 'mmol/L'
- * @returns {string} Formatted value
- */
-function formatBGValue(value, units) {
-    if (units === 'mmol/L') {
-        return (value / CONFIG.MMOL_CONVERSION_FACTOR).toFixed(1);
-    }
-    return String(value);
-}
-
-/**
- * Format BG delta with sign
- * @param {number} delta - Delta value
- * @param {string} units - Blood glucose units
- * @returns {string} Formatted delta
- */
-function formatBGDelta(delta, units) {
-    var formatted = units === 'mmol/L' 
-        ? (delta / CONFIG.MMOL_CONVERSION_FACTOR).toFixed(1) 
-        : String(delta);
-    return delta > 0 ? `+${formatted}` : formatted;
-}
-
-/**
- * Build glucose data dictionary from reading
- * @param {Object} result - Dexcom result object
- * @param {Object} settings - App settings
- * @returns {Object} Dictionary to send to Pebble
- */
-function buildGlucoseDictionary(result, settings) {
-    var bgUnits = settings.BG_UNITS || CONFIG.DEFAULT_BG_UNITS;
-    var readingTimestamp = Math.floor(result.current._datetime.getTime() / 1000);
-    
-    return {
-        "MSG_TYPE": MSG_TYPE_GLUCOSE,
-        "BG_UNITS": bgUnits,
-        "BG_SHOW_DELTA": settings.BG_SHOW_DELTA ? 1 : 0,
-        "BG_SHOW_TIMEDELTA": settings.BG_SHOW_TIMEDELTA ? 1 : 0,
-        "BG": formatBGValue(result.current._value, bgUnits),
-        "BGDELTA": formatBGDelta(result.current._delta, bgUnits),
-        "TIMESTAMP": readingTimestamp
-    };
-}
-
-/**
- * Send "no data" indication to the watchface.
- * Sets BG to "---" and timestamp to 0 so the C side shows stale state.
- */
-function sendNoGlucoseData() {
-    var dictionary = {
-        "MSG_TYPE": MSG_TYPE_GLUCOSE,
-        "BG": "---",
-        "TIMESTAMP": 0
-    };
-    sendToPebble(dictionary, 'No glucose data');
-}
-
-/**
- * Fetch glucose reading from Dexcom Share API
- */
-function fetchGlucoseReading() {
-    console.log('Getting glucose reading');
-
-    if (!appSettings || !appSettings.DEX_LOGIN || !appSettings.DEX_PASSWORD) {
-        console.error('No Dexcom login credentials configured');
-        sendNoGlucoseData();
-        return;
-    }
-
-    var accountId = window.localStorage.getItem(CONFIG.STORAGE_KEYS.ACCOUNT_ID);
-    var sessionId = window.localStorage.getItem(CONFIG.STORAGE_KEYS.SESSION_ID);
-    
-    var dex = new Dexcom(
-        appSettings.DEX_LOGIN,
-        appSettings.DEX_PASSWORD,
-        function(result) {
-            console.log(`Current WT: ${result.current._json.WT}`);
-            
-            var dictionary = buildGlucoseDictionary(result, appSettings);
-            
-            // Cache session IDs for faster subsequent requests
-            window.localStorage.setItem(CONFIG.STORAGE_KEYS.ACCOUNT_ID, dex.accountId);
-            window.localStorage.setItem(CONFIG.STORAGE_KEYS.SESSION_ID, dex.sessionId);
-
-            // Send BG data immediately without waiting for astronomy
-            sendToPebble(dictionary, 'BG');
-
-            // Fetch astronomy as a separate independent message
-            fetchAndSendAstronomy();
-        },
-        appSettings.DEX_REGION,
-        function(error) {
-            console.error('Glucose fetch failed: ' + error);
-            // Clear stale cached session to force full re-authentication on next attempt
-            window.localStorage.removeItem(CONFIG.STORAGE_KEYS.ACCOUNT_ID);
-            window.localStorage.removeItem(CONFIG.STORAGE_KEYS.SESSION_ID);
-            sendNoGlucoseData();
-        }
-    );
-
-    if (accountId && sessionId) {
-        dex.accountId = accountId;
-        dex.sessionId = sessionId;
-    }
-
-    try {
-        dex.getLatestGlucoseWithDelta();
-    } catch (error) {
-        console.error(`Error fetching glucose: ${error.message || error}`);
-        sendNoGlucoseData();
-    }
-}
 
 /**
  * Check if astronomy data needs refresh (once per day at midnight)
@@ -557,7 +394,7 @@ function useCachedAstronomyData() {
         }, 'Astronomy (cached)');
         return true;
     } catch (e) {
-        console.error(`Error parsing cached data: ${e.message}`);
+        console.error('Error parsing cached data: ' + e.message);
         sendToPebble({
             "MSG_TYPE": MSG_TYPE_ASTRONOMY,
             "SUNTIME": "N/A",
@@ -617,7 +454,7 @@ function handleTodayAstronomyData(todayData, apiKey, attemptCount) {
                 completeAstronomyUpdate(times);
             },
             function(error) {
-                console.log(`Error fetching tomorrow data (attempt ${attemptCount + 1}): ${error}`);
+                console.log('Error fetching tomorrow data (attempt ' + (attemptCount + 1) + '): ' + error);
                 
                 // Limit retries for tomorrow data to prevent infinite loops
                 if (attemptCount < 1) {
@@ -700,11 +537,11 @@ function fetchAndSendAstronomy(attemptCount) {
             handleTodayAstronomyData(todayData, apiKey);
         },
         function(error) {
-            console.log(`Error fetching astronomy (attempt ${attemptCount + 1}): ${error}`);
+            console.log('Error fetching astronomy (attempt ' + (attemptCount + 1) + '): ' + error);
             
             // Limit retries to prevent infinite loops
             if (attemptCount < CONFIG.MAX_FETCH_RETRIES) {
-                console.log(`Will retry astronomy fetch (${CONFIG.MAX_FETCH_RETRIES - attemptCount - 1} attempts remaining)`);
+                console.log('Will retry astronomy fetch (' + (CONFIG.MAX_FETCH_RETRIES - attemptCount - 1) + ' attempts remaining)');
                 // Retry after 2 second delay to allow network recovery
                 astronomyRetryPending = true;
                 setTimeout(function() {
@@ -713,7 +550,7 @@ function fetchAndSendAstronomy(attemptCount) {
                     fetchAndSendAstronomy(attemptCount + 1);
                 }, 2000);
             } else {
-                console.log(`Max retries reached (${CONFIG.MAX_FETCH_RETRIES}), falling back to cache`);
+                console.log('Max retries reached (' + CONFIG.MAX_FETCH_RETRIES + '), falling back to cache');
                 useCachedAstronomyData();
             }
         }
