@@ -5,6 +5,13 @@ var GARBAGE_BAG_ORGANIC = 1;
 var GARBAGE_BAG_GREY = 2;
 var GARBAGE_BAG_BLACK = 3;
 
+/**
+ * Convert an array of boolean checked-states to a bitmask.
+ * Index 0 = Monday, Index 1 = Tuesday, ..., Index 6 = Sunday.
+ * Each element is true/false indicating whether that day is selected.
+ * @param {Array} days - Array of booleans from checkboxgroup
+ * @returns {number} Bitmask
+ */
 function daysToBitmask(days) {
     if (!Array.isArray(days)) return 0;
     var mask = 0;
@@ -16,6 +23,12 @@ function daysToBitmask(days) {
     return mask;
 }
 
+/**
+ * Compute which garbage bag icon to show based on current time and settings.
+ * After the configured pickup hour, shows the next day's collection type.
+ * @param {Object} settings - App settings with GARBAGE_PICKUP_TIME, GARBAGE_ORGANIC_DAYS, etc.
+ * @returns {number} GARBAGE_BAG_NONE/ORGANIC/GREY/BLACK
+ */
 function computeGarbageBag(settings) {
     var now = new Date();
     var wday = (now.getDay() + 6) % 7;
