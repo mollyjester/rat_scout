@@ -131,6 +131,21 @@ Glucose + astronomy data are sent as a single message. Weather data is sent as a
 
 ![Watchface Layout](resources/img/rat_scout.png)
 
+## Development
+
+### Running in Emulator (Codespace / Local)
+
+```bash
+# Default (basalt platform):
+./scripts/run-emulator.sh
+
+# With logs and specific platform:
+./scripts/run-emulator.sh --platform diorite --logs
+
+# See all options:
+./scripts/run-emulator.sh --help
+```
+
 ## Building
 
 Requires Pebble SDK 3.

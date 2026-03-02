@@ -1,0 +1,32 @@
+name: Tests
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run dexcom tests
+        run: node test/dexcom.test.js
+
+      - name: Run clay-config tests
+        run: node src/pkjs/test-clay-config.js
+
+      - name: Run astronomy tests
+        run: node test/astronomy.test.js
+
+      - name: Run weather tests
+        run: node test/weather.test.js
+
+      - name: Run utils tests
+        run: node test/utils.test.js
