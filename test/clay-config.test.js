@@ -4,7 +4,7 @@
  * and that clicking them calls serialize() and sets location.href
  * with the correct _vibeTest value in the payload.
  *
- * Run: node src/pkjs/test-clay-config.js
+ * Run: node test/clay-config.test.js
  */
 
 var passed = 0;
@@ -79,7 +79,7 @@ global.location = {
 };
 
 // --- Load the module under test ---
-var customFn = require('./clay-config');
+var customFn = require('../src/pkjs/clay-config');
 
 // ---- Tests ----
 console.log('clay-config.js vibration test button tests\n');

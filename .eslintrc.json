@@ -1,0 +1,14 @@
+{
+    "env": {
+        "browser": false,
+        "node": true
+    },
+    "parserOptions": {
+        "ecmaVersion": 5
+    },
+    "rules": {
+        "no-template-curly-in-string": "error",
+        "no-var": "off",
+        "prefer-template": "off"
+    }
+}

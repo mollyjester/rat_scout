@@ -187,7 +187,7 @@ Dexcom.prototype.authenticate = function(callback) {
             callback.call(self);
         }
     } catch (error) {
-        self.onError(`Authentication error: ${error.message}`);
+        self.onError('Authentication error: ' + error.message);
     }
 };
 
@@ -205,7 +205,7 @@ Dexcom.prototype._getAccountId = function(callback) {
 
         if (req.status === 200) {
             self.accountId = self.trimQuotes(req.responseText);
-            console.log(`Account ID: ${self.accountId}`);
+            console.log('Account ID: ' + self.accountId);
 
             if (self.accountId === '00000000-0000-0000-0000-000000000000') {
                 self.onError('Invalid credentials');
@@ -214,7 +214,7 @@ Dexcom.prototype._getAccountId = function(callback) {
 
             callback.call(self);
         } else {
-            self.onError(`Error fetching account ID: ${req.status}`);
+            self.onError('Error fetching account ID: ' + req.status);
         }
     };
 
@@ -244,7 +244,7 @@ Dexcom.prototype._getSessionId = function(callback) {
 
         if (loginReq.status === 200) {
             self.sessionId = self.trimQuotes(loginReq.responseText);
-            console.log(`Session ID: ${self.sessionId}`);
+            console.log('Session ID: ' + self.sessionId);
 
             if (self.sessionId === '00000000-0000-0000-0000-000000000000') {
                 self.onError('Login failed');
@@ -253,7 +253,7 @@ Dexcom.prototype._getSessionId = function(callback) {
 
             callback.call(self);
         } else {
-            self.onError(`Error fetching session ID: ${loginReq.status}`);
+            self.onError('Error fetching session ID: ' + loginReq.status);
         }
     };
 
@@ -326,10 +326,10 @@ Dexcom.prototype._fetchGlucoseReadings = function() {
                 } else if (req.status === 500) {
                     self._handleServerError(JSON.parse(req.responseText));
                 } else {
-                    throw new Error(`Failed to get readings: ${req.status}`);
+                    throw new Error('Failed to get readings: ' + req.status);
                 }
             } catch (error) {
-                console.error(`Error processing response: ${error.message}`);
+                console.error('Error processing response: ' + error.message);
                 self.onError(error.message || 'Unknown error');
             }
         };
@@ -360,7 +360,7 @@ Dexcom.prototype._fetchGlucoseReadings = function() {
             maxCount: 2
         }));
     } catch (error) {
-        console.error(`Error fetching glucose: ${error.message}`);
+        console.error('Error fetching glucose: ' + error.message);
     }
 };
 
@@ -416,7 +416,7 @@ Dexcom.prototype._handleServerError = function(error) {
         // Limit retries to prevent infinite loop
         if (this.retryCount < 2) {
             this.retryCount++;
-            console.log(`Session error: ${error.Code}, re-authenticating (attempt ${this.retryCount})...`);
+            console.log('Session error: ' + error.Code + ', re-authenticating (attempt ' + this.retryCount + ')...');
             this.sessionId = null;
             this.authenticate(function() {
                 self.getLatestGlucoseWithDelta();
@@ -424,12 +424,12 @@ Dexcom.prototype._handleServerError = function(error) {
         } else {
             var attempts = this.retryCount;
             this.retryCount = 0;
-            console.error(`Session error: ${error.Code}, max retries reached (${attempts})`);
-            throw new Error(`Session validation failed after ${attempts} attempts`);
+            console.error('Session error: ' + error.Code + ', max retries reached (' + attempts + ')');
+            throw new Error('Session validation failed after ' + attempts + ' attempts');
         }
     } else {
         this.retryCount = 0;
-        throw new Error(`Server error: ${error.Message}`);
+        throw new Error('Server error: ' + error.Message);
     }
 };
 
