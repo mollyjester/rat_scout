@@ -1,180 +1,180 @@
 {
-  "name": "Rat Scout",
-  "author": "Sergei Likharev",
-  "version": "1.1.0",
-  "keywords": [
-    "pebble-app"
-  ],
-  "private": true,
-  "dependencies": {
-    "pebble-clay": "^1.0.4"
-  },
-  "pebble": {
-    "displayName": "Rat Scout",
-    "uuid": "f41022a2-b149-42ac-a98d-2afbf84ca841",
-    "sdkVersion": "3",
-    "enableMultiJS": true,
-    "capabilities": [
-      "configurable"
+    "name": "Rat Scout",
+    "author": "Sergei Likharev",
+    "version": "1.1.0",
+    "keywords": [
+        "pebble-app"
     ],
-    "targetPlatforms": [
-      "aplite",
-      "basalt",
-      "diorite",
-      "emery"
-    ],
-    "watchapp": {
-      "watchface": true
+    "private": true,
+    "dependencies": {
+        "pebble-clay": "^1.0.4"
     },
-    "messageKeys": [
-      "MSG_TYPE",
-      "DEX_REGION",
-      "BG_UNITS",
-      "BG_SHOW_DELTA",
-      "BG_SHOW_TIMEDELTA",
-      "BG",
-      "BGDELTA",
-      "TIMESTAMP",
-      "HOURLY_VIBRATION",
-      "BG_VIBRATION",
-      "BG_LOW_THRESHOLD",
-      "BG_HIGH_THRESHOLD",
-      "SUNTIME",
-      "MOONTIME",
-      "MOON_PHASE",
-      "SUN_IS_RISING",
-      "MOON_IS_RISING",
-      "WEATHER_UNITS",
-      "WEATHER_TEMP",
-      "WEATHER_WIND",
-      "WEATHER_UMBRELLA",
-      "DATE_FORMAT",
-      "GARBAGE_BAG",
-      "VIBE_TEST"
-    ],
-    "resources": {
-      "media": [
-        {
-          "type": "font",
-          "name": "FONT_HUMAROID_64",
-          "file": "fonts/Humaroid.ttf",
-          "characterRegex": "[0-9:]"
+    "pebble": {
+        "displayName": "Rat Scout",
+        "uuid": "f41022a2-b149-42ac-a98d-2afbf84ca841",
+        "sdkVersion": "3",
+        "enableMultiJS": true,
+        "capabilities": [
+            "configurable"
+        ],
+        "targetPlatforms": [
+            "aplite",
+            "basalt",
+            "diorite",
+            "emery"
+        ],
+        "watchapp": {
+            "watchface": true
         },
-        {
-          "type": "font",
-          "name": "FONT_HUMAROID_20",
-          "file": "fonts/Humaroid.ttf",
-          "characterRegex": "[0-9.:+/m ADEFHIMNORSTUW-]"
-        },
-        {
-          "type": "font",
-          "name": "FONT_HUMAROID_28",
-          "file": "fonts/Humaroid.ttf",
-          "characterRegex": "[0-9. ]"
-        },
-        {
-          "type": "font",
-          "name": "FONT_HUMAROID_32",
-          "file": "fonts/Humaroid.ttf",
-          "characterRegex": "[0-9.Ladgino-]"
-        },
-        {
-          "type": "bitmap",
-          "name": "BG_IMAGE",
-          "file": "img/bg.png"
-        },
-        {
-          "type": "bitmap",
-          "name": "SUN_ICON",
-          "file": "img/sun.png"
-        },
-        {
-          "type": "bitmap",
-          "name": "MOON_NEW",
-          "file": "img/newmoon.png"
-        },
-        {
-          "type": "bitmap",
-          "name": "MOON_WAXING_CRESCENT",
-          "file": "img/waxingcrescentmoon.png"
-        },
-        {
-          "type": "bitmap",
-          "name": "MOON_FIRST_QUARTER",
-          "file": "img/firstquartermoon.png"
-        },
-        {
-          "type": "bitmap",
-          "name": "MOON_WAXING_GIBBOUS",
-          "file": "img/waxinggibbousmoon.png"
-        },
-        {
-          "type": "bitmap",
-          "name": "MOON_FULL",
-          "file": "img/fullmoon.png"
-        },
-        {
-          "type": "bitmap",
-          "name": "MOON_WANING_GIBBOUS",
-          "file": "img/waninggibbousmoon.png"
-        },
-        {
-          "type": "bitmap",
-          "name": "MOON_THIRD_QUARTER",
-          "file": "img/thirdquartermoon.png"
-        },
-        {
-          "type": "bitmap",
-          "name": "MOON_WANING_CRESCENT",
-          "file": "img/waningcrescentmoon.png"
-        },
-        {
-          "type": "bitmap",
-          "name": "HOURLY_ICON",
-          "file": "img/hourly.png"
-        },
-        {
-          "type": "bitmap",
-          "name": "UMBRELLA_ICON",
-          "file": "img/umbrella.png"
-        },
-        {
-          "type": "bitmap",
-          "name": "GARBAGE_ORGANIC",
-          "file": "img/organicbag.png"
-        },
-        {
-          "type": "bitmap",
-          "name": "GARBAGE_GREY",
-          "file": "img/greybag.png"
-        },
-        {
-          "type": "bitmap",
-          "name": "GARBAGE_BLACK",
-          "file": "img/blackbag.png"
-        },
-        {
-          "type": "bitmap",
-          "name": "WIND_ICON",
-          "file": "img/wind.png"
-        },
-        {
-          "type": "bitmap",
-          "name": "TEMP_ICON",
-          "file": "img/temperature.png"
-        },
-        {
-          "type": "bitmap",
-          "name": "STEPS_ICON",
-          "file": "img/steps.png"
-        },
-        {
-          "type": "png",
-          "name": "APP_ICON",
-          "file": "img/rat_scout_icon.png",
-          "menuIcon": true
+        "messageKeys": [
+            "MSG_TYPE",
+            "DEX_REGION",
+            "BG_UNITS",
+            "BG_SHOW_DELTA",
+            "BG_SHOW_TIMEDELTA",
+            "BG",
+            "BGDELTA",
+            "TIMESTAMP",
+            "HOURLY_VIBRATION",
+            "BG_VIBRATION",
+            "BG_LOW_THRESHOLD",
+            "BG_HIGH_THRESHOLD",
+            "SUNTIME",
+            "MOONTIME",
+            "MOON_PHASE",
+            "SUN_IS_RISING",
+            "MOON_IS_RISING",
+            "WEATHER_UNITS",
+            "WEATHER_TEMP",
+            "WEATHER_WIND",
+            "WEATHER_UMBRELLA",
+            "DATE_FORMAT",
+            "GARBAGE_BAG",
+            "VIBE_TEST"
+        ],
+        "resources": {
+            "media": [
+                {
+                    "type": "font",
+                    "name": "FONT_HUMAROID_64",
+                    "file": "fonts/Humaroid.ttf",
+                    "characterRegex": "[0-9:]"
+                },
+                {
+                    "type": "font",
+                    "name": "FONT_HUMAROID_20",
+                    "file": "fonts/Humaroid.ttf",
+                    "characterRegex": "[0-9.:+/m ADEFHIMNORSTUW-]"
+                },
+                {
+                    "type": "font",
+                    "name": "FONT_HUMAROID_28",
+                    "file": "fonts/Humaroid.ttf",
+                    "characterRegex": "[0-9. ]"
+                },
+                {
+                    "type": "font",
+                    "name": "FONT_HUMAROID_32",
+                    "file": "fonts/Humaroid.ttf",
+                    "characterRegex": "[0-9.Ladgino-]"
+                },
+                {
+                    "type": "bitmap",
+                    "name": "BG_IMAGE",
+                    "file": "img/bg.png"
+                },
+                {
+                    "type": "bitmap",
+                    "name": "SUN_ICON",
+                    "file": "img/sun.png"
+                },
+                {
+                    "type": "bitmap",
+                    "name": "MOON_NEW",
+                    "file": "img/newmoon.png"
+                },
+                {
+                    "type": "bitmap",
+                    "name": "MOON_WAXING_CRESCENT",
+                    "file": "img/waxingcrescentmoon.png"
+                },
+                {
+                    "type": "bitmap",
+                    "name": "MOON_FIRST_QUARTER",
+                    "file": "img/firstquartermoon.png"
+                },
+                {
+                    "type": "bitmap",
+                    "name": "MOON_WAXING_GIBBOUS",
+                    "file": "img/waxinggibbousmoon.png"
+                },
+                {
+                    "type": "bitmap",
+                    "name": "MOON_FULL",
+                    "file": "img/fullmoon.png"
+                },
+                {
+                    "type": "bitmap",
+                    "name": "MOON_WANING_GIBBOUS",
+                    "file": "img/waninggibbousmoon.png"
+                },
+                {
+                    "type": "bitmap",
+                    "name": "MOON_THIRD_QUARTER",
+                    "file": "img/thirdquartermoon.png"
+                },
+                {
+                    "type": "bitmap",
+                    "name": "MOON_WANING_CRESCENT",
+                    "file": "img/waningcrescentmoon.png"
+                },
+                {
+                    "type": "bitmap",
+                    "name": "HOURLY_ICON",
+                    "file": "img/hourly.png"
+                },
+                {
+                    "type": "bitmap",
+                    "name": "UMBRELLA_ICON",
+                    "file": "img/umbrella.png"
+                },
+                {
+                    "type": "bitmap",
+                    "name": "GARBAGE_ORGANIC",
+                    "file": "img/organicbag.png"
+                },
+                {
+                    "type": "bitmap",
+                    "name": "GARBAGE_GREY",
+                    "file": "img/greybag.png"
+                },
+                {
+                    "type": "bitmap",
+                    "name": "GARBAGE_BLACK",
+                    "file": "img/blackbag.png"
+                },
+                {
+                    "type": "bitmap",
+                    "name": "WIND_ICON",
+                    "file": "img/wind.png"
+                },
+                {
+                    "type": "bitmap",
+                    "name": "TEMP_ICON",
+                    "file": "img/temperature.png"
+                },
+                {
+                    "type": "bitmap",
+                    "name": "STEPS_ICON",
+                    "file": "img/steps.png"
+                },
+                {
+                    "type": "png",
+                    "name": "APP_ICON",
+                    "file": "img/rat_scout_icon.png",
+                    "menuIcon": true
+                }
+            ]
         }
-      ]
     }
-  }
 }
