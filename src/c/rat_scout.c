@@ -246,12 +246,20 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
         update_weekday(tick_time);
     }
     
-    // Derive current_time from tick_time — avoids a redundant time() syscall
-    time_t current_time = mktime(tick_time);
+    // DEVIATION: PebbleOS mktime() is non-standard — it normalizes the input
+    // struct tm to UTC via gmtime_r instead of localtime_r, clobbering
+    // tick_time->tm_hour/tm_min to UTC values. Use time(NULL) instead.
+    // See: PebbleOS src/fw/util/time/mktime.c — `*tb = *tbtemp` after gmtime_r.
+    time_t current_time = time(NULL);
     
-    // Handle hourly vibration
+    // Handle hourly vibration.
+    // DEVIATION: PebbleOS vibe queue silently drops new patterns while a
+    // system notification vibration is in progress (s_pattern_in_progress
+    // guard in vibe_pattern.c). Call vibes_cancel() first to preempt any
+    // ongoing system vibe so the app's alerts are not silently lost.
     if (s_hourly_vibration && tick_time->tm_min == 0 && s_last_vibration_hour != tick_time->tm_hour) {
         s_last_vibration_hour = tick_time->tm_hour;
+        vibes_cancel();
         vibes_double_pulse();
     }
     

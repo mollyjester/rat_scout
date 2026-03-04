@@ -188,6 +188,10 @@ static void handle_vibe_test(DictionaryIterator *iterator) {
     Tuple *vibe_tuple = dict_find(iterator, MESSAGE_KEY_VIBE_TEST);
     if (!vibe_tuple) return;
     int32_t pattern_id = vibe_tuple->value->int32;
+    // DEVIATION: Cancel any in-progress system vibe before testing app
+    // patterns — PebbleOS silently drops enqueue calls while a pattern
+    // is already playing (s_pattern_in_progress in vibe_pattern.c).
+    vibes_cancel();
     if (pattern_id == 1) {
         vibes_enqueue_custom_pattern((VibePattern){
             .durations = BG_HIGH_VIBE_PATTERN,

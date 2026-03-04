@@ -151,14 +151,22 @@ void check_bg_threshold_vibration(const char *bg_str) {
         new_zone = BG_ZONE_LOW;
     }
 
-    // Only vibrate when entering a HIGH or LOW zone from a different zone
+    // Only vibrate when entering a HIGH or LOW zone from a different zone.
+    // DEVIATION: PebbleOS vibe queue silently drops new patterns while a
+    // system notification vibration is in progress (s_pattern_in_progress
+    // guard in vibe_pattern.c). Call vibes_cancel() first to preempt any
+    // ongoing system vibe — BG alerts are safety-critical and must not be
+    // silently swallowed. Zone is updated only after the cancel+enqueue
+    // sequence so the one-shot is not consumed without actual vibration.
     if (new_zone != s_bg_zone) {
         if (new_zone == BG_ZONE_HIGH) {
+            vibes_cancel();
             vibes_enqueue_custom_pattern((VibePattern){
                 .durations = BG_HIGH_VIBE_PATTERN,
                 .num_segments = ARRAY_LENGTH(BG_HIGH_VIBE_PATTERN)
             });
         } else if (new_zone == BG_ZONE_LOW) {
+            vibes_cancel();
             vibes_enqueue_custom_pattern((VibePattern){
                 .durations = BG_LOW_VIBE_PATTERN,
                 .num_segments = ARRAY_LENGTH(BG_LOW_VIBE_PATTERN)
