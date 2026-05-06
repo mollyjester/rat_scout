@@ -1,4 +1,5 @@
 #include "rat_scout.h"
+#include "audio.h"
 
 // ===== Private Helpers =====
 
@@ -46,6 +47,21 @@ static void handle_settings(DictionaryIterator *iterator) {
     Tuple *garbage_bag_tuple = dict_find(iterator, MESSAGE_KEY_GARBAGE_BAG);
     if (garbage_bag_tuple) {
         update_garbage_bag(garbage_bag_tuple->value->int32);
+    }
+
+    // Audio alert settings
+    Tuple *audio_enable_tuple = dict_find(iterator, MESSAGE_KEY_ALERT_SOUND_ENABLE);
+    if (audio_enable_tuple) {
+        bool enabled = audio_enable_tuple->value->int8 == 1;
+        audio_set_enabled(enabled);
+        persist_write_bool(PERSIST_KEY_AUDIO_ENABLE, enabled);
+    }
+
+    Tuple *audio_volume_tuple = dict_find(iterator, MESSAGE_KEY_ALERT_SOUND_VOLUME);
+    if (audio_volume_tuple) {
+        uint8_t level = (uint8_t)audio_volume_tuple->value->int32;
+        audio_set_volume(level);
+        persist_write_int(PERSIST_KEY_AUDIO_VOLUME, level);
     }
 }
 
@@ -193,17 +209,51 @@ static void handle_vibe_test(DictionaryIterator *iterator) {
     // is already playing (s_pattern_in_progress in vibe_pattern.c).
     vibes_cancel();
     if (pattern_id == 1) {
+        audio_play_alert(ALERT_KIND_BG_HIGH);
         vibes_enqueue_custom_pattern((VibePattern){
             .durations = BG_HIGH_VIBE_PATTERN,
             .num_segments = BG_HIGH_VIBE_PATTERN_LEN
         });
     } else if (pattern_id == 2) {
+        audio_play_alert(ALERT_KIND_BG_LOW);
         vibes_enqueue_custom_pattern((VibePattern){
             .durations = BG_LOW_VIBE_PATTERN,
             .num_segments = BG_LOW_VIBE_PATTERN_LEN
         });
     } else if (pattern_id == 3) {
+        audio_play_alert(ALERT_KIND_HOURLY);
         vibes_double_pulse();
+    }
+}
+
+// ===== Outbox Helpers =====
+
+/**
+ * Send an alert notification to PebbleKit JS so it can push a Quick View
+ * timeline pin via the Rebble timeline API.
+ *
+ * The message is a best-effort fire-and-forget: if the outbox is busy the
+ * alert is silently dropped rather than delaying the already-queued fetch
+ * message. BG safety depends on the vibration (already fired), not the pin.
+ *
+ * @param kind  - AlertKind discriminator (ALERT_KIND_BG_HIGH/LOW/HOURLY)
+ * @param value - Human-readable value string (e.g. the BG reading, or "")
+ */
+void send_alert_message(uint8_t kind, const char *value) {
+    DictionaryIterator *iter;
+    AppMessageResult result = app_message_outbox_begin(&iter);
+    if (result != APP_MSG_OK || !iter) {
+        APP_LOG(APP_LOG_LEVEL_WARNING, "send_alert_message: outbox unavailable (%d)", (int)result);
+        return;
+    }
+    dict_write_uint8(iter, MESSAGE_KEY_MSG_TYPE, MSG_TYPE_ALERT);
+    dict_write_uint8(iter, MESSAGE_KEY_ALERT_KIND, kind);
+    if (value && value[0] != '\0') {
+        dict_write_cstring(iter, MESSAGE_KEY_ALERT_VALUE, value);
+    }
+    AppMessageResult send_result = app_message_outbox_send();
+    if (send_result != APP_MSG_OK) {
+        APP_LOG(APP_LOG_LEVEL_WARNING, "send_alert_message: send failed (%d)", (int)send_result);
     }
 }
 

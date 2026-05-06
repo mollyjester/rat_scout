@@ -55,3 +55,22 @@ const GRect RECT_WEEKDAY_LAYER = {{81, -9}, {40, 21}}; // 62 + 12 + 7
 const GRect RECT_STATUS_BAR = {{0, 0}, {144, 16}};
 #endif
 
+// ===== Compact-Mode Layout Constants =====
+// Applied when Quick View is visible (unobstructed height < LAYOUT_COMPACT_THRESHOLD).
+// Two layout modes:
+//   Normal  — full screen: all layers visible, positions above.
+//   Compact — Quick View visible: date/week/sun/moon/weather/steps hidden;
+//             time unchanged; BG uses FONT_HUMAROID_64 in a wider rect;
+//             delta repositioned alongside.
+#if defined(PBL_PLATFORM_EMERY)
+// Emery: 200x228 full.  Compact threshold 215 (QV ~13+ px showing).
+const GRect RECT_TIME_LAYER_COMPACT    = {{1,  12}, {200, 68}};
+const GRect RECT_GLUCOSE_LAYER_COMPACT = {{0,  52}, {130, 68}};
+const GRect RECT_DELTA_LAYER_COMPACT   = {{132, 88}, {68,  28}};
+#else
+// Basalt/Diorite: 144x168 full.  Compact threshold 155 (QV ~13+ px showing).
+const GRect RECT_TIME_LAYER_COMPACT    = {{1,  -7}, {144, 68}};
+const GRect RECT_GLUCOSE_LAYER_COMPACT = {{0,  28}, {90,  68}};
+const GRect RECT_DELTA_LAYER_COMPACT   = {{92,  68}, {52, 28}};
+#endif
+

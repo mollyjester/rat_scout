@@ -4,6 +4,7 @@ var Weather = require('./weather');
 var Astronomy = require('./astronomy');
 var Garbage = require('./garbage');
 var Glucose = require('./glucose');
+var Timeline = require('./timeline');
 var Clay = require('pebble-clay');
 var clayConfig = require('./config.json');
 var customFn = require('./clay-config');
@@ -16,6 +17,12 @@ var MSG_TYPE_GLUCOSE   = 1;
 var MSG_TYPE_WEATHER   = 2;
 var MSG_TYPE_ASTRONOMY = 3;
 var MSG_TYPE_VIBE_TEST = 4;
+var MSG_TYPE_ALERT     = 5;
+
+// Alert kind discriminators (must match AlertKind enum in rat_scout.h)
+var ALERT_KIND_BG_HIGH = 1;
+var ALERT_KIND_BG_LOW  = 2;
+var ALERT_KIND_HOURLY  = 3;
 
 // Retry cancellation guards (Fix 8)
 var astronomyRetryPending = false;
@@ -48,7 +55,10 @@ var CONFIG = {
     REQUEST_TIMEOUT_MS: 15000,
     DEFAULT_WEATHER_INTERVAL_MIN: 60,
     SIGNIFICANT_LOCATION_CHANGE_KM: 5,
-    GEOLOCATION_MAX_AGE_MS: 300000
+    GEOLOCATION_MAX_AGE_MS: 300000,
+    // Alert overlay defaults
+    DEFAULT_ALERT_OVERLAY_ENABLE: false,
+    DEFAULT_ALERT_OVERLAY_DURATION_S: 300
 };
 
 /**
@@ -140,6 +150,50 @@ function isNightWindow() {
 }
 
 /**
+ * Handle an alert message sent from the watchface (MSG_TYPE_ALERT).
+ * Pushes a Quick View timeline pin via the Rebble API when the user
+ * has enabled ALERT_OVERLAY in settings.
+ * @param {Object} payload - The raw AppMessage payload dict.
+ */
+function handleAlertMessage(payload) {
+    var overlayEnabled = appSettings.ALERT_OVERLAY_ENABLE !== undefined
+        ? appSettings.ALERT_OVERLAY_ENABLE
+        : CONFIG.DEFAULT_ALERT_OVERLAY_ENABLE;
+    if (!overlayEnabled) {
+        console.log('alert overlay disabled — skipping pin push');
+        return;
+    }
+
+    var durationS = parseInt(appSettings.ALERT_OVERLAY_DURATION, 10);
+    if (isNaN(durationS) || durationS <= 0) {
+        durationS = CONFIG.DEFAULT_ALERT_OVERLAY_DURATION_S;
+    }
+
+    var kind = payload.ALERT_KIND;
+    var value = payload.ALERT_VALUE || '';
+
+    var pinId, title, body;
+    if (kind === ALERT_KIND_BG_HIGH) {
+        pinId = 'rsalert-bghigh';
+        title = 'BG High Alert';
+        body  = value ? 'BG: ' + value : 'High BG threshold reached';
+    } else if (kind === ALERT_KIND_BG_LOW) {
+        pinId = 'rsalert-bglow';
+        title = 'BG Low Alert';
+        body  = value ? 'BG: ' + value : 'Low BG threshold reached';
+    } else if (kind === ALERT_KIND_HOURLY) {
+        pinId = 'rsalert-hourly';
+        title = 'Hourly Alert';
+        body  = 'Hourly reminder';
+    } else {
+        console.log('handleAlertMessage: unknown kind ' + kind);
+        return;
+    }
+
+    Timeline.pushQuickViewPin(pinId, title, body, durationS);
+}
+
+/**
  * Build and send settings to the watchface
  */
 function sendSettings() {
@@ -191,9 +245,18 @@ Pebble.addEventListener('ready', function() {
 });
 
 // Listen for AppMessage from watchface
-Pebble.addEventListener('appmessage', function() {
+Pebble.addEventListener('appmessage', function(e) {
     console.log('AppMessage received!');
     appSettings = getSettings();
+
+    // Handle outbox alert messages sent by the watch (C → JS).
+    // The watch fires these after a vibration alert so JS can push a
+    // Quick View timeline pin via the Rebble API.
+    if (e && e.payload && e.payload.MSG_TYPE === MSG_TYPE_ALERT) {
+        handleAlertMessage(e.payload);
+        return;
+    }
+
     // Settings are only sent on startup and after config save.
     // Skipping sendSettings() here avoids an extra Bluetooth message every 5 minutes.
     fetchAllData();
@@ -221,6 +284,9 @@ Pebble.addEventListener('webviewclosed', function(e) {
 
         // Let Clay process settings normally
         clay.getSettings(e.response);
+
+        // Invalidate cached Rebble token in case it was changed
+        Timeline.invalidateCachedToken();
 
         // Send vibe test command if requested
         if (vibePattern > 0) {

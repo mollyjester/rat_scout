@@ -1,4 +1,5 @@
 #include "rat_scout.h"
+#include "audio.h"
 
 // ===== Shared Globals (extern declarations in rat_scout.h) =====
 
@@ -259,8 +260,10 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     // ongoing system vibe so the app's alerts are not silently lost.
     if (s_hourly_vibration && tick_time->tm_min == 0 && s_last_vibration_hour != tick_time->tm_hour) {
         s_last_vibration_hour = tick_time->tm_hour;
+        audio_play_alert(ALERT_KIND_HOURLY);
         vibes_cancel();
         vibes_double_pulse();
+        send_alert_message(ALERT_KIND_HOURLY, "");
     }
     
     // Update delta display every minute (pass derived time to avoid extra syscall)
@@ -290,10 +293,62 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     }
 }
 
+// ===== Adaptive Layout (UnobstructedArea) =====
+
+/**
+ * Apply the correct layout for the current unobstructed screen area.
+ * Compact mode activates when Quick View is visible (unobs height below
+ * platform threshold).  In compact mode: date, week, sun/moon, weather, and
+ * step layers are hidden; BG layer grows to FONT_HUMAROID_64.
+ * @param unobs - Current unobstructed bounds from layer_get_unobstructed_bounds
+ */
+static void layout_apply_unobstructed(GRect unobs) {
+#if defined(PBL_PLATFORM_EMERY)
+    bool compact = (unobs.size.h < 215);
+#else
+    bool compact = (unobs.size.h < 155);
+#endif
+
+    // Resize the three primary layers
+    layer_set_frame(text_layer_get_layer(s_time_layer),
+                    compact ? RECT_TIME_LAYER_COMPACT : RECT_TIME_LAYER);
+    layer_set_frame(text_layer_get_layer(s_glucose_layer),
+                    compact ? RECT_GLUCOSE_LAYER_COMPACT : RECT_GLUCOSE_LAYER);
+    text_layer_set_font(s_glucose_layer, compact ? s_time_font : s_glucose_font);
+    layer_set_frame(text_layer_get_layer(s_glucose_delta_layer),
+                    compact ? RECT_DELTA_LAYER_COMPACT : RECT_DELTA_LAYER);
+
+    // Hide/show secondary layers
+    layer_set_hidden(text_layer_get_layer(s_date_layer), compact);
+    layer_set_hidden(text_layer_get_layer(s_week_layer), compact);
+    layer_set_hidden(text_layer_get_layer(s_sun_time_layer), compact);
+    layer_set_hidden(text_layer_get_layer(s_moon_time_layer), compact);
+    layer_set_hidden(text_layer_get_layer(s_weather_temp_layer), compact);
+    layer_set_hidden(text_layer_get_layer(s_weather_wind_layer), compact);
+    layer_set_hidden(bitmap_layer_get_layer(s_sun_icon_layer), compact);
+    layer_set_hidden(bitmap_layer_get_layer(s_moon_icon_layer), compact);
+    layer_set_hidden(s_sun_corner_layer, compact);
+    layer_set_hidden(s_moon_corner_layer, compact);
+    layer_set_hidden(bitmap_layer_get_layer(s_temp_icon_layer), compact);
+    layer_set_hidden(bitmap_layer_get_layer(s_wind_icon_layer), compact);
+#if defined(PBL_HEALTH)
+    layer_set_hidden(text_layer_get_layer(s_steps_layer), compact);
+    layer_set_hidden(bitmap_layer_get_layer(s_steps_icon_layer), compact);
+#endif
+}
+
+static void on_unobstructed_will_change(GRect final_unobs, void *ctx) {
+    layout_apply_unobstructed(final_unobs);
+}
+
+static void on_unobstructed_did_change(void *ctx) {
+    Layer *window_layer = window_get_root_layer(s_main_window);
+    layout_apply_unobstructed(layer_get_unobstructed_bounds(window_layer));
+}
+
 static void main_window_load(Window *window) {
     Layer *window_layer = window_get_root_layer(window);
     GRect bounds = layer_get_bounds(window_layer);
-
     // Create and add background layer
     s_background_bitmap = gbitmap_create_with_resource(RESOURCE_ID_BG_IMAGE);
     s_background_layer = bitmap_layer_create(bounds);
@@ -477,6 +532,9 @@ static void main_window_load(Window *window) {
     
     // Initialize weekday display
     update_weekday(NULL);
+
+    // Apply correct layout in case Quick View is already visible at startup
+    layout_apply_unobstructed(layer_get_unobstructed_bounds(window_layer));
 }
 
 static void main_window_unload(Window *window)
@@ -538,10 +596,17 @@ static void init(void) {
 
     // Show the Window
     window_stack_push(s_main_window, true);
+
+    // Initialise audio from persisted settings
+    audio_init();
     
     // Subscribe to system services
     tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
     battery_state_service_subscribe(battery_state_handler);
+    unobstructed_area_service_subscribe((UnobstructedAreaHandlers){
+        .will_change = on_unobstructed_will_change,
+        .did_change  = on_unobstructed_did_change,
+    }, NULL);
     
     // Initialize time (force date/week update) and battery
     update_time(NULL, true);
@@ -561,6 +626,7 @@ static void init(void) {
 static void deinit(void) {
     tick_timer_service_unsubscribe();
     battery_state_service_unsubscribe();
+    unobstructed_area_service_unsubscribe();
     window_destroy(s_main_window);
 }
 

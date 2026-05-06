@@ -36,7 +36,11 @@ enum PersistKeys {
     PERSIST_KEY_HOURLY_VIBRATION,
     PERSIST_KEY_UMBRELLA_ACTIVE,
     PERSIST_KEY_GARBAGE_BAG,
-    PERSIST_KEY_TIMESTAMP
+    PERSIST_KEY_TIMESTAMP,
+    PERSIST_KEY_ALERT_OVERLAY_ENABLE,
+    PERSIST_KEY_ALERT_OVERLAY_DURATION,
+    PERSIST_KEY_AUDIO_ENABLE,
+    PERSIST_KEY_AUDIO_VOLUME
 };
 
 // ===== Layout Constants (defined in layout.c) =====
@@ -57,6 +61,11 @@ extern const GRect RECT_STEPS_LAYER;
 extern const GRect RECT_STEPS_ICON;
 extern const GRect RECT_WEEKDAY_LAYER;
 extern const GRect RECT_STATUS_BAR;
+
+// Compact-mode layout constants (applied when Quick View is visible)
+extern const GRect RECT_TIME_LAYER_COMPACT;
+extern const GRect RECT_GLUCOSE_LAYER_COMPACT;
+extern const GRect RECT_DELTA_LAYER_COMPACT;
 
 // Status bar icon X positions differ between Emery and non-Emery platforms
 extern const int STATUS_HOURLY_X;
@@ -88,6 +97,15 @@ extern const int STATUS_BLACK_X;
 #define MSG_TYPE_WEATHER   2
 #define MSG_TYPE_ASTRONOMY 3
 #define MSG_TYPE_VIBE_TEST 4
+// Watch→JS alert push (outbox message requesting a Quick View timeline pin)
+#define MSG_TYPE_ALERT     5
+
+// ===== Alert Kind Discriminators =====
+typedef enum {
+    ALERT_KIND_BG_HIGH = 1,
+    ALERT_KIND_BG_LOW  = 2,
+    ALERT_KIND_HOURLY  = 3
+} AlertKind;
 
 // ===== Vibration Pattern Arrays (defined in glucose.c) =====
 extern const uint32_t BG_HIGH_VIBE_PATTERN[];
@@ -162,6 +180,23 @@ void battery_state_handler(BatteryChargeState charge_state);
 // glucose.c
 void update_delta_display(time_t current_time);
 void check_bg_threshold_vibration(const char *bg_str);
+
+// messaging.c
+void send_alert_message(uint8_t kind, const char *value);
+void inbox_received_callback(DictionaryIterator *iterator, void *context);
+void inbox_dropped_callback(AppMessageResult reason, void *context);
+
+// audio.c
+// Play the melody associated with an alert kind (no-op if audio disabled or no speaker).
+void audio_play_alert(AlertKind kind);
+// Initialise from persisted settings; call once from init().
+void audio_init(void);
+// Update enable flag at runtime (called from handle_settings in messaging.c).
+void audio_set_enabled(bool enabled);
+// Update volume (0=low/35, 1=medium/70, 2=high/100).
+void audio_set_volume(uint8_t level);
+void outbox_failed_callback(DictionaryIterator *iterator, AppMessageResult reason, void *context);
+void outbox_sent_callback(DictionaryIterator *iterator, void *context);
 
 // rat_scout.c
 void update_time(struct tm *tick_time, bool force_date);

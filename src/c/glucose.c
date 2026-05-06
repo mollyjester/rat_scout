@@ -1,4 +1,5 @@
 #include "rat_scout.h"
+#include "audio.h"
 
 // ===== Private State =====
 
@@ -160,17 +161,21 @@ void check_bg_threshold_vibration(const char *bg_str) {
     // sequence so the one-shot is not consumed without actual vibration.
     if (new_zone != s_bg_zone) {
         if (new_zone == BG_ZONE_HIGH) {
+            audio_play_alert(ALERT_KIND_BG_HIGH);
             vibes_cancel();
             vibes_enqueue_custom_pattern((VibePattern){
                 .durations = BG_HIGH_VIBE_PATTERN,
                 .num_segments = ARRAY_LENGTH(BG_HIGH_VIBE_PATTERN)
             });
+            send_alert_message(ALERT_KIND_BG_HIGH, bg_str);
         } else if (new_zone == BG_ZONE_LOW) {
+            audio_play_alert(ALERT_KIND_BG_LOW);
             vibes_cancel();
             vibes_enqueue_custom_pattern((VibePattern){
                 .durations = BG_LOW_VIBE_PATTERN,
                 .num_segments = ARRAY_LENGTH(BG_LOW_VIBE_PATTERN)
             });
+            send_alert_message(ALERT_KIND_BG_LOW, bg_str);
         }
         s_bg_zone = new_zone;
     }

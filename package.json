@@ -6,6 +6,9 @@
         "pebble-app"
     ],
     "private": true,
+    "scripts": {
+        "test": "bash test/run-all.sh"
+    },
     "dependencies": {
         "pebble-clay": "^1.0.4"
     },
@@ -18,7 +21,6 @@
             "configurable"
         ],
         "targetPlatforms": [
-            "aplite",
             "basalt",
             "diorite",
             "emery"
@@ -50,7 +52,13 @@
             "WEATHER_UMBRELLA",
             "DATE_FORMAT",
             "GARBAGE_BAG",
-            "VIBE_TEST"
+            "VIBE_TEST",
+            "ALERT_KIND",
+            "ALERT_VALUE",
+            "ALERT_OVERLAY_ENABLE",
+            "ALERT_OVERLAY_DURATION",
+            "ALERT_SOUND_ENABLE",
+            "ALERT_SOUND_VOLUME"
         ],
         "resources": {
             "media": [

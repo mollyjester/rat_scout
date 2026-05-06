@@ -310,6 +310,72 @@
         "items": [
             {
                 "type": "heading",
+                "defaultValue": "Quick View Alerts"
+            },
+            {
+                "type": "text",
+                "defaultValue": "When enabled, BG threshold and hourly vibration alerts will also push a Quick View overlay via the Rebble timeline API. Requires a Rebble account token."
+            },
+            {
+                "type": "toggle",
+                "messageKey": "ALERT_OVERLAY_ENABLE",
+                "defaultValue": false,
+                "label": "Enable Quick View Overlays"
+            },
+            {
+                "type": "input",
+                "messageKey": "ALERT_OVERLAY_DURATION",
+                "defaultValue": "300",
+                "label": "Overlay Duration (seconds)",
+                "attributes": {
+                    "type": "number",
+                    "min": "30",
+                    "max": "900"
+                }
+            },
+            {
+                "type": "input",
+                "messageKey": "REBBLE_TOKEN",
+                "defaultValue": "",
+                "label": "Rebble User Token"
+            }
+        ]
+    },
+    {
+        "type": "section",
+        "items": [
+            {
+                "type": "heading",
+                "defaultValue": "Audio Alerts"
+            },
+            {
+                "type": "text",
+                "defaultValue": "Play a short melody alongside each vibration alert. Audible on Diorite and Emery; silent on Basalt (no speaker hardware). Off by default."
+            },
+            {
+                "type": "toggle",
+                "messageKey": "ALERT_SOUND_ENABLE",
+                "defaultValue": false,
+                "label": "Enable Audio Alerts"
+            },
+            {
+                "type": "select",
+                "messageKey": "ALERT_SOUND_VOLUME",
+                "defaultValue": "1",
+                "label": "Volume",
+                "options": [
+                    {"label": "Low", "value": "0"},
+                    {"label": "Medium", "value": "1"},
+                    {"label": "High", "value": "2"}
+                ]
+            }
+        ]
+    },
+    {
+        "type": "section",
+        "items": [
+            {
+                "type": "heading",
                 "defaultValue": "Vibration Test"
             },
             {
