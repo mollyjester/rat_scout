@@ -314,7 +314,7 @@
             },
             {
                 "type": "text",
-                "defaultValue": "When enabled, BG threshold and hourly vibration alerts will also push a Quick View overlay via the Rebble timeline API. Requires a Rebble account token."
+                "defaultValue": "When enabled, BG threshold and hourly vibration alerts will also push a Quick View overlay via the Rebble timeline API. The token is obtained automatically from your Rebble account."
             },
             {
                 "type": "toggle",
@@ -333,12 +333,6 @@
                     "max": "900"
                 }
             },
-            {
-                "type": "input",
-                "messageKey": "REBBLE_TOKEN",
-                "defaultValue": "",
-                "label": "Rebble User Token"
-            }
         ]
     },
     {

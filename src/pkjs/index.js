@@ -285,9 +285,6 @@ Pebble.addEventListener('webviewclosed', function(e) {
         // Let Clay process settings normally
         clay.getSettings(e.response);
 
-        // Invalidate cached Rebble token in case it was changed
-        Timeline.invalidateCachedToken();
-
         // Send vibe test command if requested
         if (vibePattern > 0) {
             Pebble.sendAppMessage(

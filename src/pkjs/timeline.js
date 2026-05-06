@@ -7,46 +7,18 @@
  *
  * API: https://timeline-api.rebble.io/v1/user/pins/<pinId>  (PUT / DELETE)
  *
- * The Rebble timeline token is read from Clay settings (`REBBLE_TOKEN`).
- * It is cached in localStorage under CONFIG.STORAGE_KEYS.REBBLE_TOKEN so the
- * key is only read from localStorage once per session.
+ * The timeline token is obtained automatically via Pebble.getTimelineToken(),
+ * which the Rebble companion app intercepts server-side. No manual token
+ * entry is required.
  */
 
 var TIMELINE_BASE_URL = 'https://timeline-api.rebble.io/v1/user/pins/';
 
-// In-memory cache avoids repeated localStorage reads per alert
-var _cachedToken = null;
-
-/**
- * Return the Rebble user token, reading from localStorage on first call.
- * Returns null when no token is configured.
- * @returns {string|null}
- */
-function getCachedToken() {
-    if (_cachedToken !== null) return _cachedToken;
-    try {
-        var settings = JSON.parse(window.localStorage.getItem('clay-settings') || '{}');
-        _cachedToken = settings.REBBLE_TOKEN || null;
-    } catch (e) {
-        console.error('timeline: error reading settings: ' + e.message);
-        _cachedToken = null;
-    }
-    return _cachedToken;
-}
-
-/**
- * Invalidate the cached token (call when settings are saved).
- */
-function invalidateCachedToken() {
-    _cachedToken = null;
-}
-
 /**
  * Push a timeline pin that triggers a Quick View overlay on the watch.
- * The pin is scheduled for deletion after `duration_s` seconds by sending
- * a DELETE request after the configured duration expires.
- *
- * No-ops silently when no Rebble token is configured.
+ * Obtains the user's timeline token via Pebble.getTimelineToken() and then
+ * PUTs the pin to the Rebble timeline API. The pin is scheduled for deletion
+ * after `duration_s` seconds so it does not persist in the user's timeline.
  *
  * @param {string} pinId      - Unique stable ID for this pin class (e.g. "rsalert-bghigh").
  *                              Re-using the same ID updates the existing pin rather than
@@ -56,21 +28,24 @@ function invalidateCachedToken() {
  * @param {number} duration_s - Seconds after which the pin is deleted (default 300 = 5 min).
  */
 function pushQuickViewPin(pinId, title, body, duration_s) {
-    var token = getCachedToken();
-    if (!token) {
-        console.log('timeline: no Rebble token configured, skipping pin push');
-        return;
-    }
-
     duration_s = duration_s || 300;
 
-    // Build the "now" time and a time slightly in the future so the system
-    // shows it as a current/upcoming event rather than a past event.
+    Pebble.getTimelineToken(
+        function(token) {
+            _doPushPin(pinId, title, body, duration_s, token);
+        },
+        function(error) {
+            console.error('timeline: getTimelineToken failed: ' + error);
+        }
+    );
+}
+
+/**
+ * Perform the actual PUT request once we have a token.
+ */
+function _doPushPin(pinId, title, body, duration_s, token) {
     var now = new Date();
     var startIso = now.toISOString();
-    // End time = start + duration so Quick View duration matches the alert
-    var endDate = new Date(now.getTime() + duration_s * 1000);
-    var endIso = endDate.toISOString();
 
     var pin = {
         id: pinId,
@@ -137,7 +112,5 @@ function _deletePin(pinId, token) {
 }
 
 module.exports = {
-    getCachedToken: getCachedToken,
-    invalidateCachedToken: invalidateCachedToken,
     pushQuickViewPin: pushQuickViewPin
 };

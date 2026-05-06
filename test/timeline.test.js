@@ -3,7 +3,7 @@
  *
  * Run: node test/timeline.test.js
  *
- * Browser APIs (XMLHttpRequest, localStorage, setTimeout) are stubbed below
+ * Browser APIs (XMLHttpRequest, Pebble, setTimeout) are stubbed below
  * so the module can be exercised in a plain Node.js environment.
  */
 
@@ -22,13 +22,17 @@ function assert(condition, message) {
 
 // ===== Minimal Browser API Stubs =====
 
-// localStorage stub backed by a plain object
-var _store = {};
-global.window = {
-    localStorage: {
-        getItem: function(key) { return _store[key] !== undefined ? _store[key] : null; },
-        setItem: function(key, val) { _store[key] = String(val); },
-        removeItem: function(key) { delete _store[key]; }
+// Pebble stub — getTimelineToken calls successCallback with the configured token,
+// or failureCallback if _pebbleTokenError is set.
+var _pebbleToken = null;
+var _pebbleTokenError = null;
+global.Pebble = {
+    getTimelineToken: function(success, failure) {
+        if (_pebbleTokenError) {
+            failure(_pebbleTokenError);
+        } else {
+            success(_pebbleToken);
+        }
     }
 };
 
@@ -67,75 +71,32 @@ global.setTimeout = function(fn, ms) {
 
 function resetXhr() { _xhrCalls = []; }
 function resetTimers() { _timers = []; }
-function resetStore() { _store = {}; }
 
 function resetAll() {
     resetXhr();
     resetTimers();
-    resetStore();
-}
-
-function storeSettings(obj) {
-    _store['clay-settings'] = JSON.stringify(obj);
+    _pebbleToken = null;
+    _pebbleTokenError = null;
 }
 
 // ===== Load module after stubs are in place =====
-// Re-require after each section that mutates internal state via invalidateCachedToken
 var Timeline = require('../src/pkjs/timeline');
 
 console.log('timeline.js tests\n');
 
-// ===== getCachedToken =====
-console.log('getCachedToken');
+// ===== pushQuickViewPin — getTimelineToken error =====
+console.log('pushQuickViewPin (getTimelineToken failure)');
 
 resetAll();
-Timeline.invalidateCachedToken();
-assert(Timeline.getCachedToken() === null, 'returns null when no settings in localStorage');
-
-resetAll();
-Timeline.invalidateCachedToken();
-storeSettings({ REBBLE_TOKEN: 'tok123' });
-assert(Timeline.getCachedToken() === 'tok123', 'reads token from clay-settings');
-
-// Second call uses the in-memory cache (localStorage is cleared but getCachedToken still returns)
-resetStore();
-assert(Timeline.getCachedToken() === 'tok123', 'subsequent call uses in-memory cache');
-
-resetAll();
-Timeline.invalidateCachedToken();
-storeSettings({});
-assert(Timeline.getCachedToken() === null, 'returns null when REBBLE_TOKEN not set in settings');
-
-resetAll();
-Timeline.invalidateCachedToken();
-_store['clay-settings'] = 'NOT_VALID_JSON_{{{';
-assert(Timeline.getCachedToken() === null, 'returns null on malformed JSON in localStorage');
-
-// ===== invalidateCachedToken =====
-console.log('\ninvalidateCachedToken');
-
-resetAll();
-storeSettings({ REBBLE_TOKEN: 'first' });
-Timeline.invalidateCachedToken();
-Timeline.getCachedToken();  // primes cache
-storeSettings({ REBBLE_TOKEN: 'second' });
-Timeline.invalidateCachedToken();
-assert(Timeline.getCachedToken() === 'second', 'after invalidation fresh read reflects updated token');
-
-// ===== pushQuickViewPin — no-op when no token =====
-console.log('\npushQuickViewPin (no token)');
-
-resetAll();
-Timeline.invalidateCachedToken();
+_pebbleTokenError = 'not logged in';
 Timeline.pushQuickViewPin('test-pin', 'Title', 'Body', 60);
-assert(_xhrCalls.length === 0, 'no XHR fired when REBBLE_TOKEN is not configured');
+assert(_xhrCalls.length === 0, 'no XHR fired when getTimelineToken fails');
 
 // ===== pushQuickViewPin — sends correct PUT request =====
 console.log('\npushQuickViewPin (with token)');
 
 resetAll();
-Timeline.invalidateCachedToken();
-storeSettings({ REBBLE_TOKEN: 'mytoken' });
+_pebbleToken = 'mytoken';
 Timeline.pushQuickViewPin('rsalert-bghigh', 'BG High Alert', 'BG: 210', 300);
 
 assert(_xhrCalls.length === 1, 'one XHR created for the PUT');
@@ -144,7 +105,7 @@ assert(xhr.method === 'PUT', 'method is PUT');
 assert(xhr.url === 'https://timeline-api.rebble.io/v1/user/pins/rsalert-bghigh',
     'URL contains encoded pin ID');
 assert(xhr.headers['Content-Type'] === 'application/json', 'Content-Type header set');
-assert(xhr.headers['X-User-Token'] === 'mytoken', 'X-User-Token header equals configured token');
+assert(xhr.headers['X-User-Token'] === 'mytoken', 'X-User-Token header equals token from Pebble');
 assert(typeof xhr.body === 'string', 'body is a string (serialised JSON)');
 
 var pinBody = JSON.parse(xhr.body);
@@ -172,8 +133,7 @@ assert(deleteXhr.headers['X-User-Token'] === 'mytoken', 'DELETE carries token');
 console.log('\npushQuickViewPin (default duration)');
 
 resetAll();
-Timeline.invalidateCachedToken();
-storeSettings({ REBBLE_TOKEN: 'tok' });
+_pebbleToken = 'tok';
 Timeline.pushQuickViewPin('rsalert-hourly', 'Hourly', 'Hourly reminder');  // no duration_s
 var pinBody2 = JSON.parse(_xhrCalls[0].body);
 assert(pinBody2.duration === 5, 'default duration is 300 s = 5 min');
@@ -182,8 +142,7 @@ assert(pinBody2.duration === 5, 'default duration is 300 s = 5 min');
 console.log('\npushQuickViewPin (URL encoding)');
 
 resetAll();
-Timeline.invalidateCachedToken();
-storeSettings({ REBBLE_TOKEN: 'tok' });
+_pebbleToken = 'tok';
 Timeline.pushQuickViewPin('pin with spaces', 'T', 'B', 60);
 assert(_xhrCalls[0].url.indexOf('pin%20with%20spaces') !== -1 ||
        _xhrCalls[0].url.indexOf('pin+with+spaces') !== -1,
@@ -193,8 +152,7 @@ assert(_xhrCalls[0].url.indexOf('pin%20with%20spaces') !== -1 ||
 console.log('\npushQuickViewPin (PUT failure)');
 
 resetAll();
-Timeline.invalidateCachedToken();
-storeSettings({ REBBLE_TOKEN: 'tok' });
+_pebbleToken = 'tok';
 Timeline.pushQuickViewPin('rsalert-bglow', 'Low', 'BG: 55', 120);
 var failXhr = _xhrCalls[0];
 failXhr.status = 500;
