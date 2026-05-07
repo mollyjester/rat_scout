@@ -62,9 +62,9 @@ static void overlay_draw_proc(Layer *layer, GContext *ctx) {
 
     // 4. Message text in left area
     GRect text_rect = GRect(
+        2,
         OVERLAY_BORDER + 2,
-        OVERLAY_BORDER + 2,
-        container_x - OVERLAY_BORDER - 4,
+        container_x - 4,
         sh - (OVERLAY_BORDER + 2) * 2
     );
     graphics_context_set_text_color(ctx, GColorBlack);
@@ -75,12 +75,14 @@ static void overlay_draw_proc(Layer *layer, GContext *ctx) {
         GTextAlignmentLeft,
         NULL);
 
-    // 5. 2-px black border drawn last (covers stray pixels at edges)
+    // 5. Top and bottom borders only — left/right borders are the screen frame.
+    //    Extend 2px beyond each side so the rectangles are flush with the screen edge.
     graphics_context_set_fill_color(ctx, GColorBlack);
-    graphics_fill_rect(ctx, GRect(0,      0,      sw, OVERLAY_BORDER),        0, GCornerNone);
-    graphics_fill_rect(ctx, GRect(0,      sh - OVERLAY_BORDER, sw, OVERLAY_BORDER), 0, GCornerNone);
-    graphics_fill_rect(ctx, GRect(0,      OVERLAY_BORDER, OVERLAY_BORDER, sh - 2*OVERLAY_BORDER), 0, GCornerNone);
-    graphics_fill_rect(ctx, GRect(sw - OVERLAY_BORDER, OVERLAY_BORDER, OVERLAY_BORDER, sh - 2*OVERLAY_BORDER), 0, GCornerNone);
+    graphics_fill_rect(ctx, GRect(-OVERLAY_BORDER, 0,      sw + 2*OVERLAY_BORDER, OVERLAY_BORDER), 0, GCornerNone);
+    graphics_fill_rect(ctx, GRect(-OVERLAY_BORDER, sh - OVERLAY_BORDER, sw + 2*OVERLAY_BORDER, OVERLAY_BORDER), 0, GCornerNone);
+
+    // 6. 1px vertical divider between message area and icon container
+    graphics_fill_rect(ctx, GRect(container_x - 1, OVERLAY_BORDER, 1, sh - 2*OVERLAY_BORDER), 0, GCornerNone);
 }
 
 // ===== Public API =====
