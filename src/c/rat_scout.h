@@ -100,7 +100,7 @@ typedef enum {
     ALERT_KIND_HOURLY,
 } AlertKind;
 
-#define OVERLAY_DEFAULT_DURATION_S 5
+#define OVERLAY_DEFAULT_DURATION_S 10
 
 // Overlay settings (defined in overlay.c)
 extern bool s_overlay_enabled;

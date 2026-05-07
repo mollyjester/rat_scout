@@ -41,12 +41,17 @@ Rat Scout connects to the Dexcom Share API to display real-time blood glucose re
 - **Hourly vibration indicator**: shows when hourly chime is enabled
 - **Umbrella indicator**: highlights when rain is expected
 - **Garbage collection**: underscores the next bag type (Organic / Grey / Black) based on weekly schedule, rolls over at 9 AM
-
+### Quick View Alerts
+- **Transient overlay banner**: appears at the bottom of the watchface after a BG threshold or hourly vibration fires
+- **Icon-coded**: distinct icons for high/low BG alerts vs. hourly chime
+- **Configurable duration**: Short (3 s), Normal (10 s), or Long (20 s)
+- **Auto-dismiss**: overlay disappears after the chosen duration without interaction
+- **Enable/disable**: can be toggled independently of vibration alerts
 ### Other
 - **Battery indicator**: visual bar with charging animation
 - **Step count**: daily steps from Pebble Health (on supported platforms)
 - **Persistent state**: data persists across app restarts
-- **Cross-platform**: Aplite, Basalt, Chalk, Diorite, Emery
+- **Cross-platform**: Aplite, Basalt, Diorite, Emery
 
 ## Requirements
 
@@ -83,6 +88,8 @@ Open Rat Scout settings from the Pebble/Rebble app on your phone.
 | Night High Threshold | Optional high threshold during the night window |
 | Night Start | Hour when night thresholds activate (0-23) |
 | Night End | Hour when night thresholds deactivate (0-23) |
+| Quick View Alerts | Show transient overlay banner after BG or hourly alerts |
+| Alert Duration | Duration the overlay banner stays on screen: Short (3 s), Normal (10 s), Long (20 s) |
 
 Night thresholds allow you to use different alerting ranges while you sleep (e.g., wider range to avoid unnecessary vibrations). If the night threshold fields are left empty or no night time frame is set, the general thresholds are used around the clock. The night window supports crossing midnight (e.g., start=22, end=7).
 
@@ -105,7 +112,13 @@ All settings are stored locally on your phone.
 ```
 src/
 ├── c/
-│   └── rat_scout.c          # Watchface UI, rendering, vibration alerts, persistent storage
+│   ├── rat_scout.c          # Watchface core: UI, layer setup, vibration, persistent storage
+│   ├── overlay.c            # Transient overlay notification banner (Quick View Alerts)
+│   ├── glucose.c            # Glucose update rendering and BG threshold alert logic
+│   ├── messaging.c          # AppMessage handler: settings ingestion, data dispatch
+│   ├── draw_procs.c         # Custom GPath and drawing procedures
+│   ├── layout.c             # Layer positioning and watchface layout
+│   └── ui_helpers.c         # Shared UI utility functions
 └── pkjs/
     ├── index.js              # App orchestrator: settings, data fetching, message queue
     ├── dexcom.js             # Dexcom Share API client (auth + glucose readings)

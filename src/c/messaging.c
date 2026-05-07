@@ -57,7 +57,7 @@ static void handle_settings(DictionaryIterator *iterator) {
     Tuple *overlay_dur_tuple = dict_find(iterator, MESSAGE_KEY_ALERT_OVERLAY_DURATION);
     if (overlay_dur_tuple) {
         int dur = (int)overlay_dur_tuple->value->int32;
-        if (dur >= 1 && dur <= 15) {
+        if (dur >= 1 && dur <= 20) {
             s_overlay_duration_s = dur;
             persist_write_int(PERSIST_KEY_OVERLAY_DURATION, dur);
         }
@@ -228,7 +228,7 @@ static void handle_vibe_test(DictionaryIterator *iterator) {
  * so users can preview the overlay before enabling it.
  */
 static void handle_overlay_test(DictionaryIterator *iterator) {
-    overlay_show(ALERT_KIND_HOURLY, "Overlay\nTest");
+    overlay_show(ALERT_KIND_BG_HIGH, "Overlay\nTest");
 }
 
 // ===== AppMessage Callbacks =====

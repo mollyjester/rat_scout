@@ -91,6 +91,7 @@ console.log('clay-config.js vibration test button tests\n');
     var highItem = config.registerItem('vibe-test-high');
     var lowItem = config.registerItem('vibe-test-low');
     var hourlyItem = config.registerItem('vibe-test-hourly');
+    var overlayItem = config.registerItem('overlay-test');
 
     // Call customFn with `this` = config
     customFn.call(config, {});
@@ -110,6 +111,10 @@ console.log('clay-config.js vibration test button tests\n');
         hourlyItem._listeners.click && hourlyItem._listeners.click.length === 1,
         'vibe-test-hourly has a click listener'
     );
+    assert(
+        overlayItem._listeners.click && overlayItem._listeners.click.length === 1,
+        'overlay-test has a click listener'
+    );
 })();
 
 // Test 2: Clicking vibe-test-high sets location.href with _vibeTest=1
@@ -119,6 +124,7 @@ console.log('clay-config.js vibration test button tests\n');
     config.registerItem('vibe-test-high');
     config.registerItem('vibe-test-low');
     config.registerItem('vibe-test-hourly');
+    config.registerItem('overlay-test');
 
     customFn.call(config, {});
     config.trigger('AFTER_BUILD');
@@ -139,6 +145,7 @@ console.log('clay-config.js vibration test button tests\n');
     config.registerItem('vibe-test-high');
     config.registerItem('vibe-test-low');
     config.registerItem('vibe-test-hourly');
+    config.registerItem('overlay-test');
 
     customFn.call(config, {});
     config.trigger('AFTER_BUILD');
@@ -159,6 +166,7 @@ console.log('clay-config.js vibration test button tests\n');
     config.registerItem('vibe-test-high');
     config.registerItem('vibe-test-low');
     config.registerItem('vibe-test-hourly');
+    config.registerItem('overlay-test');
 
     customFn.call(config, {});
     config.trigger('AFTER_BUILD');
@@ -186,6 +194,27 @@ console.log('clay-config.js vibration test button tests\n');
         threw = true;
     }
     assert(!threw, 'No error thrown when items are missing');
+})();
+
+// Test 6: Clicking overlay-test sets location.href with _overlayTest=1
+(function() {
+    console.log('Test: Click overlay-test sets location.href with _overlayTest=1');
+    var config = new MockClayConfig();
+    config.registerItem('vibe-test-high');
+    config.registerItem('vibe-test-low');
+    config.registerItem('vibe-test-hourly');
+    config.registerItem('overlay-test');
+
+    customFn.call(config, {});
+    config.trigger('AFTER_BUILD');
+
+    lastHref = null;
+    config.getItemById('overlay-test').trigger('click');
+
+    assert(lastHref !== null, 'location.href was set');
+    var payload = JSON.parse(decodeURIComponent(lastHref.replace('pebblejs://close#', '')));
+    assert(payload._overlayTest === 1, '_overlayTest is 1');
+    assert(payload.foo === 'bar', 'serialized settings are included');
 })();
 
 // --- Results ---

@@ -3,8 +3,8 @@
 // ===== Overlay constants =====
 #define OVERLAY_HEIGHT        51
 #define OVERLAY_ICON_SIZE     24
+#define OVERLAY_ICON_CONTAINER 30
 #define OVERLAY_BORDER         2
-#define OVERLAY_CHECKER_SIZE   4
 
 // ===== Shared settings (extern'd in rat_scout.h) =====
 bool s_overlay_enabled   = false;
@@ -32,29 +32,36 @@ static void overlay_draw_proc(Layer *layer, GContext *ctx) {
     graphics_context_set_fill_color(ctx, GColorWhite);
     graphics_fill_rect(ctx, bounds, 0, GCornerNone);
 
-    // 2. Checkerboard in right icon area (below border, before drawing border on top)
-    int icon_x = sw - OVERLAY_BORDER - OVERLAY_ICON_SIZE;
-    int icon_y = (sh - OVERLAY_ICON_SIZE) / 2;
-    for (int cy = 0; cy < OVERLAY_ICON_SIZE; cy += OVERLAY_CHECKER_SIZE) {
-        for (int cx = 0; cx < OVERLAY_ICON_SIZE; cx += OVERLAY_CHECKER_SIZE) {
-            bool dark = (((cx / OVERLAY_CHECKER_SIZE) + (cy / OVERLAY_CHECKER_SIZE)) & 1) == 0;
-            graphics_context_set_fill_color(ctx, dark ? GColorBlack : GColorWhite);
-            graphics_fill_rect(ctx,
-                GRect(icon_x + cx, icon_y + cy, OVERLAY_CHECKER_SIZE, OVERLAY_CHECKER_SIZE),
-                0, GCornerNone);
+    // 2. Checkerboard in right icon container (30px wide, full inner height)
+    int container_x = sw - OVERLAY_BORDER - OVERLAY_ICON_CONTAINER;
+    int container_inner_h = sh - 2 * OVERLAY_BORDER;
+    // Fill white base first, then draw 1px black dots at even (x+y) positions
+    graphics_context_set_fill_color(ctx, GColorWhite);
+    graphics_fill_rect(ctx,
+        GRect(container_x, OVERLAY_BORDER, OVERLAY_ICON_CONTAINER, container_inner_h),
+        0, GCornerNone);
+    graphics_context_set_stroke_color(ctx, GColorBlack);
+    for (int py = 0; py < container_inner_h; py++) {
+        for (int px = 0; px < OVERLAY_ICON_CONTAINER; px++) {
+            if (((px + py) & 1) == 0) {
+                graphics_draw_pixel(ctx, GPoint(container_x + px, OVERLAY_BORDER + py));
+            }
         }
     }
 
-    // 3. PDC icon on top of checkerboard
+    // 3. PDC icon centered in container (24x24 centered in 30px wide, inner height)
+    int icon_offset_x = (OVERLAY_ICON_CONTAINER - OVERLAY_ICON_SIZE) / 2;
+    int icon_offset_y = (container_inner_h - OVERLAY_ICON_SIZE) / 2;
     if (s_overlay_image) {
-        gdraw_command_image_draw(ctx, s_overlay_image, GPoint(icon_x, icon_y));
+        gdraw_command_image_draw(ctx, s_overlay_image,
+            GPoint(container_x + icon_offset_x, OVERLAY_BORDER + icon_offset_y));
     }
 
     // 4. Message text in left area
     GRect text_rect = GRect(
         OVERLAY_BORDER + 2,
         OVERLAY_BORDER + 2,
-        icon_x - OVERLAY_BORDER - 4,
+        container_x - OVERLAY_BORDER - 4,
         sh - (OVERLAY_BORDER + 2) * 2
     );
     graphics_context_set_text_color(ctx, GColorBlack);

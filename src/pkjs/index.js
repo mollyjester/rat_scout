@@ -166,7 +166,7 @@ function sendSettings() {
         "DATE_FORMAT": appSettings.DATE_FORMAT || "dd.mm",
         "GARBAGE_BAG": Garbage.computeGarbageBag(appSettings),
         "ALERT_OVERLAY_ENABLE": appSettings.ALERT_OVERLAY_ENABLE ? 1 : 0,
-        "ALERT_OVERLAY_DURATION": parseInt(appSettings.ALERT_OVERLAY_DURATION, 10) || 5
+        "ALERT_OVERLAY_DURATION": parseInt(appSettings.ALERT_OVERLAY_DURATION, 10) || 10
     };
     
     sendToPebble(dictionary, 'Settings');
@@ -229,26 +229,26 @@ Pebble.addEventListener('webviewclosed', function(e) {
         // Let Clay process settings normally
         clay.getSettings(e.response);
 
-        // Send vibe test command if requested
+        // Load the freshly saved settings and push them to the watch first,
+        // so any test command that follows sees the current configuration.
+        appSettings = getSettings();
+        sendSettings();
+
+        // Queue test commands after settings so they arrive in order
         if (vibePattern > 0) {
-            Pebble.sendAppMessage(
+            sendToPebble(
                 { 'MSG_TYPE': MSG_TYPE_VIBE_TEST, 'VIBE_TEST': vibePattern },
-                function() { console.log('Vibe test sent: pattern ' + vibePattern); },
-                function() { console.error('Vibe test send failed'); }
+                'Vibe test'
             );
         }
 
-        // Send overlay test command if requested
         if (overlayTest) {
-            Pebble.sendAppMessage(
+            sendToPebble(
                 { 'MSG_TYPE': MSG_TYPE_OVERLAY_TEST },
-                function() { console.log('Overlay test sent'); },
-                function() { console.error('Overlay test send failed'); }
+                'Overlay test'
             );
         }
     }
-    appSettings = getSettings();
-    sendSettings();
     fetchAllData();
 });
 
