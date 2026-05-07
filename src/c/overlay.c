@@ -1,28 +1,60 @@
 #include "rat_scout.h"
 
 // ===== Overlay constants =====
-#define OVERLAY_HEIGHT        51
-#define OVERLAY_ICON_SIZE     24
+
+// Total height of the overlay layer in pixels
+#define OVERLAY_HEIGHT         51
+// Width and height of the alert icon bitmap
+#define OVERLAY_ICON_SIZE      24
+// Width of the right-hand icon container (wider than icon to add padding)
 #define OVERLAY_ICON_CONTAINER 30
-#define OVERLAY_BORDER         2
+// Thickness of the top and bottom border stripes in pixels
+#define OVERLAY_BORDER          2
 
 // ===== Shared settings (extern'd in rat_scout.h) =====
-bool s_overlay_enabled   = false;
+
+// Whether the overlay feature is enabled; controlled via Clay settings
+bool s_overlay_enabled    = false;
+// How long the overlay stays on screen before auto-dismissing (seconds)
 int  s_overlay_duration_s = OVERLAY_DEFAULT_DURATION_S;
 
 // ===== Private state =====
-static Layer               *s_overlay_layer = NULL;
-static AppTimer            *s_overlay_timer  = NULL;
-static GBitmap             *s_overlay_image  = NULL;
-static char                 s_overlay_text[48];
+
+// The layer that renders the overlay banner
+static Layer    *s_overlay_layer = NULL;
+// Timer handle used for auto-dismiss; NULL when no overlay is visible
+static AppTimer *s_overlay_timer = NULL;
+// Alert icon bitmap for the currently displayed alert kind
+static GBitmap  *s_overlay_image = NULL;
+// Display text shown in the left area of the overlay
+static char      s_overlay_text[48];
 
 // ===== Private helpers =====
 
+/**
+ * AppTimer callback that fires after the configured display duration.
+ * Clears the timer handle and hides the overlay.
+ * @param context - Unused
+ */
 static void overlay_timer_callback(void *context) {
     s_overlay_timer = NULL;
     overlay_hide();
 }
 
+/**
+ * Layer update procedure that renders the overlay banner.
+ * Drawing order (back to front):
+ *   1. White fill covering the entire layer
+ *   2. 1px alternating-dot checkerboard pattern filling the right icon container
+ *   3. Alert icon bitmap (24x24) centered inside the icon container,
+ *      drawn with GCompOpSet to honour PNG transparency
+ *   4. Alert message text in the left area using GOTHIC_18_BOLD
+ *   5. 2px black stripes at the top and bottom edges (left/right edges are
+ *      the physical screen frame and therefore need no border)
+ *   6. 1px vertical black divider between the text area and the icon container
+ * @param layer - The overlay layer being redrawn
+ * @param ctx   - Graphics context provided by the system
+ */
 static void overlay_draw_proc(Layer *layer, GContext *ctx) {
     GRect bounds = layer_get_bounds(layer);
     int sw = bounds.size.w;
@@ -87,6 +119,13 @@ static void overlay_draw_proc(Layer *layer, GContext *ctx) {
 
 // ===== Public API =====
 
+/**
+ * Create and attach the overlay layer to the given parent layer.
+ * The overlay is positioned at the bottom of the parent's bounds and
+ * starts hidden. Must be called last during window load so the overlay
+ * renders on top of all other layers in the z-order.
+ * @param parent_layer - Root window layer to attach the overlay to
+ */
 void overlay_init(Layer *parent_layer) {
     GRect pb = layer_get_bounds(parent_layer);
     GRect overlay_rect = GRect(0, pb.size.h - OVERLAY_HEIGHT, pb.size.w, OVERLAY_HEIGHT);
@@ -96,6 +135,12 @@ void overlay_init(Layer *parent_layer) {
     layer_add_child(parent_layer, s_overlay_layer);
 }
 
+/**
+ * Cancel any pending auto-dismiss timer, free the icon bitmap, and
+ * destroy the overlay layer. Safe to call even if overlay_init was
+ * never called. Must be invoked during window unload before the parent
+ * layer is destroyed.
+ */
 void overlay_deinit(void) {
     if (s_overlay_timer) {
         app_timer_cancel(s_overlay_timer);
@@ -111,6 +156,18 @@ void overlay_deinit(void) {
     }
 }
 
+/**
+ * Display the overlay banner with the given alert kind and message text.
+ * If the overlay is already visible, the previous alert is replaced
+ * immediately (timer restarted, icon swapped, text updated).
+ * The overlay auto-dismisses after s_overlay_duration_s seconds.
+ * No-op if overlay_init has not been called.
+ * @param kind - Alert category that determines which icon is shown
+ *               (ALERT_KIND_BG_HIGH / BG_LOW -> danger icon,
+ *                ALERT_KIND_HOURLY -> clock icon)
+ * @param msg  - Null-terminated string shown in the left text area;
+ *               truncated to 47 characters. Pass NULL for empty text.
+ */
 void overlay_show(AlertKind kind, const char *msg) {
     if (!s_overlay_layer) return;
 
@@ -152,6 +209,10 @@ void overlay_show(AlertKind kind, const char *msg) {
     s_overlay_timer = app_timer_register(duration_ms, overlay_timer_callback, NULL);
 }
 
+/**
+ * Hide the overlay banner immediately, cancelling the auto-dismiss timer
+ * and freeing the icon bitmap. No-op if the overlay is not initialised.
+ */
 void overlay_hide(void) {
     if (!s_overlay_layer) return;
     layer_set_hidden(s_overlay_layer, true);

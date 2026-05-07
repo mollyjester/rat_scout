@@ -262,7 +262,10 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
         vibes_cancel();
         vibes_double_pulse();
         if (s_overlay_enabled) {
-            overlay_show(ALERT_KIND_HOURLY, "Hourly");
+            static char hourly_time_buf[6];
+            strftime(hourly_time_buf, sizeof(hourly_time_buf),
+                     clock_is_24h_style() ? "%H:%M" : "%I:%M", tick_time);
+            overlay_show(ALERT_KIND_HOURLY, hourly_time_buf);
         }
     }
     
