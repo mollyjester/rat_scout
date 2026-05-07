@@ -55,7 +55,9 @@ static void overlay_draw_proc(Layer *layer, GContext *ctx) {
     if (s_overlay_image) {
         GRect icon_rect = GRect(container_x + icon_offset_x, OVERLAY_BORDER + icon_offset_y,
                                 OVERLAY_ICON_SIZE, OVERLAY_ICON_SIZE);
+        graphics_context_set_compositing_mode(ctx, GCompOpSet);
         graphics_draw_bitmap_in_rect(ctx, s_overlay_image, icon_rect);
+        graphics_context_set_compositing_mode(ctx, GCompOpAssign);
     }
 
     // 4. Message text in left area
