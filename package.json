@@ -177,14 +177,14 @@
                     "menuIcon": true
                 },
                 {
-                    "type": "raw",
+                    "type": "png",
                     "name": "ALERT_DANGER",
-                    "file": "img/danger.pdc"
+                    "file": "img/danger.png"
                 },
                 {
-                    "type": "raw",
+                    "type": "png",
                     "name": "ALERT_CLOCK",
-                    "file": "img/clock5.pdc"
+                    "file": "img/clock5.png"
                 }
             ]
         }

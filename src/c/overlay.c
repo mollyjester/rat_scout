@@ -13,7 +13,7 @@ int  s_overlay_duration_s = OVERLAY_DEFAULT_DURATION_S;
 // ===== Private state =====
 static Layer               *s_overlay_layer = NULL;
 static AppTimer            *s_overlay_timer  = NULL;
-static GDrawCommandImage   *s_overlay_image  = NULL;
+static GBitmap             *s_overlay_image  = NULL;
 static char                 s_overlay_text[48];
 
 // ===== Private helpers =====
@@ -49,12 +49,13 @@ static void overlay_draw_proc(Layer *layer, GContext *ctx) {
         }
     }
 
-    // 3. PDC icon centered in container (24x24 centered in 30px wide, inner height)
+    // 3. PNG icon centered in container (24x24 centered in 30px wide, inner height)
     int icon_offset_x = (OVERLAY_ICON_CONTAINER - OVERLAY_ICON_SIZE) / 2;
     int icon_offset_y = (container_inner_h - OVERLAY_ICON_SIZE) / 2;
     if (s_overlay_image) {
-        gdraw_command_image_draw(ctx, s_overlay_image,
-            GPoint(container_x + icon_offset_x, OVERLAY_BORDER + icon_offset_y));
+        GRect icon_rect = GRect(container_x + icon_offset_x, OVERLAY_BORDER + icon_offset_y,
+                                OVERLAY_ICON_SIZE, OVERLAY_ICON_SIZE);
+        graphics_draw_bitmap_in_rect(ctx, s_overlay_image, icon_rect);
     }
 
     // 4. Message text in left area
@@ -97,7 +98,7 @@ void overlay_deinit(void) {
         s_overlay_timer = NULL;
     }
     if (s_overlay_image) {
-        gdraw_command_image_destroy(s_overlay_image);
+        gbitmap_destroy(s_overlay_image);
         s_overlay_image = NULL;
     }
     if (s_overlay_layer) {
@@ -115,9 +116,9 @@ void overlay_show(AlertKind kind, const char *msg) {
         s_overlay_timer = NULL;
     }
 
-    // Swap PDC icon for the new kind
+    // Swap PNG icon for the new kind
     if (s_overlay_image) {
-        gdraw_command_image_destroy(s_overlay_image);
+        gbitmap_destroy(s_overlay_image);
         s_overlay_image = NULL;
     }
     uint32_t res_id = 0;
@@ -133,7 +134,7 @@ void overlay_show(AlertKind kind, const char *msg) {
             break;
     }
     if (res_id) {
-        s_overlay_image = gdraw_command_image_create_with_resource(res_id);
+        s_overlay_image = gbitmap_create_with_resource(res_id);
     }
 
     // Set display text
@@ -151,7 +152,7 @@ void overlay_hide(void) {
     if (!s_overlay_layer) return;
     layer_set_hidden(s_overlay_layer, true);
     if (s_overlay_image) {
-        gdraw_command_image_destroy(s_overlay_image);
+        gbitmap_destroy(s_overlay_image);
         s_overlay_image = NULL;
     }
 }
