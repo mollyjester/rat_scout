@@ -33,7 +33,7 @@ static void overlay_draw_proc(Layer *layer, GContext *ctx) {
     graphics_fill_rect(ctx, bounds, 0, GCornerNone);
 
     // 2. Checkerboard in right icon container (30px wide, full inner height)
-    int container_x = sw - OVERLAY_BORDER - OVERLAY_ICON_CONTAINER;
+    int container_x = sw - OVERLAY_ICON_CONTAINER;
     int container_inner_h = sh - 2 * OVERLAY_BORDER;
     // Fill white base first, then draw 1px black dots at even (x+y) positions
     graphics_context_set_fill_color(ctx, GColorWhite);
