@@ -159,18 +159,27 @@ void check_bg_threshold_vibration(const char *bg_str) {
     // silently swallowed. Zone is updated only after the cancel+enqueue
     // sequence so the one-shot is not consumed without actual vibration.
     if (new_zone != s_bg_zone) {
+        char msg[32];
         if (new_zone == BG_ZONE_HIGH) {
             vibes_cancel();
             vibes_enqueue_custom_pattern((VibePattern){
                 .durations = BG_HIGH_VIBE_PATTERN,
                 .num_segments = ARRAY_LENGTH(BG_HIGH_VIBE_PATTERN)
             });
+            if (s_overlay_enabled) {
+                snprintf(msg, sizeof(msg), "BG High\n%s", bg_str);
+                overlay_show(ALERT_KIND_BG_HIGH, msg);
+            }
         } else if (new_zone == BG_ZONE_LOW) {
             vibes_cancel();
             vibes_enqueue_custom_pattern((VibePattern){
                 .durations = BG_LOW_VIBE_PATTERN,
                 .num_segments = ARRAY_LENGTH(BG_LOW_VIBE_PATTERN)
             });
+            if (s_overlay_enabled) {
+                snprintf(msg, sizeof(msg), "BG Low\n%s", bg_str);
+                overlay_show(ALERT_KIND_BG_LOW, msg);
+            }
         }
         s_bg_zone = new_zone;
     }

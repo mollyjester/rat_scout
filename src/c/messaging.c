@@ -47,6 +47,21 @@ static void handle_settings(DictionaryIterator *iterator) {
     if (garbage_bag_tuple) {
         update_garbage_bag(garbage_bag_tuple->value->int32);
     }
+
+    Tuple *overlay_enable_tuple = dict_find(iterator, MESSAGE_KEY_ALERT_OVERLAY_ENABLE);
+    if (overlay_enable_tuple) {
+        s_overlay_enabled = overlay_enable_tuple->value->int8 == 1;
+        persist_write_bool(PERSIST_KEY_OVERLAY_ENABLE, s_overlay_enabled);
+    }
+
+    Tuple *overlay_dur_tuple = dict_find(iterator, MESSAGE_KEY_ALERT_OVERLAY_DURATION);
+    if (overlay_dur_tuple) {
+        int dur = (int)overlay_dur_tuple->value->int32;
+        if (dur >= 1 && dur <= 15) {
+            s_overlay_duration_s = dur;
+            persist_write_int(PERSIST_KEY_OVERLAY_DURATION, dur);
+        }
+    }
 }
 
 /**
@@ -207,17 +222,27 @@ static void handle_vibe_test(DictionaryIterator *iterator) {
     }
 }
 
+/**
+ * Handle an overlay test command sent from the config page.
+ * Always shows the overlay regardless of the s_overlay_enabled setting
+ * so users can preview the overlay before enabling it.
+ */
+static void handle_overlay_test(DictionaryIterator *iterator) {
+    overlay_show(ALERT_KIND_HOURLY, "Overlay\nTest");
+}
+
 // ===== AppMessage Callbacks =====
 
 void inbox_received_callback(DictionaryIterator *iterator, void *context) {
     Tuple *type_tuple = dict_find(iterator, MESSAGE_KEY_MSG_TYPE);
     if (!type_tuple) return;
     switch (type_tuple->value->int8) {
-        case MSG_TYPE_SETTINGS:  handle_settings(iterator);         break;
-        case MSG_TYPE_GLUCOSE:   handle_glucose_message(iterator);  break;
-        case MSG_TYPE_WEATHER:   handle_weather_message(iterator);  break;
-        case MSG_TYPE_ASTRONOMY: handle_astronomy_message(iterator); break;
-        case MSG_TYPE_VIBE_TEST: handle_vibe_test(iterator);         break;
+        case MSG_TYPE_SETTINGS:     handle_settings(iterator);         break;
+        case MSG_TYPE_GLUCOSE:      handle_glucose_message(iterator);  break;
+        case MSG_TYPE_WEATHER:      handle_weather_message(iterator);  break;
+        case MSG_TYPE_ASTRONOMY:    handle_astronomy_message(iterator); break;
+        case MSG_TYPE_VIBE_TEST:    handle_vibe_test(iterator);         break;
+        case MSG_TYPE_OVERLAY_TEST: handle_overlay_test(iterator);      break;
         default:
             APP_LOG(APP_LOG_LEVEL_WARNING, "Unknown message type: %d",
                     (int)type_tuple->value->int8);

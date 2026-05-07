@@ -11,11 +11,12 @@ var clay = new Clay(clayConfig, customFn, { autoHandleEvents: false });
 var appSettings = {};
 
 // Message type discriminators (Fix 6)
-var MSG_TYPE_SETTINGS  = 0;
-var MSG_TYPE_GLUCOSE   = 1;
-var MSG_TYPE_WEATHER   = 2;
-var MSG_TYPE_ASTRONOMY = 3;
-var MSG_TYPE_VIBE_TEST = 4;
+var MSG_TYPE_SETTINGS     = 0;
+var MSG_TYPE_GLUCOSE      = 1;
+var MSG_TYPE_WEATHER      = 2;
+var MSG_TYPE_ASTRONOMY    = 3;
+var MSG_TYPE_VIBE_TEST    = 4;
+var MSG_TYPE_OVERLAY_TEST = 5;
 
 // Retry cancellation guards (Fix 8)
 var astronomyRetryPending = false;
@@ -163,7 +164,9 @@ function sendSettings() {
         "BG_LOW_THRESHOLD": Math.round((parseFloat(lowThreshold) || 0) * 10),
         "BG_HIGH_THRESHOLD": Math.round((parseFloat(highThreshold) || 0) * 10),
         "DATE_FORMAT": appSettings.DATE_FORMAT || "dd.mm",
-        "GARBAGE_BAG": Garbage.computeGarbageBag(appSettings)
+        "GARBAGE_BAG": Garbage.computeGarbageBag(appSettings),
+        "ALERT_OVERLAY_ENABLE": appSettings.ALERT_OVERLAY_ENABLE ? 1 : 0,
+        "ALERT_OVERLAY_DURATION": parseInt(appSettings.ALERT_OVERLAY_DURATION, 10) || 5
     };
     
     sendToPebble(dictionary, 'Settings');
@@ -210,10 +213,14 @@ Pebble.addEventListener('webviewclosed', function(e) {
     if (e && e.response) {
         // Check for vibe test request in raw response before Clay processes it
         var vibePattern = 0;
+        var overlayTest = false;
         try {
             var raw = JSON.parse(decodeURIComponent(e.response));
             if (raw && raw._vibeTest) {
                 vibePattern = raw._vibeTest;
+            }
+            if (raw && raw._overlayTest) {
+                overlayTest = true;
             }
         } catch (err) {
             // Not valid JSON or not our format — let Clay handle it
@@ -228,6 +235,15 @@ Pebble.addEventListener('webviewclosed', function(e) {
                 { 'MSG_TYPE': MSG_TYPE_VIBE_TEST, 'VIBE_TEST': vibePattern },
                 function() { console.log('Vibe test sent: pattern ' + vibePattern); },
                 function() { console.error('Vibe test send failed'); }
+            );
+        }
+
+        // Send overlay test command if requested
+        if (overlayTest) {
+            Pebble.sendAppMessage(
+                { 'MSG_TYPE': MSG_TYPE_OVERLAY_TEST },
+                function() { console.log('Overlay test sent'); },
+                function() { console.error('Overlay test send failed'); }
             );
         }
     }

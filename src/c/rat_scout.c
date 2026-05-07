@@ -261,6 +261,9 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
         s_last_vibration_hour = tick_time->tm_hour;
         vibes_cancel();
         vibes_double_pulse();
+        if (s_overlay_enabled) {
+            overlay_show(ALERT_KIND_HOURLY, "Hourly");
+        }
     }
     
     // Update delta display every minute (pass derived time to avoid extra syscall)
@@ -477,6 +480,20 @@ static void main_window_load(Window *window) {
     
     // Initialize weekday display
     update_weekday(NULL);
+
+    // Restore overlay settings from persistent storage
+    if (persist_exists(PERSIST_KEY_OVERLAY_ENABLE)) {
+        s_overlay_enabled = persist_read_bool(PERSIST_KEY_OVERLAY_ENABLE);
+    }
+    if (persist_exists(PERSIST_KEY_OVERLAY_DURATION)) {
+        int dur = persist_read_int(PERSIST_KEY_OVERLAY_DURATION);
+        if (dur >= 1 && dur <= 15) {
+            s_overlay_duration_s = dur;
+        }
+    }
+
+    // Initialize overlay layer last so it renders on top of all other layers
+    overlay_init(window_layer);
 }
 
 static void main_window_unload(Window *window)
@@ -517,6 +534,9 @@ static void main_window_unload(Window *window)
     destroy_icon_layer(s_organic_icon_layer, s_organic_icon_bitmap);
     destroy_icon_layer(s_grey_icon_layer, s_grey_icon_bitmap);
     destroy_icon_layer(s_black_icon_layer, s_black_icon_bitmap);
+
+    // Destroy overlay layer (must be before other layers since it was added last)
+    overlay_deinit();
 
     // Destroy draw layers
     layer_destroy(s_battery_layer);

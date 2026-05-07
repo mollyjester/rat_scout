@@ -36,7 +36,9 @@ enum PersistKeys {
     PERSIST_KEY_HOURLY_VIBRATION,
     PERSIST_KEY_UMBRELLA_ACTIVE,
     PERSIST_KEY_GARBAGE_BAG,
-    PERSIST_KEY_TIMESTAMP
+    PERSIST_KEY_TIMESTAMP,
+    PERSIST_KEY_OVERLAY_ENABLE = 113,
+    PERSIST_KEY_OVERLAY_DURATION = 114
 };
 
 // ===== Layout Constants (defined in layout.c) =====
@@ -83,11 +85,26 @@ extern const int STATUS_BLACK_X;
 #define APPMESSAGE_OUTBOX      512
 
 // ===== Message Type Discriminators =====
-#define MSG_TYPE_SETTINGS  0
-#define MSG_TYPE_GLUCOSE   1
-#define MSG_TYPE_WEATHER   2
-#define MSG_TYPE_ASTRONOMY 3
-#define MSG_TYPE_VIBE_TEST 4
+#define MSG_TYPE_SETTINGS     0
+#define MSG_TYPE_GLUCOSE      1
+#define MSG_TYPE_WEATHER      2
+#define MSG_TYPE_ASTRONOMY    3
+#define MSG_TYPE_VIBE_TEST    4
+#define MSG_TYPE_OVERLAY_TEST 5
+
+// ===== Alert Overlay =====
+typedef enum {
+    ALERT_KIND_NONE = 0,
+    ALERT_KIND_BG_HIGH,
+    ALERT_KIND_BG_LOW,
+    ALERT_KIND_HOURLY,
+} AlertKind;
+
+#define OVERLAY_DEFAULT_DURATION_S 5
+
+// Overlay settings (defined in overlay.c)
+extern bool s_overlay_enabled;
+extern int  s_overlay_duration_s;
 
 // ===== Vibration Pattern Arrays (defined in glucose.c) =====
 extern const uint32_t BG_HIGH_VIBE_PATTERN[];
@@ -167,6 +184,12 @@ void check_bg_threshold_vibration(const char *bg_str);
 void update_time(struct tm *tick_time, bool force_date);
 void update_moon_icon(int phase);
 void update_garbage_bag(int garbage_bag);
+
+// overlay.c
+void overlay_init(Layer *parent_layer);
+void overlay_deinit(void);
+void overlay_show(AlertKind kind, const char *msg);
+void overlay_hide(void);
 
 // messaging.c
 void inbox_received_callback(DictionaryIterator *iterator, void *context);

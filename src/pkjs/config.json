@@ -310,6 +310,53 @@
         "items": [
             {
                 "type": "heading",
+                "defaultValue": "Quick View Alerts"
+            },
+            {
+                "type": "text",
+                "defaultValue": "Show a brief overlay banner at the bottom of the watchface when a vibration alert fires. The banner displays an icon and message for the configured duration, then auto-dismisses."
+            },
+            {
+                "type": "toggle",
+                "messageKey": "ALERT_OVERLAY_ENABLE",
+                "defaultValue": false,
+                "label": "Enable Overlay Alerts"
+            },
+            {
+                "type": "select",
+                "messageKey": "ALERT_OVERLAY_DURATION",
+                "defaultValue": "5",
+                "label": "Duration (seconds)",
+                "options": [
+                    { "label": "1s", "value": "1" },
+                    { "label": "2s", "value": "2" },
+                    { "label": "3s", "value": "3" },
+                    { "label": "4s", "value": "4" },
+                    { "label": "5s", "value": "5" },
+                    { "label": "6s", "value": "6" },
+                    { "label": "7s", "value": "7" },
+                    { "label": "8s", "value": "8" },
+                    { "label": "9s", "value": "9" },
+                    { "label": "10s", "value": "10" },
+                    { "label": "11s", "value": "11" },
+                    { "label": "12s", "value": "12" },
+                    { "label": "13s", "value": "13" },
+                    { "label": "14s", "value": "14" },
+                    { "label": "15s", "value": "15" }
+                ]
+            },
+            {
+                "type": "button",
+                "id": "overlay-test",
+                "defaultValue": "\u25b6 Test Alert Overlay"
+            }
+        ]
+    },
+    {
+        "type": "section",
+        "items": [
+            {
+                "type": "heading",
                 "defaultValue": "Vibration Test"
             },
             {

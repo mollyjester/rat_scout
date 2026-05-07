@@ -50,7 +50,9 @@
             "WEATHER_UMBRELLA",
             "DATE_FORMAT",
             "GARBAGE_BAG",
-            "VIBE_TEST"
+            "VIBE_TEST",
+            "ALERT_OVERLAY_ENABLE",
+            "ALERT_OVERLAY_DURATION"
         ],
         "resources": {
             "media": [
@@ -173,6 +175,16 @@
                     "name": "APP_ICON",
                     "file": "img/rat_scout_icon.png",
                     "menuIcon": true
+                },
+                {
+                    "type": "raw",
+                    "name": "ALERT_DANGER",
+                    "file": "img/danger.pdc"
+                },
+                {
+                    "type": "raw",
+                    "name": "ALERT_CLOCK",
+                    "file": "img/clock5.pdc"
                 }
             ]
         }
