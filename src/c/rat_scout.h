@@ -207,6 +207,8 @@ void outbox_failed_callback(DictionaryIterator *iterator, AppMessageResult reaso
 void outbox_sent_callback(DictionaryIterator *iterator, void *context);
 
 // sounds.c
+void sounds_init(void);
+void sounds_deinit(void);
 void play_bg_low_alert(void);
 void play_bg_high_alert(void);
 void play_hourly_alert(void);

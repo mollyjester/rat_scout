@@ -111,6 +111,19 @@ static const SpeakerTrack s_hourly_tracks[] = {
 
 // ===== Public API =====
 
+static void prv_sound_finish_cb(SpeakerFinishReason reason, void *context) {
+    (void)reason;
+    (void)context;
+}
+
+void sounds_init(void) {
+    speaker_set_finish_callback(prv_sound_finish_cb, NULL);
+}
+
+void sounds_deinit(void) {
+    speaker_set_finish_callback(NULL, NULL);
+}
+
 /**
  * Play a SpeakerTrack array, preempting any in-progress sound.
  * No-op on platforms without a speaker (the SDK speaker_* calls

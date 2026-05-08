@@ -596,12 +596,16 @@ static void init(void) {
 
     // Open AppMessage
     app_message_open(APPMESSAGE_INBOX, APPMESSAGE_OUTBOX);
+
+    // Register speaker finish callback (required for speaker API to function)
+    sounds_init();
 }
 
 static void deinit(void) {
     tick_timer_service_unsubscribe();
     battery_state_service_unsubscribe();
     sounds_stop();
+    sounds_deinit();
     window_destroy(s_main_window);
 }
 
