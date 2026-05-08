@@ -92,6 +92,9 @@ console.log('clay-config.js vibration test button tests\n');
     var lowItem = config.registerItem('vibe-test-low');
     var hourlyItem = config.registerItem('vibe-test-hourly');
     var overlayItem = config.registerItem('overlay-test');
+    var soundHighItem = config.registerItem('sound-test-high');
+    var soundLowItem = config.registerItem('sound-test-low');
+    var soundHourlyItem = config.registerItem('sound-test-hourly');
 
     // Call customFn with `this` = config
     customFn.call(config, {});
@@ -115,6 +118,18 @@ console.log('clay-config.js vibration test button tests\n');
         overlayItem._listeners.click && overlayItem._listeners.click.length === 1,
         'overlay-test has a click listener'
     );
+    assert(
+        soundHighItem._listeners.click && soundHighItem._listeners.click.length === 1,
+        'sound-test-high has a click listener'
+    );
+    assert(
+        soundLowItem._listeners.click && soundLowItem._listeners.click.length === 1,
+        'sound-test-low has a click listener'
+    );
+    assert(
+        soundHourlyItem._listeners.click && soundHourlyItem._listeners.click.length === 1,
+        'sound-test-hourly has a click listener'
+    );
 })();
 
 // Test 2: Clicking vibe-test-high sets location.href with _vibeTest=1
@@ -125,6 +140,9 @@ console.log('clay-config.js vibration test button tests\n');
     config.registerItem('vibe-test-low');
     config.registerItem('vibe-test-hourly');
     config.registerItem('overlay-test');
+    config.registerItem('sound-test-high');
+    config.registerItem('sound-test-low');
+    config.registerItem('sound-test-hourly');
 
     customFn.call(config, {});
     config.trigger('AFTER_BUILD');
@@ -146,6 +164,9 @@ console.log('clay-config.js vibration test button tests\n');
     config.registerItem('vibe-test-low');
     config.registerItem('vibe-test-hourly');
     config.registerItem('overlay-test');
+    config.registerItem('sound-test-high');
+    config.registerItem('sound-test-low');
+    config.registerItem('sound-test-hourly');
 
     customFn.call(config, {});
     config.trigger('AFTER_BUILD');
@@ -167,6 +188,9 @@ console.log('clay-config.js vibration test button tests\n');
     config.registerItem('vibe-test-low');
     config.registerItem('vibe-test-hourly');
     config.registerItem('overlay-test');
+    config.registerItem('sound-test-high');
+    config.registerItem('sound-test-low');
+    config.registerItem('sound-test-hourly');
 
     customFn.call(config, {});
     config.trigger('AFTER_BUILD');
@@ -204,6 +228,9 @@ console.log('clay-config.js vibration test button tests\n');
     config.registerItem('vibe-test-low');
     config.registerItem('vibe-test-hourly');
     config.registerItem('overlay-test');
+    config.registerItem('sound-test-high');
+    config.registerItem('sound-test-low');
+    config.registerItem('sound-test-hourly');
 
     customFn.call(config, {});
     config.trigger('AFTER_BUILD');
@@ -214,6 +241,78 @@ console.log('clay-config.js vibration test button tests\n');
     assert(lastHref !== null, 'location.href was set');
     var payload = JSON.parse(decodeURIComponent(lastHref.replace('pebblejs://close#', '')));
     assert(payload._overlayTest === 1, '_overlayTest is 1');
+    assert(payload.foo === 'bar', 'serialized settings are included');
+})();
+
+// Test 7: Clicking sound-test-high sets _soundTest=1
+(function() {
+    console.log('Test: Click sound-test-high sets location.href with _soundTest=1');
+    var config = new MockClayConfig();
+    config.registerItem('vibe-test-high');
+    config.registerItem('vibe-test-low');
+    config.registerItem('vibe-test-hourly');
+    config.registerItem('overlay-test');
+    config.registerItem('sound-test-high');
+    config.registerItem('sound-test-low');
+    config.registerItem('sound-test-hourly');
+
+    customFn.call(config, {});
+    config.trigger('AFTER_BUILD');
+
+    lastHref = null;
+    config.getItemById('sound-test-high').trigger('click');
+
+    assert(lastHref !== null, 'location.href was set');
+    var payload = JSON.parse(decodeURIComponent(lastHref.replace('pebblejs://close#', '')));
+    assert(payload._soundTest === 1, '_soundTest is 1');
+    assert(payload.foo === 'bar', 'serialized settings are included');
+})();
+
+// Test 8: Clicking sound-test-low sets _soundTest=2
+(function() {
+    console.log('Test: Click sound-test-low sets location.href with _soundTest=2');
+    var config = new MockClayConfig();
+    config.registerItem('vibe-test-high');
+    config.registerItem('vibe-test-low');
+    config.registerItem('vibe-test-hourly');
+    config.registerItem('overlay-test');
+    config.registerItem('sound-test-high');
+    config.registerItem('sound-test-low');
+    config.registerItem('sound-test-hourly');
+
+    customFn.call(config, {});
+    config.trigger('AFTER_BUILD');
+
+    lastHref = null;
+    config.getItemById('sound-test-low').trigger('click');
+
+    assert(lastHref !== null, 'location.href was set');
+    var payload = JSON.parse(decodeURIComponent(lastHref.replace('pebblejs://close#', '')));
+    assert(payload._soundTest === 2, '_soundTest is 2');
+    assert(payload.foo === 'bar', 'serialized settings are included');
+})();
+
+// Test 9: Clicking sound-test-hourly sets _soundTest=3
+(function() {
+    console.log('Test: Click sound-test-hourly sets location.href with _soundTest=3');
+    var config = new MockClayConfig();
+    config.registerItem('vibe-test-high');
+    config.registerItem('vibe-test-low');
+    config.registerItem('vibe-test-hourly');
+    config.registerItem('overlay-test');
+    config.registerItem('sound-test-high');
+    config.registerItem('sound-test-low');
+    config.registerItem('sound-test-hourly');
+
+    customFn.call(config, {});
+    config.trigger('AFTER_BUILD');
+
+    lastHref = null;
+    config.getItemById('sound-test-hourly').trigger('click');
+
+    assert(lastHref !== null, 'location.href was set');
+    var payload = JSON.parse(decodeURIComponent(lastHref.replace('pebblejs://close#', '')));
+    assert(payload._soundTest === 3, '_soundTest is 3');
     assert(payload.foo === 'bar', 'serialized settings are included');
 })();
 

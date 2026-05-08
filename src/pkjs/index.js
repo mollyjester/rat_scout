@@ -17,6 +17,7 @@ var MSG_TYPE_WEATHER      = 2;
 var MSG_TYPE_ASTRONOMY    = 3;
 var MSG_TYPE_VIBE_TEST    = 4;
 var MSG_TYPE_OVERLAY_TEST = 5;
+var MSG_TYPE_SOUND_TEST   = 6;
 
 // Retry cancellation guards (Fix 8)
 var astronomyRetryPending = false;
@@ -166,7 +167,10 @@ function sendSettings() {
         "DATE_FORMAT": appSettings.DATE_FORMAT || "dd.mm",
         "GARBAGE_BAG": Garbage.computeGarbageBag(appSettings),
         "ALERT_OVERLAY_ENABLE": appSettings.ALERT_OVERLAY_ENABLE ? 1 : 0,
-        "ALERT_OVERLAY_DURATION": parseInt(appSettings.ALERT_OVERLAY_DURATION, 10) || 10
+        "ALERT_OVERLAY_DURATION": parseInt(appSettings.ALERT_OVERLAY_DURATION, 10) || 10,
+        "BG_LOW_SOUND": appSettings.BG_LOW_SOUND ? 1 : 0,
+        "BG_HIGH_SOUND": appSettings.BG_HIGH_SOUND ? 1 : 0,
+        "HOURLY_SOUND": appSettings.HOURLY_SOUND ? 1 : 0
     };
     
     sendToPebble(dictionary, 'Settings');
@@ -214,6 +218,7 @@ Pebble.addEventListener('webviewclosed', function(e) {
         // Check for vibe test request in raw response before Clay processes it
         var vibePattern = 0;
         var overlayTest = false;
+        var soundPattern = 0;
         try {
             var raw = JSON.parse(decodeURIComponent(e.response));
             if (raw && raw._vibeTest) {
@@ -221,6 +226,9 @@ Pebble.addEventListener('webviewclosed', function(e) {
             }
             if (raw && raw._overlayTest) {
                 overlayTest = true;
+            }
+            if (raw && raw._soundTest) {
+                soundPattern = raw._soundTest;
             }
         } catch (err) {
             // Not valid JSON or not our format — let Clay handle it
@@ -246,6 +254,13 @@ Pebble.addEventListener('webviewclosed', function(e) {
             sendToPebble(
                 { 'MSG_TYPE': MSG_TYPE_OVERLAY_TEST },
                 'Overlay test'
+            );
+        }
+
+        if (soundPattern > 0) {
+            sendToPebble(
+                { 'MSG_TYPE': MSG_TYPE_SOUND_TEST, 'SOUND_TEST': soundPattern },
+                'Sound test'
             );
         }
     }

@@ -11,3 +11,5 @@ Key rules that must never be violated:
 - Target platforms are aplite, basalt, diorite, emery — never add chalk
 - Overlay layer must always be added last in window load (top z-order)
 - Use GCompOpSet before drawing PNG bitmaps that require transparency
+- Always call `speaker_stop()` before `speaker_play_tone` / `speaker_play_tracks` to preempt in-progress sound
+- Sound output is only audible on Emery; the SDK speaker_* calls are silent no-ops on aplite/basalt/diorite

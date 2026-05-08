@@ -18,5 +18,6 @@ Before doing any work in this repository, read these two files in full:
 - Target platforms: aplite, basalt, diorite, emery — **never chalk**
 - Overlay layer must be added last in `main_window_load` to stay on top
 - PNG bitmaps with transparency require `graphics_context_set_compositing_mode(ctx, GCompOpSet)` before drawing; reset to `GCompOpAssign` after
-- New persist keys must not collide — check rat_scout.h, current max is 114
+- Always call `speaker_stop()` before `speaker_play_tone` / `speaker_play_tracks`; sound is only audible on Emery (no-op on aplite/basalt/diorite)
+- New persist keys must not collide — check rat_scout.h, current max is 117
 - Clay `defaultValue` in config.json is authoritative for initial UI — not the C-side default

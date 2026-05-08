@@ -257,11 +257,17 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     // system notification vibration is in progress (s_pattern_in_progress
     // guard in vibe_pattern.c). Call vibes_cancel() first to preempt any
     // ongoing system vibe so the app's alerts are not silently lost.
-    if (s_hourly_vibration && tick_time->tm_min == 0 && s_last_vibration_hour != tick_time->tm_hour) {
+    if (tick_time->tm_min == 0 && s_last_vibration_hour != tick_time->tm_hour &&
+        (s_hourly_vibration || s_hourly_sound || s_overlay_enabled)) {
         s_last_vibration_hour = tick_time->tm_hour;
-        vibes_cancel();
-        vibes_double_pulse();
-        if (s_overlay_enabled) {
+        if (s_hourly_vibration) {
+            vibes_cancel();
+            vibes_double_pulse();
+        }
+        if (s_hourly_sound) {
+            play_hourly_alert();
+        }
+        if (s_overlay_enabled && s_hourly_vibration) {
             static char hourly_time_buf[6];
             strftime(hourly_time_buf, sizeof(hourly_time_buf),
                      clock_is_24h_style() ? "%H:%M" : "%I:%M", tick_time);
@@ -495,6 +501,17 @@ static void main_window_load(Window *window) {
         }
     }
 
+    // Restore sound alert toggles from persistent storage
+    if (persist_exists(PERSIST_KEY_BG_LOW_SOUND)) {
+        s_bg_low_sound = persist_read_bool(PERSIST_KEY_BG_LOW_SOUND);
+    }
+    if (persist_exists(PERSIST_KEY_BG_HIGH_SOUND)) {
+        s_bg_high_sound = persist_read_bool(PERSIST_KEY_BG_HIGH_SOUND);
+    }
+    if (persist_exists(PERSIST_KEY_HOURLY_SOUND)) {
+        s_hourly_sound = persist_read_bool(PERSIST_KEY_HOURLY_SOUND);
+    }
+
     // Initialize overlay layer last so it renders on top of all other layers
     overlay_init(window_layer);
 }
@@ -584,6 +601,7 @@ static void init(void) {
 static void deinit(void) {
     tick_timer_service_unsubscribe();
     battery_state_service_unsubscribe();
+    sounds_stop();
     window_destroy(s_main_window);
 }
 

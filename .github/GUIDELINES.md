@@ -45,6 +45,9 @@ Every non-trivial function gets a block comment:
 ### Pebble SDK gotchas
 - `mktime()` in PebbleOS normalises via `gmtime_r` — use `time(NULL)` instead
 - `vibes_cancel()` must precede app vibe patterns to avoid silent drops
+- `speaker_stop()` must precede `speaker_play_tone` / `speaker_play_tracks` to preempt any in-progress sound
+- `SpeakerNote` is a packed struct: `{midi_note, waveform, duration_ms, velocity, reserved}` — reserved must be 0
+- `speaker_*` calls are silent no-ops on platforms without a speaker (aplite/basalt/diorite); behaviour is correct on Emery
 - `GCompOpSet` required for PNG transparency; reset to `GCompOpAssign` after
 - `gdraw_command_image_*` is for PDC files; use `gbitmap_*` + `graphics_draw_bitmap_in_rect` for PNG
 - Overlay layer must be added last (top z-order)
@@ -73,7 +76,7 @@ Every non-trivial function gets a block comment:
 
 ### Clay custom function (clay-config.js)
 - Use `attachFlagButton(id, flagKey, flagValue)` for all test buttons
-- `attachVibeButton(id, patternId)` is a wrapper around `attachFlagButton`
+- `attachVibeButton(id, patternId)` and `attachSoundButton(id, patternId)` are wrappers around `attachFlagButton`
 - Every button registered in config.json must be registered in clay-config.test.js mocks
 
 ## Testing Conventions
@@ -94,4 +97,4 @@ Every non-trivial function gets a block comment:
 ## Persist Key Assignment
 - Check rat_scout.h before adding new keys to avoid collisions
 - Document new keys in rat_scout.h with inline comment stating their purpose
-- Current max used: 114 (PERSIST_KEY_OVERLAY_DURATION)
+- Current max used: 117 (PERSIST_KEY_HOURLY_SOUND)

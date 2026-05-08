@@ -30,6 +30,8 @@ static GBitmap  *s_overlay_image = NULL;
 static char      s_overlay_text[48];
 // Whether the overlay banner is currently being shown
 static bool      s_overlay_visible = false;
+// Font used for message text; loaded once in overlay_init, freed in overlay_deinit
+static GFont     s_overlay_font = NULL;
 
 // ===== Private helpers =====
 
@@ -96,17 +98,19 @@ static void overlay_draw_proc(Layer *layer, GContext *ctx) {
     }
 
     // 4. Message text in left area — vertically centred
-    GFont humaroid_20 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_HUMAROID_20));
     int text_area_w = container_x - 4;
     int text_area_h = sh - 2 * OVERLAY_BORDER;
     GSize text_size = graphics_text_layout_get_content_size(
-        s_overlay_text, humaroid_20,
+        s_overlay_text, s_overlay_font,
         GRect(0, 0, text_area_w, text_area_h),
         GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter);
-    int text_y = OVERLAY_BORDER + (text_area_h - text_size.h) / 2;
+    // Centre the ink visually: FONT_HUMAROID_20 ascenders are taller than its descenders,
+    // so the ink sits 1px low within the line-height box. Shift up by 1 to equalise margins.
+    int text_y = OVERLAY_BORDER + (text_area_h - text_size.h) / 2 - 6;
+    if (text_y < OVERLAY_BORDER) text_y = OVERLAY_BORDER;
     GRect text_rect = GRect(2, text_y, text_area_w, text_size.h);
     graphics_context_set_text_color(ctx, GColorBlack);
-    graphics_draw_text(ctx, s_overlay_text, humaroid_20, text_rect,
+    graphics_draw_text(ctx, s_overlay_text, s_overlay_font, text_rect,
         GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
 
     // 5. Top and bottom borders only — left/right borders are the screen frame.
@@ -129,6 +133,7 @@ static void overlay_draw_proc(Layer *layer, GContext *ctx) {
  * @param parent_layer - Root window layer to attach the overlay to
  */
 void overlay_init(Layer *parent_layer) {
+    s_overlay_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_HUMAROID_20));
     GRect pb = layer_get_bounds(parent_layer);
     GRect overlay_rect = GRect(0, pb.size.h - OVERLAY_HEIGHT, pb.size.w, OVERLAY_HEIGHT);
     s_overlay_layer = layer_create(overlay_rect);
@@ -154,6 +159,10 @@ void overlay_deinit(void) {
     if (s_overlay_layer) {
         layer_destroy(s_overlay_layer);
         s_overlay_layer = NULL;
+    }
+    if (s_overlay_font) {
+        fonts_unload_custom_font(s_overlay_font);
+        s_overlay_font = NULL;
     }
 }
 

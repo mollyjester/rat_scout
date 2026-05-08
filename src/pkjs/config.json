@@ -93,6 +93,18 @@
                 "label": "Threshold Vibration"
             },
             {
+                "type": "toggle",
+                "messageKey": "BG_LOW_SOUND",
+                "defaultValue": false,
+                "label": "Low Threshold Sound"
+            },
+            {
+                "type": "toggle",
+                "messageKey": "BG_HIGH_SOUND",
+                "defaultValue": false,
+                "label": "High Threshold Sound"
+            },
+            {
                 "type": "input",
                 "messageKey": "BG_LOW_THRESHOLD",
                 "defaultValue": "",
@@ -185,6 +197,12 @@
                 "messageKey": "HOURLY_VIBRATION",
                 "defaultValue": false,
                 "label": "Hourly Vibration"
+            },
+            {
+                "type": "toggle",
+                "messageKey": "HOURLY_SOUND",
+                "defaultValue": false,
+                "label": "Hourly Sound"
             }
         ]
     },
@@ -365,6 +383,34 @@
                 "type": "button",
                 "id": "vibe-test-hourly",
                 "defaultValue": "▶ Test Hourly Vibration"
+            }
+        ]
+    },
+    {
+        "type": "section",
+        "items": [
+            {
+                "type": "heading",
+                "defaultValue": "Sound Test"
+            },
+            {
+                "type": "text",
+                "defaultValue": "Tap a button below to save your settings and test the alert sound on the watch. Sounds are only audible on platforms with a built-in speaker."
+            },
+            {
+                "type": "button",
+                "id": "sound-test-high",
+                "defaultValue": "\u25b6 Test High BG Sound"
+            },
+            {
+                "type": "button",
+                "id": "sound-test-low",
+                "defaultValue": "\u25b6 Test Low BG Sound"
+            },
+            {
+                "type": "button",
+                "id": "sound-test-hourly",
+                "defaultValue": "\u25b6 Test Hourly Sound"
             }
         ]
     },

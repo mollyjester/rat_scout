@@ -166,6 +166,9 @@ void check_bg_threshold_vibration(const char *bg_str) {
                 .durations = BG_HIGH_VIBE_PATTERN,
                 .num_segments = ARRAY_LENGTH(BG_HIGH_VIBE_PATTERN)
             });
+            if (s_bg_high_sound) {
+                play_bg_high_alert();
+            }
             if (s_overlay_enabled) {
                 snprintf(msg, sizeof(msg), "BG High\n%s", bg_str);
                 overlay_show(ALERT_KIND_BG_HIGH, msg);
@@ -176,6 +179,9 @@ void check_bg_threshold_vibration(const char *bg_str) {
                 .durations = BG_LOW_VIBE_PATTERN,
                 .num_segments = ARRAY_LENGTH(BG_LOW_VIBE_PATTERN)
             });
+            if (s_bg_low_sound) {
+                play_bg_low_alert();
+            }
             if (s_overlay_enabled) {
                 snprintf(msg, sizeof(msg), "BG Low\n%s", bg_str);
                 overlay_show(ALERT_KIND_BG_LOW, msg);

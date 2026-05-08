@@ -20,9 +20,16 @@ module.exports = function(minifiedClay) {
       attachFlagButton(id, '_vibeTest', patternId);
     }
 
+    function attachSoundButton(id, patternId) {
+      attachFlagButton(id, '_soundTest', patternId);
+    }
+
     attachVibeButton('vibe-test-high',   1);
     attachVibeButton('vibe-test-low',    2);
     attachVibeButton('vibe-test-hourly', 3);
+    attachSoundButton('sound-test-high',   1);
+    attachSoundButton('sound-test-low',    2);
+    attachSoundButton('sound-test-hourly', 3);
     attachFlagButton('overlay-test', '_overlayTest', 1);
   });
 };

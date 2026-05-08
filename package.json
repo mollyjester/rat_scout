@@ -52,7 +52,11 @@
             "GARBAGE_BAG",
             "VIBE_TEST",
             "ALERT_OVERLAY_ENABLE",
-            "ALERT_OVERLAY_DURATION"
+            "ALERT_OVERLAY_DURATION",
+            "BG_LOW_SOUND",
+            "BG_HIGH_SOUND",
+            "HOURLY_SOUND",
+            "SOUND_TEST"
         ],
         "resources": {
             "media": [

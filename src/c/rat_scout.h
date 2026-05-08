@@ -38,7 +38,10 @@ enum PersistKeys {
     PERSIST_KEY_GARBAGE_BAG,
     PERSIST_KEY_TIMESTAMP,
     PERSIST_KEY_OVERLAY_ENABLE = 113,
-    PERSIST_KEY_OVERLAY_DURATION = 114
+    PERSIST_KEY_OVERLAY_DURATION = 114,
+    PERSIST_KEY_BG_LOW_SOUND = 115,
+    PERSIST_KEY_BG_HIGH_SOUND = 116,
+    PERSIST_KEY_HOURLY_SOUND = 117
 };
 
 // ===== Layout Constants (defined in layout.c) =====
@@ -91,6 +94,7 @@ extern const int STATUS_BLACK_X;
 #define MSG_TYPE_ASTRONOMY    3
 #define MSG_TYPE_VIBE_TEST    4
 #define MSG_TYPE_OVERLAY_TEST 5
+#define MSG_TYPE_SOUND_TEST   6
 
 // ===== Alert Overlay =====
 typedef enum {
@@ -140,6 +144,11 @@ extern Layer *s_status_bar_layer;
 extern bool s_bg_vibration;
 extern int s_bg_low_threshold;
 extern int s_bg_high_threshold;
+
+// Sound alert toggles (sounds.c defines; messaging.c writes; glucose.c/rat_scout.c read)
+extern bool s_bg_low_sound;
+extern bool s_bg_high_sound;
+extern bool s_hourly_sound;
 
 // Text buffers (shared across modules)
 extern char s_bg_buffer[BUFFER_BG];
@@ -196,3 +205,9 @@ void inbox_received_callback(DictionaryIterator *iterator, void *context);
 void inbox_dropped_callback(AppMessageResult reason, void *context);
 void outbox_failed_callback(DictionaryIterator *iterator, AppMessageResult reason, void *context);
 void outbox_sent_callback(DictionaryIterator *iterator, void *context);
+
+// sounds.c
+void play_bg_low_alert(void);
+void play_bg_high_alert(void);
+void play_hourly_alert(void);
+void sounds_stop(void);

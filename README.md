@@ -18,6 +18,10 @@ Rat Scout connects to the Dexcom Share API to display real-time blood glucose re
   - Low: long-short pattern
   - One-shot: vibrates only on zone transition, not repeatedly
   - **Night thresholds**: optional separate thresholds during a configurable night window
+- **Threshold sound alerts**: short polyphonic chime when entering low or high BG zone (Emery only — other platforms have no speaker)
+  - Low: descending four-track motif at 160 BPM (E5/B4/A4 lead over D4/C4 alto, A3 tenor, B2/A2 bass)
+  - High: same voicing reversed so the melody rises
+  - Each toggle is independent of vibration; sounds can be enabled, disabled, and previewed separately
 - **Multi-region Dexcom**: US, Outside-US (OUS), and Japan servers
 
 ### Weather (OpenWeatherMap)
@@ -81,9 +85,12 @@ Open Rat Scout settings from the Pebble/Rebble app on your phone.
 | Setting | Description |
 |---------|-------------|
 | Hourly Vibration | Double-pulse every hour on the hour |
+| Hourly Sound | Two C5 half-second tones every hour on the hour (Emery speaker only) |
 | BG Threshold Vibration | Enable/disable glucose threshold alerts |
 | Low BG Threshold | Alert threshold in your preferred units |
 | High BG Threshold | Alert threshold in your preferred units |
+| Low Threshold Sound | Play descending alert melody when BG drops into the low zone |
+| High Threshold Sound | Play ascending alert melody when BG rises into the high zone |
 | Night Low Threshold | Optional low threshold during the night window |
 | Night High Threshold | Optional high threshold during the night window |
 | Night Start | Hour when night thresholds activate (0-23) |
@@ -115,6 +122,7 @@ src/
 │   ├── rat_scout.c          # Watchface core: UI, layer setup, vibration, persistent storage
 │   ├── overlay.c            # Transient overlay notification banner (Quick View Alerts)
 │   ├── glucose.c            # Glucose update rendering and BG threshold alert logic
+│   ├── sounds.c             # Polyphonic alert melodies (low/high BG, hourly chime)
 │   ├── messaging.c          # AppMessage handler: settings ingestion, data dispatch
 │   ├── draw_procs.c         # Custom GPath and drawing procedures
 │   ├── layout.c             # Layer positioning and watchface layout

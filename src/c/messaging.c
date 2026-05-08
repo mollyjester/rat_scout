@@ -62,6 +62,24 @@ static void handle_settings(DictionaryIterator *iterator) {
             persist_write_int(PERSIST_KEY_OVERLAY_DURATION, dur);
         }
     }
+
+    Tuple *bg_low_sound_tuple = dict_find(iterator, MESSAGE_KEY_BG_LOW_SOUND);
+    if (bg_low_sound_tuple) {
+        s_bg_low_sound = bg_low_sound_tuple->value->int8 == 1;
+        persist_write_bool(PERSIST_KEY_BG_LOW_SOUND, s_bg_low_sound);
+    }
+
+    Tuple *bg_high_sound_tuple = dict_find(iterator, MESSAGE_KEY_BG_HIGH_SOUND);
+    if (bg_high_sound_tuple) {
+        s_bg_high_sound = bg_high_sound_tuple->value->int8 == 1;
+        persist_write_bool(PERSIST_KEY_BG_HIGH_SOUND, s_bg_high_sound);
+    }
+
+    Tuple *hourly_sound_tuple = dict_find(iterator, MESSAGE_KEY_HOURLY_SOUND);
+    if (hourly_sound_tuple) {
+        s_hourly_sound = hourly_sound_tuple->value->int8 == 1;
+        persist_write_bool(PERSIST_KEY_HOURLY_SOUND, s_hourly_sound);
+    }
 }
 
 /**
@@ -231,6 +249,27 @@ static void handle_overlay_test(DictionaryIterator *iterator) {
     overlay_show(ALERT_KIND_BG_HIGH, "Overlay test");
 }
 
+/**
+ * Handle a sound test command sent from the config page.
+ * Always plays regardless of the per-sound toggle so users can preview.
+ * SOUND_TEST value:
+ *   1 = high BG alert melody
+ *   2 = low BG alert melody
+ *   3 = hourly chime
+ */
+static void handle_sound_test(DictionaryIterator *iterator) {
+    Tuple *sound_tuple = dict_find(iterator, MESSAGE_KEY_SOUND_TEST);
+    if (!sound_tuple) return;
+    int32_t pattern_id = sound_tuple->value->int32;
+    if (pattern_id == 1) {
+        play_bg_high_alert();
+    } else if (pattern_id == 2) {
+        play_bg_low_alert();
+    } else if (pattern_id == 3) {
+        play_hourly_alert();
+    }
+}
+
 // ===== AppMessage Callbacks =====
 
 void inbox_received_callback(DictionaryIterator *iterator, void *context) {
@@ -243,6 +282,7 @@ void inbox_received_callback(DictionaryIterator *iterator, void *context) {
         case MSG_TYPE_ASTRONOMY:    handle_astronomy_message(iterator); break;
         case MSG_TYPE_VIBE_TEST:    handle_vibe_test(iterator);         break;
         case MSG_TYPE_OVERLAY_TEST: handle_overlay_test(iterator);      break;
+        case MSG_TYPE_SOUND_TEST:   handle_sound_test(iterator);        break;
         default:
             APP_LOG(APP_LOG_LEVEL_WARNING, "Unknown message type: %d",
                     (int)type_tuple->value->int8);
