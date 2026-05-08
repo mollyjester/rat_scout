@@ -48,7 +48,7 @@ static void overlay_timer_callback(void *context) {
  *   2. 1px alternating-dot checkerboard pattern filling the right icon container
  *   3. Alert icon bitmap (24x24) centered inside the icon container,
  *      drawn with GCompOpSet to honour PNG transparency
- *   4. Alert message text in the left area using GOTHIC_18_BOLD
+ *   4. Alert message text in the left area using FONT_HUMAROID_20, vertically centred
  *   5. 2px black stripes at the top and bottom edges (left/right edges are
  *      the physical screen frame and therefore need no border)
  *   6. 1px vertical black divider between the text area and the icon container
@@ -92,20 +92,19 @@ static void overlay_draw_proc(Layer *layer, GContext *ctx) {
         graphics_context_set_compositing_mode(ctx, GCompOpAssign);
     }
 
-    // 4. Message text in left area
-    GRect text_rect = GRect(
-        2,
-        OVERLAY_BORDER + 2,
-        container_x - 4,
-        sh - (OVERLAY_BORDER + 2) * 2
-    );
+    // 4. Message text in left area — vertically centred
+    GFont humaroid_20 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_HUMAROID_20));
+    int text_area_w = container_x - 4;
+    int text_area_h = sh - 2 * OVERLAY_BORDER;
+    GSize text_size = graphics_text_layout_get_content_size(
+        s_overlay_text, humaroid_20,
+        GRect(0, 0, text_area_w, text_area_h),
+        GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter);
+    int text_y = OVERLAY_BORDER + (text_area_h - text_size.h) / 2;
+    GRect text_rect = GRect(2, text_y, text_area_w, text_size.h);
     graphics_context_set_text_color(ctx, GColorBlack);
-    graphics_draw_text(ctx, s_overlay_text,
-        fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_HUMAROID_20)),
-        text_rect,
-        GTextOverflowModeTrailingEllipsis,
-        GTextAlignmentCenter,
-        NULL);
+    graphics_draw_text(ctx, s_overlay_text, humaroid_20, text_rect,
+        GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
 
     // 5. Top and bottom borders only — left/right borders are the screen frame.
     //    Extend 2px beyond each side so the rectangles are flush with the screen edge.
