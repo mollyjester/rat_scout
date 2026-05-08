@@ -228,7 +228,7 @@ static void handle_vibe_test(DictionaryIterator *iterator) {
  * so users can preview the overlay before enabling it.
  */
 static void handle_overlay_test(DictionaryIterator *iterator) {
-    overlay_show(ALERT_KIND_BG_HIGH, "Overlay\nTest");
+    overlay_show(ALERT_KIND_BG_HIGH, "Overlay test");
 }
 
 // ===== AppMessage Callbacks =====

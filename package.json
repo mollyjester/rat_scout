@@ -1,7 +1,7 @@
 {
     "name": "Rat Scout",
     "author": "Sergei Likharev",
-    "version": "1.5.0",
+    "version": "1.8.0",
     "keywords": [
         "pebble-app"
     ],
@@ -65,8 +65,7 @@
                 {
                     "type": "font",
                     "name": "FONT_HUMAROID_20",
-                    "file": "fonts/Humaroid.ttf",
-                    "characterRegex": "[0-9.:+/m ADEFHIMNORSTUW-]"
+                    "file": "fonts/Humaroid.ttf"
                 },
                 {
                     "type": "font",
