@@ -28,6 +28,8 @@ static AppTimer *s_overlay_timer = NULL;
 static GBitmap  *s_overlay_image = NULL;
 // Display text shown in the left area of the overlay
 static char      s_overlay_text[48];
+// Whether the overlay banner is currently being shown
+static bool      s_overlay_visible = false;
 
 // ===== Private helpers =====
 
@@ -56,6 +58,7 @@ static void overlay_timer_callback(void *context) {
  * @param ctx   - Graphics context provided by the system
  */
 static void overlay_draw_proc(Layer *layer, GContext *ctx) {
+    if (!s_overlay_visible) return;
     GRect bounds = layer_get_bounds(layer);
     int sw = bounds.size.w;
     int sh = bounds.size.h;
@@ -130,7 +133,6 @@ void overlay_init(Layer *parent_layer) {
     GRect overlay_rect = GRect(0, pb.size.h - OVERLAY_HEIGHT, pb.size.w, OVERLAY_HEIGHT);
     s_overlay_layer = layer_create(overlay_rect);
     layer_set_update_proc(s_overlay_layer, overlay_draw_proc);
-    layer_set_hidden(s_overlay_layer, true);
     layer_add_child(parent_layer, s_overlay_layer);
 }
 
@@ -201,7 +203,7 @@ void overlay_show(AlertKind kind, const char *msg) {
     snprintf(s_overlay_text, sizeof(s_overlay_text), "%s", msg ? msg : "");
 
     // Show and schedule auto-dismiss
-    layer_set_hidden(s_overlay_layer, false);
+    s_overlay_visible = true;
     layer_mark_dirty(s_overlay_layer);
 
     uint32_t duration_ms = (uint32_t)(s_overlay_duration_s) * 1000;
@@ -214,9 +216,10 @@ void overlay_show(AlertKind kind, const char *msg) {
  */
 void overlay_hide(void) {
     if (!s_overlay_layer) return;
-    layer_set_hidden(s_overlay_layer, true);
+    s_overlay_visible = false;
     if (s_overlay_image) {
         gbitmap_destroy(s_overlay_image);
         s_overlay_image = NULL;
     }
+    layer_mark_dirty(s_overlay_layer);
 }
