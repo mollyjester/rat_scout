@@ -18,7 +18,7 @@ Rat Scout connects to the Dexcom Share API to display real-time blood glucose re
   - Low: long-short pattern
   - One-shot: vibrates only on zone transition, not repeatedly
   - **Night thresholds**: optional separate thresholds during a configurable night window
-- **Threshold sound alerts**: short polyphonic chime when entering low or high BG zone (Emery only — other platforms have no speaker)
+- **Threshold sound alerts**: short polyphonic chime when entering low or high BG zone (Emery and Flint have a speaker; other platforms are silent)
   - Low: descending four-track motif at 160 BPM (E5/B4/A4 lead over D4/C4 alto, A3 tenor, B2/A2 bass)
   - High: same voicing reversed so the melody rises
   - Each toggle is independent of vibration; sounds can be enabled, disabled, and previewed separately
@@ -55,7 +55,7 @@ Rat Scout connects to the Dexcom Share API to display real-time blood glucose re
 - **Battery indicator**: visual bar with charging animation
 - **Step count**: daily steps from Pebble Health (on supported platforms)
 - **Persistent state**: data persists across app restarts
-- **Cross-platform**: Aplite, Basalt, Diorite, Emery
+- **Cross-platform**: Aplite, Basalt, Diorite, Emery, Flint
 
 ## Requirements
 
@@ -85,7 +85,7 @@ Open Rat Scout settings from the Pebble/Rebble app on your phone.
 | Setting | Description |
 |---------|-------------|
 | Hourly Vibration | Double-pulse every hour on the hour |
-| Hourly Sound | Two C5 half-second tones every hour on the hour (Emery speaker only) |
+| Hourly Sound | Two C5 half-second tones every hour on the hour (Emery/Flint speaker only) |
 | BG Threshold Vibration | Enable/disable glucose threshold alerts |
 | Low BG Threshold | Alert threshold in your preferred units |
 | High BG Threshold | Alert threshold in your preferred units |

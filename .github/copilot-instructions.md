@@ -8,8 +8,8 @@ Key rules that must never be violated:
 - Always run `node test/*.test.js` after JS changes and confirm all suites pass with no warnings
 - Update README.md whenever there is a functional change to the watchface
 - Never use `Pebble.sendAppMessage` directly — always use `sendToPebble()` queue
-- Target platforms are aplite, basalt, diorite, emery — never add chalk
+- Target platforms are aplite, basalt, diorite, emery, flint
 - Overlay layer must always be added last in window load (top z-order)
 - Use GCompOpSet before drawing PNG bitmaps that require transparency
 - Always call `speaker_stop()` before `speaker_play_tone` / `speaker_play_tracks` to preempt in-progress sound
-- Sound output is only audible on Emery; the SDK speaker_* calls are silent no-ops on aplite/basalt/diorite
+- Sound output is only audible on Emery and Flint; the SDK speaker_* calls are silent no-ops on aplite/basalt/diorite

@@ -597,7 +597,7 @@ static void init(void) {
     // Open AppMessage
     app_message_open(APPMESSAGE_INBOX, APPMESSAGE_OUTBOX);
 
-    // Register speaker finish callback (required for speaker API to function)
+    // Register speaker finish callback
     sounds_init();
 }
 

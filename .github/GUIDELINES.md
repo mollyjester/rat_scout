@@ -47,7 +47,7 @@ Every non-trivial function gets a block comment:
 - `vibes_cancel()` must precede app vibe patterns to avoid silent drops
 - `speaker_stop()` must precede `speaker_play_tone` / `speaker_play_tracks` to preempt any in-progress sound
 - `SpeakerNote` is a packed struct: `{midi_note, waveform, duration_ms, velocity, reserved}` — reserved must be 0
-- `speaker_*` calls are silent no-ops on platforms without a speaker (aplite/basalt/diorite); behaviour is correct on Emery
+- `speaker_*` calls are silent no-ops on platforms without a speaker (aplite/basalt/diorite); behaviour is correct on Emery and Flint
 - `GCompOpSet` required for PNG transparency; reset to `GCompOpAssign` after
 - `gdraw_command_image_*` is for PDC files; use `gbitmap_*` + `graphics_draw_bitmap_in_rect` for PNG
 - Overlay layer must be added last (top z-order)

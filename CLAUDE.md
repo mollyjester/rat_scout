@@ -9,15 +9,15 @@ Before doing any work in this repository, read these two files in full:
 
 | Change type       | Required verification                                      |
 |-------------------|------------------------------------------------------------|
-| Any C file        | `pebble build` must succeed (all 4 platforms, 0 errors)    |
+| Any C file        | `pebble build` must succeed (all 5 platforms, 0 errors)    |
 | Any JS file       | `node test/*.test.js` — all suites pass, no warnings       |
 | Functional change | Update README.md to reflect the change                     |
 
 ## Hard rules
 - Never use `Pebble.sendAppMessage` directly — always route through `sendToPebble()` queue
-- Target platforms: aplite, basalt, diorite, emery — **never chalk**
+- Target platforms: aplite, basalt, diorite, emery, flint
 - Overlay layer must be added last in `main_window_load` to stay on top
 - PNG bitmaps with transparency require `graphics_context_set_compositing_mode(ctx, GCompOpSet)` before drawing; reset to `GCompOpAssign` after
-- Always call `speaker_stop()` before `speaker_play_tone` / `speaker_play_tracks`; sound is only audible on Emery (no-op on aplite/basalt/diorite)
+- Always call `speaker_stop()` before `speaker_play_tone` / `speaker_play_tracks`; sound is only audible on Emery and Flint (no-op on aplite/basalt/diorite)
 - New persist keys must not collide — check rat_scout.h, current max is 117
 - Clay `defaultValue` in config.json is authoritative for initial UI — not the C-side default

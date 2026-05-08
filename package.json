@@ -17,12 +17,7 @@
         "capabilities": [
             "configurable"
         ],
-        "targetPlatforms": [
-            "aplite",
-            "basalt",
-            "diorite",
-            "emery"
-        ],
+        "targetPlatforms": ["aplite", "basalt", "diorite", "emery", "flint"],
         "watchapp": {
             "watchface": true
         },

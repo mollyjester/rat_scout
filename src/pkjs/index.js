@@ -208,13 +208,22 @@ Pebble.addEventListener('appmessage', function() {
 
 // Open the Clay settings page (required when autoHandleEvents is false)
 Pebble.addEventListener('showConfiguration', function() {
+    lastWebviewResponse = null;
     Pebble.openURL(clay.generateUrl());
 });
+
+// Guard against webviewclosed firing twice (Pebble/Rebble firmware quirk)
+var lastWebviewResponse = null;
 
 // Listen for when the settings form is closed (saved)
 Pebble.addEventListener('webviewclosed', function(e) {
     console.log('Settings form closed');
     if (e && e.response) {
+        if (e.response === lastWebviewResponse) {
+            console.log('Duplicate webviewclosed event, skipping');
+            return;
+        }
+        lastWebviewResponse = e.response;
         // Check for vibe test request in raw response before Clay processes it
         var vibePattern = 0;
         var overlayTest = false;

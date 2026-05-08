@@ -54,7 +54,7 @@ rat_scout/
 ```
 
 ## Target Platforms
-aplite, basalt, diorite, emery  (**not chalk**)
+aplite, basalt, diorite, emery, flint
 
 ## Message Types (C ↔ JS)
 | Value | Constant              | Direction  | Handler                   |
@@ -99,7 +99,7 @@ Watch C:
 
 ## Sound Alerts — sounds.c
 - Speaker API: `speaker_play_tracks(SpeakerTrack[], num_tracks, volume)`
-- Audible only on platforms with a built-in speaker (Emery and newer). On aplite/basalt/diorite the SDK calls are silent no-ops, so toggles are harmless.
+- Audible only on platforms with a built-in speaker (Emery, Flint). On aplite/basalt/diorite the SDK calls are silent no-ops, so toggles are harmless.
 - Always `speaker_stop()` before a new `speaker_play_tracks()` to preempt any in-progress sound.
 - Low BG alert: 4 tracks at 160 BPM (375 ms quarter, 188/187 ms eighths)
   - Track 1 (sine):  4th E5 | 8th B4 | 8th A4
