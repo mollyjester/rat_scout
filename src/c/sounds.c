@@ -10,7 +10,7 @@ bool s_hourly_sound = false;
 //
 // BG alerts are single-track sequences, SpeakerWaveformTriangle at 100 velocity.
 // Each alert plays a three-note broken B minor chord twice:
-//   short(250ms)–short–short, pause(750ms), short–short–long(750ms)
+//   short(250ms)–short–short, pause(500ms), short–short–long(500ms)
 //
 // High alert (ascending) : B3 D4 F#4 | B3 D4 F#4
 // Low  alert (descending): F#4 D4 B3 | F#4 D4 B3
@@ -24,7 +24,7 @@ bool s_hourly_sound = false;
 #define MIDI_C5  72
 
 #define DUR_SHORT 250
-#define DUR_LONG  750
+#define DUR_LONG  500
 
 // ===== High BG alert (ascending B minor arpeggio) =====
 
@@ -36,6 +36,7 @@ static const SpeakerNote s_bg_high_notes[] = {
     { MIDI_B3,  SpeakerWaveformTriangle, DUR_SHORT, 100, 0 },
     { MIDI_D4,  SpeakerWaveformTriangle, DUR_SHORT, 100, 0 },
     { MIDI_FS4, SpeakerWaveformTriangle, DUR_LONG,  100, 0 },
+    { 0,        SpeakerWaveformTriangle, DUR_SHORT,  100, 0 },
 };
 
 static const SpeakerTrack s_bg_high_tracks[] = {
@@ -52,6 +53,7 @@ static const SpeakerNote s_bg_low_notes[] = {
     { MIDI_FS4, SpeakerWaveformTriangle, DUR_SHORT, 100, 0 },
     { MIDI_D4,  SpeakerWaveformTriangle, DUR_SHORT, 100, 0 },
     { MIDI_B3,  SpeakerWaveformTriangle, DUR_LONG,  100, 0 },
+    { 0,        SpeakerWaveformTriangle, DUR_SHORT,  100, 0 },
 };
 
 static const SpeakerTrack s_bg_low_tracks[] = {
@@ -61,8 +63,10 @@ static const SpeakerTrack s_bg_low_tracks[] = {
 // ===== Hourly chime =====
 
 static const SpeakerNote s_hourly_track[] = {
-    { MIDI_C5, SpeakerWaveformSine, 500, 100, 0 },
-    { MIDI_C5, SpeakerWaveformSine, 500, 100, 0 },
+    { MIDI_C5, SpeakerWaveformSine, DUR_SHORT, 100, 0 },
+    { 0,        SpeakerWaveformTriangle, DUR_SHORT,  100, 0 },
+    { MIDI_C5, SpeakerWaveformSine, DUR_SHORT, 100, 0 },
+    { 0,        SpeakerWaveformTriangle, DUR_SHORT,  100, 0 },
 };
 
 static const SpeakerTrack s_hourly_tracks[] = {
