@@ -4,6 +4,8 @@ Before doing any work in this repository, read these two files in full:
 - .github/GUIDELINES.md — C and JS conventions, doc style, naming, SDK gotchas, testing rules, resource rules
 
 Key rules that must never be violated:
+- **Never make assumptions stated as facts.** Before claiming any technical behavior (hardware sharing, SDK semantics, peripheral interaction, platform identity, etc.), verify it against primary sources (PebbleOS source under `/tmp/PebbleOS` or upstream, SDK headers, board configs). If you cannot verify, say so explicitly.
+- **Never assume the user's device platform.** Ask before debugging platform-specific issues.
 - Always run `pebble build` after C changes and confirm it succeeds on all platforms
 - Always run `node test/*.test.js` after JS changes and confirm all suites pass with no warnings
 - Update README.md whenever there is a functional change to the watchface

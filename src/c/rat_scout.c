@@ -252,7 +252,11 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     // See: PebbleOS src/fw/util/time/mktime.c — `*tb = *tbtemp` after gmtime_r.
     time_t current_time = time(NULL);
     
-    // Handle hourly vibration.
+    // Handle hourly alert.
+    // On flint/emery the speaker (DA7212/I2S on asterix) and the vibe motor
+    // (DRV2604/GPIO on asterix) are independent peripherals — verified
+    // against PebbleOS board_asterix.c/.h. They do not share hardware and do
+    // not block each other; the call order below is incidental.
     // DEVIATION: PebbleOS vibe queue silently drops new patterns while a
     // system notification vibration is in progress (s_pattern_in_progress
     // guard in vibe_pattern.c). Call vibes_cancel() first to preempt any
@@ -260,12 +264,12 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     if (tick_time->tm_min == 0 && s_last_vibration_hour != tick_time->tm_hour &&
         (s_hourly_vibration || s_hourly_sound || s_overlay_enabled)) {
         s_last_vibration_hour = tick_time->tm_hour;
+        if (s_hourly_sound) {
+            play_hourly_alert();
+        }
         if (s_hourly_vibration) {
             vibes_cancel();
             vibes_double_pulse();
-        }
-        if (s_hourly_sound) {
-            play_hourly_alert();
         }
         if (s_overlay_enabled && s_hourly_vibration) {
             static char hourly_time_buf[6];

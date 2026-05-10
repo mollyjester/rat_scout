@@ -92,12 +92,16 @@ void sounds_deinit(void) {
  * Play a SpeakerTrack array, preempting any in-progress sound.
  * No-op on platforms without a speaker (the SDK speaker_* calls
  * silently return on aplite/basalt/diorite — flint/emery have the speaker).
- * Skips playback if the speaker is not idle to prevent double-firing.
+ * speaker_play_tracks() is self-preempting in PebbleOS
+ * (speaker_service.c:513-518: if state != Idle, prv_stop_internal is
+ * called with SpeakerFinishReasonPreempted before the new playback starts),
+ * so no explicit idle-check is required here. speaker_stop() is still
+ * called explicitly to ensure prv_sound_finish_cb runs synchronously
+ * before the new tracks are queued.
  * @param tracks - Array of SpeakerTrack
  * @param num_tracks - Number of tracks in the array
  */
 static void play_tracks(const SpeakerTrack *tracks, uint32_t num_tracks) {
-    if (speaker_get_status() != SpeakerStatusIdle) return;
     (void)speaker_stop();
     (void)speaker_set_volume(100);
     (void)speaker_play_tracks(tracks, num_tracks, 100);

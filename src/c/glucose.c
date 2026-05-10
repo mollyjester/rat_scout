@@ -108,14 +108,18 @@ void update_delta_display(time_t current_time) {
 }
 
 /**
- * Check glucose value against thresholds and vibrate if needed.
- * High threshold: short then long vibration.
- * Low threshold: long then short vibration.
+ * Check glucose value against thresholds and trigger BG alerts when the
+ * reading enters a HIGH or LOW zone. Each side-effect (vibration, sound,
+ * overlay) is gated independently on its own user toggle.
  * Values are compared in x10 scale to handle mmol/L decimals.
  * @param bg_str - The formatted glucose value string (e.g. "120" or "6.7")
  */
 void check_bg_threshold_vibration(const char *bg_str) {
-    if (!s_bg_vibration) return;
+    // Skip zone detection only when EVERY BG alert side-effect is disabled.
+    // Previously this short-circuited on !s_bg_vibration alone, which silently
+    // disabled the BG sound and overlay alerts whenever Threshold Vibration
+    // was off — even though the user had explicitly enabled the sound/overlay.
+    if (!s_bg_vibration && !s_bg_high_sound && !s_bg_low_sound && !s_overlay_enabled) return;
     if (!bg_str || bg_str[0] == '\0') return;
 
     // Parse BG string to x10 integer (e.g. "120" -> 1200, "6.7" -> 67)
@@ -151,36 +155,45 @@ void check_bg_threshold_vibration(const char *bg_str) {
         new_zone = BG_ZONE_LOW;
     }
 
-    // Only vibrate when entering a HIGH or LOW zone from a different zone.
+    // Only fire alerts when entering a HIGH or LOW zone from a different zone.
+    // On flint/emery the speaker (DA7212/I2S on asterix) and the vibe motor
+    // (DRV2604/GPIO on asterix) are independent peripherals — verified
+    // against PebbleOS board_asterix.c/.h. They do not share hardware and do
+    // not block each other; the call order below is incidental.
     // DEVIATION: PebbleOS vibe queue silently drops new patterns while a
     // system notification vibration is in progress (s_pattern_in_progress
     // guard in vibe_pattern.c). Call vibes_cancel() first to preempt any
     // ongoing system vibe — BG alerts are safety-critical and must not be
-    // silently swallowed. Zone is updated only after the cancel+enqueue
-    // sequence so the one-shot is not consumed without actual vibration.
+    // silently swallowed. Each side-effect (sound / vibration / overlay) is
+    // gated on its own toggle. Zone is updated only after the side-effects
+    // run so a one-shot is not consumed without firing.
     if (new_zone != s_bg_zone) {
         char msg[32];
         if (new_zone == BG_ZONE_HIGH) {
-            vibes_cancel();
-            vibes_enqueue_custom_pattern((VibePattern){
-                .durations = BG_HIGH_VIBE_PATTERN,
-                .num_segments = ARRAY_LENGTH(BG_HIGH_VIBE_PATTERN)
-            });
             if (s_bg_high_sound) {
                 play_bg_high_alert();
+            }
+            if (s_bg_vibration) {
+                vibes_cancel();
+                vibes_enqueue_custom_pattern((VibePattern){
+                    .durations = BG_HIGH_VIBE_PATTERN,
+                    .num_segments = ARRAY_LENGTH(BG_HIGH_VIBE_PATTERN)
+                });
             }
             if (s_overlay_enabled) {
                 snprintf(msg, sizeof(msg), "BG High\n%s", bg_str);
                 overlay_show(ALERT_KIND_BG_HIGH, msg);
             }
         } else if (new_zone == BG_ZONE_LOW) {
-            vibes_cancel();
-            vibes_enqueue_custom_pattern((VibePattern){
-                .durations = BG_LOW_VIBE_PATTERN,
-                .num_segments = ARRAY_LENGTH(BG_LOW_VIBE_PATTERN)
-            });
             if (s_bg_low_sound) {
                 play_bg_low_alert();
+            }
+            if (s_bg_vibration) {
+                vibes_cancel();
+                vibes_enqueue_custom_pattern((VibePattern){
+                    .durations = BG_LOW_VIBE_PATTERN,
+                    .num_segments = ARRAY_LENGTH(BG_LOW_VIBE_PATTERN)
+                });
             }
             if (s_overlay_enabled) {
                 snprintf(msg, sizeof(msg), "BG Low\n%s", bg_str);

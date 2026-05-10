@@ -1,5 +1,8 @@
 # Rat Scout — Architecture Overview
 
+## Investigation discipline
+Before stating any technical behavior as fact (SDK semantics, hardware sharing, peripheral interaction, platform identity), verify against primary sources: PebbleOS at `/tmp/PebbleOS`, SDK headers, or board configs. Cite file paths and line numbers. Never assume the user's device platform — ask.
+
 ## Repository Layout
 
 ```

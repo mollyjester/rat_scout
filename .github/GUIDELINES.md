@@ -1,5 +1,11 @@
 # Rat Scout — Code Guidelines
 
+## Investigation discipline (READ FIRST)
+- **Never state technical behavior as fact without primary-source evidence.** Before claiming SDK semantics, hardware sharing, peripheral behavior, platform identity, or any other low-level fact, verify it against PebbleOS source (`/tmp/PebbleOS`), SDK headers, or board configs. If you cannot verify, say so explicitly. Cite file paths and line numbers when stating verified facts.
+- **Never assume the user's device platform.** Ask before debugging platform-specific issues; the 5 target platforms (aplite, basalt, diorite, emery, flint) have very different hardware.
+- Verified flint/asterix hardware reference: speaker is DA7212 codec over I2S (`src/fw/board/boards/board_asterix.c` `AudioDevice`); vibe is DRV2604 via NRF5 GPIO pin 0,2 (`board_asterix.h` `BoardConfigActuator BOARD_CONFIG_VIBE`). They are independent peripherals.
+- Verified PebbleOS speaker behavior: `speaker_service_play_tracks` is self-preempting (`src/fw/services/speaker/speaker_service.c:513-518` calls `prv_stop_internal(SpeakerFinishReasonPreempted)` if not idle). Do NOT add `speaker_get_status()` idle guards before calling `speaker_play_tracks` — they block legitimate preemption.
+
 ## General
 - Language: C (Pebble SDK 4.9) + JavaScript (PebbleKit JS, ES5)
 - Build: `pebble build` (waf). Clean build: `pebble clean && pebble build`. Always verify build is clean after changes.
