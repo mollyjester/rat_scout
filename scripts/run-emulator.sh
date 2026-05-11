@@ -19,8 +19,8 @@ set -e
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
-PLATFORM="basalt"
-VALID_PLATFORMS="aplite basalt chalk diorite emery"
+PLATFORM="flint"
+VALID_PLATFORMS="flint emery"
 LOCATION_NAME=""
 SKIP_BUILD=true
 
@@ -204,12 +204,25 @@ dpkg -l libfdt1           &>/dev/null || NEED_PKGS+=(libfdt1)
 dpkg -l xvfb              &>/dev/null || NEED_PKGS+=(xvfb)
 dpkg -l x11-utils         &>/dev/null || NEED_PKGS+=(x11-utils)  # for xdpyinfo
 dpkg -l novnc             &>/dev/null || NEED_PKGS+=(novnc)      # web-based VNC viewer
+dpkg -l qemu-system-data  &>/dev/null || NEED_PKGS+=(qemu-system-data)  # keymaps for qemu-pebble
 
 if [[ ${#NEED_PKGS[@]} -gt 0 ]]; then
     echo "==> Installing system dependencies: ${NEED_PKGS[*]}..."
     sudo apt-get update -q
     sudo apt-get install -y "${NEED_PKGS[@]}"
 fi
+
+# pebble-tool invokes qemu-pebble with -L <sdk>/toolchain/lib/pc-bios, so qemu-pebble
+# looks for keymaps at <sdk>/toolchain/lib/pc-bios/keymaps/en-us.  That directory is
+# not shipped with the SDK, but qemu-system-data installs the keymaps to
+# /usr/share/qemu/keymaps.  Symlink them into every active SDK's pc-bios dir.
+for SDK_DIR in /home/codespace/.pebble-sdk/SDKs/*/toolchain; do
+    PC_BIOS="${SDK_DIR}/lib/pc-bios"
+    if [[ ! -e "${PC_BIOS}/keymaps" ]]; then
+        mkdir -p "$PC_BIOS"
+        ln -sf /usr/share/qemu/keymaps "${PC_BIOS}/keymaps"
+    fi
+done
 
 # ---------------------------------------------------------------------------
 # Ensure a DISPLAY is available (start Xvfb if headless)
