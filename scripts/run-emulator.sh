@@ -427,10 +427,17 @@ PYEOF
 # ---------------------------------------------------------------------------
 set +e
 
+# Always wipe the emulator state before launching.  The SPI flash written by a
+# previous run can leave the firmware in an inconsistent state that causes
+# _wait_for_qemu()'s unbounded recv loop to hang forever waiting for the
+# "Ready for communication" string.  Wiping forces a fresh flash decompress on
+# every launch — identical to a cold start, which always works.
+# localstorage is also deleted by wipe, but seed_localstorage() restores it
+# at the top of each install attempt before pypkjs is spawned.
+echo "==> Wiping emulator state for clean boot..."
+pebble wipe 2>/dev/null || true
+
 echo "==> Starting emulator ($PLATFORM) and installing app..."
-# pebble install may time out on first boot after a wipe (QEMU is slower
-# decompressing the SPI flash).  Retry up to 3 times.  On retries the
-# emulator is already running so the install is much faster.
 INSTALL_OK=false
 for INSTALL_ATTEMPT in 1 2 3; do
     # Seed localStorage before each attempt — wipe (called on retry) deletes it.
