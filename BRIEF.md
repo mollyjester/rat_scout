@@ -13,14 +13,14 @@ Rat Scout puts your Dexcom glucose readings front and center on your Pebble watc
 
 ## Setup
 
-1. Install the watchface on your Pebble via the Rebble app store.
+1. Install the watchface on your Pebble via the Pebble app store.
 2. Open Settings and enter your **Dexcom Share** login credentials.
 3. *(Optional)* Add API keys for weather ([OpenWeatherMap](https://openweathermap.org/api), free) and astronomy ([ipgeolocation.io](https://ipgeolocation.io/), free).
 4. Customize your BG units, alert thresholds, and weather preferences.
 
 ## Compatibility
 
-Works on **all Pebble platforms**: Aplite, Basalt, Chalk, Diorite, and Emery.
+Works on **all Pebble platforms**: Flint and Emery.
 
 Supports **Dexcom US, Outside-US, and Japan** regions.
 

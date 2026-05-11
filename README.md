@@ -59,7 +59,7 @@ Rat Scout connects to the Dexcom Share API to display real-time blood glucose re
 
 ## Requirements
 
-- **Pebble smartwatch** (any platform)
+- **Pebble 2 Duo or Pebble Time 2 smartwatch**
 - **Dexcom Share account** with a connected CGM transmitter
 - **Pebble/Rebble app** on your phone
 - **Internet connection** on phone for API access
@@ -122,7 +122,7 @@ src/
 │   ├── rat_scout.c          # Watchface core: UI, layer setup, vibration, persistent storage
 │   ├── overlay.c            # Transient overlay notification banner (Quick View Alerts)
 │   ├── glucose.c            # Glucose update rendering and BG threshold alert logic
-│   ├── sounds.c             # Polyphonic alert melodies (low/high BG, hourly chime)
+│   ├── sounds.c             # Alert melodies (low/high BG, hourly chime)
 │   ├── messaging.c          # AppMessage handler: settings ingestion, data dispatch
 │   ├── draw_procs.c         # Custom GPath and drawing procedures
 │   ├── layout.c             # Layer positioning and watchface layout
