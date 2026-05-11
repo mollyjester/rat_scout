@@ -1,0 +1,40 @@
+{
+  "_comment": "Watchface settings template for --settings option of run-emulator.sh.",
+  "_comment2": "Set values you want to pre-seed into the emulator's localStorage.",
+  "_comment3": "Keys left as null are omitted from clay-settings so Clay uses its built-in defaults.",
+
+  "DEX_LOGIN":                  null,
+  "DEX_PASSWORD":               null,
+  "DEX_REGION":                 null,
+
+  "BG_UNITS":                   null,
+  "BG_SHOW_DELTA":              null,
+  "BG_SHOW_TIMEDELTA":          null,
+  "BG_VIBRATION":               null,
+  "BG_LOW_SOUND":               null,
+  "BG_HIGH_SOUND":              null,
+  "BG_LOW_THRESHOLD":           null,
+  "BG_HIGH_THRESHOLD":          null,
+  "BG_NIGHT_LOW_THRESHOLD":     null,
+  "BG_NIGHT_HIGH_THRESHOLD":    null,
+  "BG_NIGHT_START":             null,
+  "BG_NIGHT_END":               null,
+
+  "DATE_FORMAT":                null,
+  "HOURLY_VIBRATION":           null,
+  "HOURLY_SOUND":               null,
+
+  "OWM_API_KEY":                null,
+  "WEATHER_UNITS":              null,
+  "WEATHER_INTERVAL":           null,
+
+  "ASTRO_API_KEY":              null,
+
+  "GARBAGE_PICKUP_TIME":        null,
+  "GARBAGE_ORGANIC_DAYS":       null,
+  "GARBAGE_GREY_DAYS":          null,
+  "GARBAGE_BLACK_DAYS":         null,
+
+  "ALERT_OVERLAY_ENABLE":       null,
+  "ALERT_OVERLAY_DURATION":     null
+}

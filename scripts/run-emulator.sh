@@ -23,6 +23,7 @@ PLATFORM="flint"
 VALID_PLATFORMS="flint emery"
 LOCATION_NAME=""
 SKIP_BUILD=true
+SETTINGS_FILE=""
 
 # ---------------------------------------------------------------------------
 # Cleanup helper — kills the emulator and Xvfb if we launched them
@@ -77,6 +78,11 @@ while [[ $# -gt 0 ]]; do
             SKIP_BUILD=false
             shift
             ;;
+        --settings)
+            # Resolve to absolute path now, before the script cd's to PROJECT_ROOT
+            SETTINGS_FILE="$(cd "$(dirname "$2")" 2>/dev/null && pwd)/$(basename "$2")"
+            shift 2
+            ;;
         --logs)
             # Accepted for backward compatibility; logs are always shown now
             shift
@@ -88,11 +94,15 @@ Usage: ./scripts/run-emulator.sh [OPTIONS]
 Run the Rat Scout Pebble watchface in the Pebble emulator.
 
 OPTIONS:
-  --platform <name>   Emulator platform to use (default: basalt)
-                      Valid values: aplite, basalt, chalk, diorite, emery
+  --platform <name>   Emulator platform to use (default: flint)
+                      Valid values: flint emery
   --loc <name>        Override emulator location (e.g. Malta, Moscow, Tokyo)
                       Sets timezone, provides fixed GPS coordinates to weather
                       and astronomy APIs. Uses Open-Meteo geocoding (no key).
+  --settings <file>   JSON file with watchface settings to pre-seed into the
+                      emulator's localStorage before launch. Keys set to null
+                      are omitted so Clay uses its built-in defaults. See
+                      scripts/settings.json for a template with all keys.
   --build             Run pebble clean + pebble build before installing.
                       By default the build step is skipped.
   --logs              Accepted for backward compatibility (logs are always shown)
@@ -100,10 +110,10 @@ OPTIONS:
 
 EXAMPLES:
   ./scripts/run-emulator.sh
-  ./scripts/run-emulator.sh --platform diorite
-  ./scripts/run-emulator.sh --platform aplite
+  ./scripts/run-emulator.sh --platform emery
   ./scripts/run-emulator.sh --loc Malta
-  ./scripts/run-emulator.sh --platform basalt --loc Moscow
+  ./scripts/run-emulator.sh --settings scripts/settings.json
+  ./scripts/run-emulator.sh --platform flint --loc Moscow --settings scripts/settings.json
 
 In a GitHub Codespace the config page URL will be printed in the terminal.
 VS Code will offer to open the forwarded port in your browser automatically.
@@ -348,6 +358,68 @@ print(_g.__file__)
 fi
 
 # ---------------------------------------------------------------------------
+# Pre-seed emulator localStorage with settings from --settings file.
+#
+# pypkjs stores localStorage as a dbm.dumb database keyed by app UUID at:
+#   ~/.pebble-sdk/<sdk>/<platform>/localstorage/<uuid>.{dat,dir}
+#
+# We write a 'clay-settings' key containing only the non-null values from
+# the provided JSON file.  Missing/null keys are omitted, so Clay falls back
+# to the defaultValue defined in config.json for each of those settings.
+#
+# seed_localstorage() is called before the first install attempt AND after
+# every 'pebble wipe' in the retry loop — wipe deletes the entire persist
+# dir (including localstorage), so we must re-seed before the next attempt.
+# ---------------------------------------------------------------------------
+if [[ -n "$SETTINGS_FILE" ]]; then
+    if [[ ! -f "$SETTINGS_FILE" ]]; then
+        echo "Error: settings file not found: $SETTINGS_FILE" >&2
+        exit 1
+    fi
+fi
+
+seed_localstorage() {
+    [[ -z "$SETTINGS_FILE" ]] && return 0
+    echo "==> Seeding emulator localStorage from $SETTINGS_FILE..."
+    "$PEBBLE_PYTHON" - <<PYEOF
+import json, os, sys, dbm.dumb
+
+settings_file = '${SETTINGS_FILE}'
+platform      = '${PLATFORM}'
+project_root  = '${PROJECT_ROOT}'
+
+appinfo_path = os.path.join(project_root, 'build', 'appinfo.json')
+if not os.path.exists(appinfo_path):
+    print('WARNING: build/appinfo.json not found — run pebble build first', file=sys.stderr)
+    sys.exit(0)
+with open(appinfo_path) as f:
+    uuid = json.load(f)['uuid']
+
+with open(settings_file) as f:
+    raw = json.load(f)
+settings = {k: v for k, v in raw.items() if v is not None and not k.startswith('_comment')}
+
+try:
+    from pebble_tool.sdk import get_sdk_persist_dir
+    persist_dir = get_sdk_persist_dir(platform)
+except Exception as e:
+    print(f'WARNING: could not resolve SDK persist dir: {e}', file=sys.stderr)
+    sys.exit(0)
+
+ls_dir = os.path.join(persist_dir, 'localstorage')
+os.makedirs(ls_dir, exist_ok=True)
+db_path = os.path.join(ls_dir, uuid)
+
+with dbm.dumb.open(db_path, 'c') as db:
+    db['clay-settings'] = json.dumps(settings)
+
+print(f'    Wrote {len(settings)} setting(s) to {db_path}')
+if not settings:
+    print('    (all values were null — clay-settings cleared so defaults apply)')
+PYEOF
+}
+
+# ---------------------------------------------------------------------------
 # Install to emulator (starts QEMU, installs the app, then returns)
 #
 # Disable set -e for the runtime section — we handle errors explicitly
@@ -361,6 +433,8 @@ echo "==> Starting emulator ($PLATFORM) and installing app..."
 # emulator is already running so the install is much faster.
 INSTALL_OK=false
 for INSTALL_ATTEMPT in 1 2 3; do
+    # Seed localStorage before each attempt — wipe (called on retry) deletes it.
+    seed_localstorage
     echo "    install attempt $INSTALL_ATTEMPT of 3..."
     pebble install --emulator "$PLATFORM" --vnc 2>&1
     INSTALL_RC=$?
