@@ -72,8 +72,10 @@ aplite, basalt, diorite, emery, flint
 | —     | (outbound ping)       | C → JS     | triggers fetchAllData()   |
 
 ## Persist Key Ranges
-- 1–50: UI state (BG, delta, timestamps, weather, astronomy, moon phase, garbage)
-- 100–117: Settings (thresholds, flags, display preferences, overlay enable/duration, sound toggles)
+- 100–112: Data cache (BG reading, delta, sun/moon times, weather, moon phase, vibe/umbrella flags, garbage bag, timestamp)
+- 113–117: Settings (overlay enable/duration, BG low/high sound, hourly sound)
+- Key 100: PERSIST_KEY_BG
+- Key 112: PERSIST_KEY_TIMESTAMP
 - Key 113: PERSIST_KEY_OVERLAY_ENABLE
 - Key 114: PERSIST_KEY_OVERLAY_DURATION
 - Key 115: PERSIST_KEY_BG_LOW_SOUND
@@ -103,14 +105,13 @@ Watch C:
 ## Sound Alerts — sounds.c
 - Speaker API: `speaker_play_tracks(SpeakerTrack[], num_tracks, volume)`
 - Audible only on platforms with a built-in speaker (Emery, Flint). On aplite/basalt/diorite the SDK calls are silent no-ops, so toggles are harmless.
-- Always `speaker_stop()` before a new `speaker_play_tracks()` to preempt any in-progress sound.
-- Low BG alert: 4 tracks at 160 BPM (375 ms quarter, 188/187 ms eighths)
-  - Track 1 (sine):  4th E5 | 8th B4 | 8th A4
-  - Track 2 (sine):  4th D4 | 4th C4
-  - Track 3 (square):4th A3 | 4th A3
-  - Track 4 (square):4th B2 | 4th A2
-- High BG alert: each track's note sequence reversed so the contour rises
-- Hourly chime: single track, two C5 tones at 500 ms each
+- `speaker_stop()` is called before each `speaker_play_tracks()` to ensure `prv_sound_finish_cb` fires synchronously before new playback begins. `speaker_play_tracks()` is also self-preempting in PebbleOS, so no idle-status guard is needed.
+- All alert tracks wrap their notes in a leading **and** trailing `SILENCE_BUF` (350 ms, midi=0, triangle) to absorb DA7212 cold-start ramp-up on flint/emery.
+- High BG alert (ascending B minor arpeggio): single track, `SpeakerWaveformTriangle`
+  - B3(125ms)–D4(125ms)–F#4(125ms) | 250ms pause | B3(125ms)–D4(125ms)–F#4(250ms)
+- Low BG alert (descending B minor arpeggio): single track, `SpeakerWaveformTriangle`
+  - F#4(125ms)–D4(125ms)–B3(125ms) | 250ms pause | F#4(125ms)–D4(125ms)–B3(250ms)
+- Hourly chime: single track, two C6 `SpeakerWaveformSine` pulses (125 ms each) separated by a 125 ms silent gap
 - Toggles: `s_bg_low_sound` / `s_bg_high_sound` / `s_hourly_sound` (independent of vibration toggles)
 - `handle_sound_test()` always plays regardless of toggle (preview)
 
