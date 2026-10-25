@@ -1,5 +1,9 @@
 {
     "name": "Rat Scout Pebble Dev",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    "postCreateCommand": "bash .devcontainer/setup.sh",
     "forwardPorts": [6080],
     "portsAttributes": {
         "6080": {

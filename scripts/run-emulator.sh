@@ -208,25 +208,32 @@ echo "==> Project root: $PROJECT_ROOT"
 # ---------------------------------------------------------------------------
 # Install system dependencies if missing (include Xvfb for headless display)
 # ---------------------------------------------------------------------------
+# Runtime libraries for qemu-pebble, as listed in the official SDK install guide
+# (https://developer.repebble.com/sdk/), plus the headless display stack.
 NEED_PKGS=()
-dpkg -l libsdl1.2debian  &>/dev/null || NEED_PKGS+=(libsdl1.2debian)
-dpkg -l libfdt1           &>/dev/null || NEED_PKGS+=(libfdt1)
-dpkg -l xvfb              &>/dev/null || NEED_PKGS+=(xvfb)
-dpkg -l x11-utils         &>/dev/null || NEED_PKGS+=(x11-utils)  # for xdpyinfo
-dpkg -l novnc             &>/dev/null || NEED_PKGS+=(novnc)      # web-based VNC viewer
-dpkg -l qemu-system-data  &>/dev/null || NEED_PKGS+=(qemu-system-data)  # keymaps for qemu-pebble
+for PKG in libsdl2-2.0-0 libglib2.0-0 libpixman-1-0 zlib1g libsndio7.0 \
+           xvfb x11-utils novnc qemu-system-data iproute2; do
+    # x11-utils provides xdpyinfo; novnc is the web-based VNC viewer;
+    # qemu-system-data provides keymaps for SDKs that don't ship them;
+    # iproute2 provides ss (port readiness checks)
+    dpkg -s "$PKG" &>/dev/null || NEED_PKGS+=("$PKG")
+done
 
 if [[ ${#NEED_PKGS[@]} -gt 0 ]]; then
     echo "==> Installing system dependencies: ${NEED_PKGS[*]}..."
-    sudo apt-get update -q
-    sudo apt-get install -y "${NEED_PKGS[@]}"
+    SUDO=""
+    [[ "$(id -u)" -ne 0 ]] && SUDO="sudo"
+    $SUDO apt-get update -q
+    $SUDO apt-get install -y "${NEED_PKGS[@]}"
 fi
 
 # pebble-tool invokes qemu-pebble with -L <sdk>/toolchain/lib/pc-bios, so qemu-pebble
-# looks for keymaps at <sdk>/toolchain/lib/pc-bios/keymaps/en-us.  That directory is
-# not shipped with the SDK, but qemu-system-data installs the keymaps to
-# /usr/share/qemu/keymaps.  Symlink them into every active SDK's pc-bios dir.
-for SDK_DIR in /home/codespace/.pebble-sdk/SDKs/*/toolchain; do
+# looks for keymaps at <sdk>/toolchain/lib/pc-bios/keymaps/en-us.  Older SDKs did not
+# ship that directory, but qemu-system-data installs the keymaps to
+# /usr/share/qemu/keymaps.  Symlink them into any SDK's pc-bios dir that lacks them.
+# SDKs live in ~/.pebble-sdk (legacy) or ~/.local/share/pebble-sdk (pebble-tool 5.x).
+for SDK_DIR in "$HOME"/.pebble-sdk/SDKs/*/toolchain "$HOME"/.local/share/pebble-sdk/SDKs/*/toolchain; do
+    [[ -d "$SDK_DIR" ]] || continue
     PC_BIOS="${SDK_DIR}/lib/pc-bios"
     if [[ ! -e "${PC_BIOS}/keymaps" ]]; then
         mkdir -p "$PC_BIOS"
@@ -286,6 +293,7 @@ if ! command -v pebble &>/dev/null; then
         exit 1
     fi
     uv tool install pebble-tool --python 3.13
+    export PATH="$HOME/.local/bin:$PATH"
 fi
 
 if ! pebble sdk list 2>/dev/null | grep -q '(active)'; then

@@ -10,7 +10,7 @@
 - Clay test buttons must behave identically to the Save Settings button plus their specific test trigger. The mechanism in `src/pkjs/clay-config.js` is `attachFlagButton(id, flagKey, flagValue)`: on click it serializes the current form, sets the flag (`_vibeTest` / `_soundTest` / `_overlayTest`), and POSTs to `pebblejs://close#`. The `webviewclosed` handler in `src/pkjs/index.js` parses the flag, calls `clay.getSettings(e.response)` to persist all settings, calls `sendSettings()` to push them to the watch, then queues the test command. Always preserve this save-equivalent ordering when adding new test buttons.
 
 ## General
-- Language: C (Pebble SDK 4.9) + JavaScript (PebbleKit JS, ES5)
+- Language: C (Pebble SDK 4.x, tested with 4.33.1) + JavaScript (PebbleKit JS, ES5)
 - Build: `pebble build` (waf). Clean build: `pebble clean && pebble build`. Always verify build is clean after changes.
 - Tests: `node test/*.test.js` — all suites must pass, no warnings. Run after any JS change.
 - **README.md must be updated whenever there is a functional change to the watchface** (new features, removed features, changed settings, changed platforms, changed architecture).

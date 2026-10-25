@@ -156,25 +156,47 @@ Glucose + astronomy data are sent as a single message. Weather data is sent as a
 
 ## Development
 
+### Dev Container
+
+`.devcontainer/` provides everything needed on a fresh machine: Ubuntu 24.04 (the emulator needs glibc ≥ 2.38), Node.js, the emulator's runtime libraries, Xvfb/noVNC, `uv` and `pebble-tool`. On first start, `.devcontainer/setup.sh` downloads the latest Pebble SDK and runs `npm ci`; it is idempotent and can be re-run manually.
+
+Outside the dev container, follow the [official SDK install guide](https://developer.repebble.com/sdk/) (`uv tool install pebble-tool`, `pebble sdk install latest`), then `npm ci`.
+
 ### Running in Emulator (Codespace / Local)
 
 ```bash
-# Default (basalt platform):
+# Default (flint platform):
 ./scripts/run-emulator.sh
 
-# With logs and specific platform:
-./scripts/run-emulator.sh --platform diorite --logs
+# Clean build first, specific platform, pre-seeded settings:
+./scripts/run-emulator.sh --build --platform emery --settings scripts/settings.json
 
 # See all options:
 ./scripts/run-emulator.sh --help
 ```
 
-## Building
+The script streams logs from both sides once the app is running: lines prefixed `pkjs>` come from PebbleKit JS `console.log`, and lines prefixed `<file>.c:<line>>` come from C `APP_LOG`.
 
-Requires Pebble SDK 3.
+### Emulator Commands (headless)
+
+In a container without a display, add `--vnc` to every command that uses `--emulator`:
 
 ```bash
+pebble install --emulator flint --vnc                                  # start emulator + install
+pebble screenshot --no-open --emulator flint --vnc screenshot.png      # save the screen as PNG
+pebble logs --emulator flint --vnc                                     # stream C + JS logs
+pebble emu-button click select --emulator flint --vnc                  # press a button
+pebble kill && pebble wipe                                             # reset a stuck emulator
+```
+
+## Building
+
+Requires Pebble SDK 4.x (tested with 4.33.1 / pebble-tool 5.0). Settings UI uses [`@rebble/clay`](https://github.com/pebble-dev/clay), the maintained Clay fork with flint/emery support.
+
+```bash
+npm ci
 pebble build
+for t in test/*.test.js; do node "$t"; done
 pebble install --phone <phone_ip>
 ```
 
