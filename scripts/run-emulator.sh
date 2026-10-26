@@ -94,8 +94,10 @@ OPTIONS:
                       and astronomy APIs. Uses Open-Meteo geocoding (no key).
   --settings <file>   JSON file with watchface settings to pre-seed into the
                       emulator's localStorage before launch. Keys set to null
-                      are omitted so Clay uses its built-in defaults. See
-                      scripts/settings.json for a template with all keys.
+                      are omitted; PebbleKit JS then applies its own fallback,
+                      which is not always the Clay default (see
+                      scripts/settings.md). scripts/settings.json is a
+                      template with all keys.
   --build             Run pebble clean + pebble build before installing.
                       By default the build step is skipped.
   --logs              Accepted for backward compatibility (logs are always shown)
@@ -364,8 +366,9 @@ PYEOF
 #   ~/.pebble-sdk/<sdk>/<platform>/localstorage/<uuid>.{dat,dir}
 #
 # We write a 'clay-settings' key containing only the non-null values from
-# the provided JSON file.  Missing/null keys are omitted, so Clay falls back
-# to the defaultValue defined in config.json for each of those settings.
+# the provided JSON file.  Missing/null keys are omitted, and PebbleKit JS
+# applies its own fallback for them, which is not always the defaultValue in
+# config.json (e.g. BG_SHOW_DELTA becomes off) -- see scripts/settings.md.
 #
 # seed_localstorage() is called before the first install attempt AND after
 # every 'pebble wipe' in the retry loop — wipe deletes the entire persist
@@ -415,7 +418,7 @@ with dbm.dumb.open(db_path, 'c') as db:
 
 print(f'    Wrote {len(settings)} setting(s) to {db_path}')
 if not settings:
-    print('    (all values were null — clay-settings cleared so defaults apply)')
+    print('    (all values were null — clay-settings cleared; PebbleKit JS fallbacks apply)')
 PYEOF
 }
 

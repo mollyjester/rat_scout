@@ -57,7 +57,8 @@ Pass a JSON file with `--settings`. The script writes its non-null values into t
 ./scripts/run-emulator.sh --settings scripts/settings.json
 ```
 
-- `scripts/settings.json` is a template listing every key; `null` keys are left out so Clay uses its `defaultValue`. `scripts/settings.md` documents each key.
+- `scripts/settings.json` is a template listing every key, and `scripts/settings.md` documents each one.
+- Clay's `defaultValue` does **not** apply to seeded settings: it only fills in fields on the settings page. Keys set to `null` or left out are missing from localStorage, and PebbleKit JS uses its own fallback. That fallback differs from the Clay default for `BG_SHOW_DELTA` and `BG_SHOW_TIMEDELTA` (off instead of on) and for the three `GARBAGE_*_DAYS` keys (no days instead of the default schedule), so set those explicitly. `scripts/settings.md` lists every key with both values.
 - Keep files with credentials or API keys out of git, e.g. under `scripts/params/` (gitignored):
 
   ```json

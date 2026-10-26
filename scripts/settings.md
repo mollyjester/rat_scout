@@ -1,6 +1,51 @@
 # Watchface Settings Reference
 
-All keys correspond to entries in `settings.json`. Set a key to `null` to leave it unset — the watchface will use the built-in default for that setting.
+These are all the keys the Clay settings page (`src/pkjs/config.json`) saves to the phone's localStorage under `clay-settings`. PebbleKit JS reads them from there at startup. `scripts/settings.json` lists every key, and `run-emulator.sh --settings <file>` seeds them into the emulator.
+
+## Defaults vs. missing keys
+
+The **Default** columns below are Clay's `defaultValue`, which applies only when settings are saved from the settings page: the page pre-fills every field, so every key gets saved. A file passed with `--settings` is written to localStorage as-is. Keys set to `null`, or left out, are not in `clay-settings` at all, and PebbleKit JS (`src/pkjs/index.js`, `glucose.js`, `garbage.js`) applies its own fallback instead. For most keys the fallback matches the default. For these keys it does not, so set them explicitly:
+
+| Key | Clay default | If missing |
+|-----|--------------|------------|
+| `BG_SHOW_DELTA` | `true` | off |
+| `BG_SHOW_TIMEDELTA` | `true` | off |
+| `GARBAGE_ORGANIC_DAYS` | Mon, Wed, Fri | no days |
+| `GARBAGE_GREY_DAYS` | Thu | no days |
+| `GARBAGE_BLACK_DAYS` | Tue, Sat | no days |
+
+## All keys at a glance
+
+| Key | Clay default | If missing |
+|-----|--------------|------------|
+| `DEX_LOGIN` | `""` | no glucose fetch |
+| `DEX_PASSWORD` | `""` | no glucose fetch |
+| `DEX_REGION` | `"ous"` | `"ous"` |
+| `BG_UNITS` | `"mg/dL"` | `"mg/dL"` |
+| `BG_SHOW_DELTA` | `true` | **off** |
+| `BG_SHOW_TIMEDELTA` | `true` | **off** |
+| `BG_VIBRATION` | `false` | off |
+| `BG_LOW_SOUND` | `false` | off |
+| `BG_HIGH_SOUND` | `false` | off |
+| `BG_LOW_THRESHOLD` | `""` | sent as `0`, same as `""` |
+| `BG_HIGH_THRESHOLD` | `""` | sent as `0`, same as `""` |
+| `BG_NIGHT_LOW_THRESHOLD` | `""` | general threshold used |
+| `BG_NIGHT_HIGH_THRESHOLD` | `""` | general threshold used |
+| `BG_NIGHT_START` | `""` | no night window |
+| `BG_NIGHT_END` | `""` | no night window |
+| `DATE_FORMAT` | `"dd.mm"` | `"dd.mm"` |
+| `HOURLY_VIBRATION` | `false` | off |
+| `HOURLY_SOUND` | `false` | off |
+| `OWM_API_KEY` | `""` | weather skipped |
+| `WEATHER_UNITS` | `"metric"` | `"metric"` |
+| `WEATHER_INTERVAL` | `"60"` | 60 minutes |
+| `ASTRO_API_KEY` | `""` | astronomy shows N/A |
+| `GARBAGE_PICKUP_TIME` | `"9"` | 9 |
+| `GARBAGE_ORGANIC_DAYS` | `[true,false,true,false,true,false,false]` | **no days** |
+| `GARBAGE_GREY_DAYS` | `[false,false,false,true,false,false,false]` | **no days** |
+| `GARBAGE_BLACK_DAYS` | `[false,true,false,false,false,true,false]` | **no days** |
+| `ALERT_OVERLAY_ENABLE` | `false` | off |
+| `ALERT_OVERLAY_DURATION` | `"10"` | 10 seconds |
 
 ---
 

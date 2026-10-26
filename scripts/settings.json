@@ -1,7 +1,7 @@
 {
   "_comment": "Watchface settings template for --settings option of run-emulator.sh.",
   "_comment2": "Set values you want to pre-seed into the emulator's localStorage.",
-  "_comment3": "Keys left as null are omitted from clay-settings so Clay uses its built-in defaults.",
+  "_comment3": "Keys left as null are omitted from clay-settings; PebbleKit JS then applies its own fallback, which is NOT always the Clay default (e.g. BG_SHOW_DELTA and BG_SHOW_TIMEDELTA become off). See scripts/settings.md.",
 
   "DEX_LOGIN":                  null,
   "DEX_PASSWORD":               null,
