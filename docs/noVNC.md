@@ -37,15 +37,15 @@ The script:
 
 In the terminal running the script, press **Ctrl+C**. The script's cleanup stops QEMU, pypkjs, websockify and Xvfb, and restores the SDK's original `browser.py` (the script temporarily replaces it with `scripts/browser_override.py`).
 
-If the script runs in the background, send SIGINT to its foreground child first (bash defers the trap until that child exits), then to the script:
+If the script runs in the background, use SIGTERM, not SIGINT: a job started with `&` or `nohup` from a non-interactive shell ignores SIGINT. Signal the script first, then the command it is waiting on (`pebble emu-app-config` or `pebble logs`). Bash runs the script's cleanup trap once that command exits:
 
 ```bash
 S=<pid of "bash ./scripts/run-emulator.sh">
-for p in $(ps -o pid= --ppid "$S"); do kill -INT "$p"; done
-kill -INT "$S"
+kill -TERM "$S"
+kill -TERM $(ps -o pid=,args= --ppid "$S" | awk '/pebble/ {print $1}')
 ```
 
-Avoid `pkill -f '<pattern>'` from a shell whose own command line contains the pattern: it kills that shell too.
+Avoid `pkill -f '<pattern>'` from a shell whose own command line contains the pattern: it kills that shell too. The script's own cleanup runs `pkill -f` for `qemu.*pebble`, `pypkjs` and `websockify.*6080`, so a shell that signals the script should not mention those strings in the same command (e.g. in a follow-up `grep`), or it is killed as well.
 
 `pebble kill` alone stops the emulator but skips the script's cleanup, so the swapped `browser.py` would stay in place until the next script run restores it. If the emulator gets stuck, `pebble kill && pebble wipe` resets it.
 
