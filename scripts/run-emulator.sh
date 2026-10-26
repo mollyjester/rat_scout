@@ -216,7 +216,8 @@ for PKG in libsdl2-2.0-0 libglib2.0-0 libpixman-1-0 zlib1g libsndio7.0 \
     # x11-utils provides xdpyinfo; novnc is the web-based VNC viewer;
     # qemu-system-data provides keymaps for SDKs that don't ship them;
     # iproute2 provides ss (port readiness checks)
-    dpkg -s "$PKG" &>/dev/null || NEED_PKGS+=("$PKG")
+    # Ubuntu 24.04 renamed some libs with a t64 suffix (e.g. libglib2.0-0t64)
+    dpkg -s "$PKG" &>/dev/null || dpkg -s "${PKG}t64" &>/dev/null || NEED_PKGS+=("$PKG")
 done
 
 if [[ ${#NEED_PKGS[@]} -gt 0 ]]; then
