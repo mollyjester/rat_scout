@@ -30,7 +30,6 @@ SETTINGS_FILE=""
 # ---------------------------------------------------------------------------
 CLEANUP_EXIT_CODE=0
 BROWSER_PY_BACKUP=""   # set later; used by cleanup to restore original
-GEO_PY_BACKUP=""      # set later; used by cleanup to restore original geolocation.py
 cleanup() {
     # Avoid re-triggering the trap on EXIT while we're already cleaning up
     trap - EXIT INT TERM
@@ -50,12 +49,6 @@ cleanup() {
         # Clear bytecode cache so Python picks up the restored file
         find "$(dirname "$BROWSER_PY_BACKUP")" -path '*/__pycache__/browser*' -delete 2>/dev/null || true
         echo "==> Restored original browser.py"
-    fi
-    # Restore the original geolocation.py if we swapped it
-    if [[ -n "$GEO_PY_BACKUP" && -f "$GEO_PY_BACKUP" ]]; then
-        mv -f "$GEO_PY_BACKUP" "${GEO_PY_BACKUP%.orig}"
-        find "$(dirname "$GEO_PY_BACKUP")" -path '*/__pycache__/geolocation*' -delete 2>/dev/null || true
-        echo "==> Restored original geolocation.py"
     fi
     exit "$CLEANUP_EXIT_CODE"
 }
@@ -151,7 +144,7 @@ echo "==> Platform: $PLATFORM"
 # Uses the Open-Meteo Geocoding API (free, no API key required).
 # Sets environment variables used by:
 #   - TZ                → pebble-tool sends correct timezone to emulator
-#   - PEBBLE_GEO_LAT   → geolocation_override.py returns these coords
+#   - PEBBLE_GEO_LAT   → written to the emulator's location.json
 #   - PEBBLE_GEO_LON
 # ---------------------------------------------------------------------------
 if [[ -n "$LOCATION_NAME" ]]; then
@@ -341,30 +334,28 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Temporarily swap geolocation.py with our override (when --loc is used)
+# Fixed emulator location (when --loc is used)
 #
 # pypkjs resolves navigator.geolocation.getCurrentPosition() via IP lookup
-# (ipify.org + GeoLiteCity.dat), which returns the data centre's location
-# in a Codespace.  When --loc is specified, we swap in our override that
-# returns fixed lat/lon from PEBBLE_GEO_LAT / PEBBLE_GEO_LON environment
-# variables.  The original is restored on exit.
+# unless <persist dir>/location.json holds {"latitude", "longitude"}, which
+# it reads at startup (pypkjs/runner/__init__.py _load_location).  'pebble
+# wipe' deletes the persist dir, so set_emulator_location() is called next
+# to seed_localstorage() before every install attempt; without --loc the
+# wipe leaves no file behind and the IP lookup applies.
 # ---------------------------------------------------------------------------
-if [[ -n "${PEBBLE_GEO_LAT:-}" && -n "${PEBBLE_GEO_LON:-}" ]]; then
-    GEO_PY="$("$PEBBLE_PYTHON" -c "
-from pypkjs.javascript.navigator import geolocation as _g
-print(_g.__file__)
-" 2>/dev/null || true)"
+set_emulator_location() {
+    [[ -z "${PEBBLE_GEO_LAT:-}" || -z "${PEBBLE_GEO_LON:-}" ]] && return 0
+    "$PEBBLE_PYTHON" - <<PYEOF
+import json, os, sys
+from pebble_tool.sdk import get_sdk_persist_dir
 
-    if [[ -n "$GEO_PY" && -f "$GEO_PY" ]]; then
-        cp -f "$GEO_PY" "${GEO_PY}.orig"
-        GEO_PY_BACKUP="${GEO_PY}.orig"
-        cp -f "${PROJECT_ROOT}/scripts/geolocation_override.py" "$GEO_PY"
-        find "$(dirname "$GEO_PY")" -path '*/__pycache__/geolocation*' -delete 2>/dev/null || true
-        echo "==> Swapped geolocation.py with location override (lat=$PEBBLE_GEO_LAT lon=$PEBBLE_GEO_LON)"
-    else
-        echo "WARNING: Could not locate pypkjs geolocation.py — weather/astronomy will use IP-based location" >&2
-    fi
-fi
+persist_dir = get_sdk_persist_dir('${PLATFORM}')
+os.makedirs(persist_dir, exist_ok=True)
+with open(os.path.join(persist_dir, 'location.json'), 'w') as f:
+    json.dump({'latitude': float('${PEBBLE_GEO_LAT}'), 'longitude': float('${PEBBLE_GEO_LON}')}, f)
+print('==> Set emulator location to ${PEBBLE_GEO_LAT}, ${PEBBLE_GEO_LON}')
+PYEOF
+}
 
 # ---------------------------------------------------------------------------
 # Pre-seed emulator localStorage with settings from --settings file.
@@ -449,8 +440,10 @@ pebble wipe 2>/dev/null || true
 echo "==> Starting emulator ($PLATFORM) and installing app..."
 INSTALL_OK=false
 for INSTALL_ATTEMPT in 1 2 3; do
-    # Seed localStorage before each attempt — wipe (called on retry) deletes it.
+    # Seed localStorage and location before each attempt — wipe (called on
+    # retry) deletes them.
     seed_localstorage
+    set_emulator_location
     echo "    install attempt $INSTALL_ATTEMPT of 3..."
     pebble install --emulator "$PLATFORM" --vnc 2>&1
     INSTALL_RC=$?

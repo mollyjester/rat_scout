@@ -53,7 +53,8 @@ rat_scout/
 └── scripts/
     ├── run-emulator.sh        # Convenience wrapper: pebble install --emulator
     ├── browser_override.py    # Override browser for Pebble config in Codespaces
-    └── geolocation_override.py
+    ├── settings.json          # Template for run-emulator.sh --settings
+    └── settings.md            # Reference for every settings key
 ```
 
 ## Target Platforms

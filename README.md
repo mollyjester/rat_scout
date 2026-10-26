@@ -175,6 +175,8 @@ Outside the dev container, follow the [official SDK install guide](https://devel
 ./scripts/run-emulator.sh --help
 ```
 
+See [docs/noVNC.md](docs/noVNC.md) for viewing the emulator in a browser, stopping it, seeding Clay settings, fixing the location and taking screenshots.
+
 The script streams logs from both sides once the app is running: lines prefixed `pkjs>` come from PebbleKit JS `console.log`, and lines prefixed `<file>.c:<line>>` come from C `APP_LOG`.
 
 ### Emulator Commands (headless)
