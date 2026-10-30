@@ -12,7 +12,8 @@
 #       in the VS Code Ports tab for the emulator display to be reachable
 #       from your external browser.
 #
-# Usage: ./scripts/run-emulator.sh [--platform <platform>] [--loc <name>] [--logs] [--help]
+# Usage: ./scripts/run-emulator.sh [--platform <platform>] [--loc <name>] [--settings <file>]
+#                                  [--build] [--pbw <file>] [--logs] [--help]
 
 set -e
 

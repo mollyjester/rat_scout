@@ -20,9 +20,9 @@ Rat Scout connects to the Dexcom Share API to display real-time blood glucose re
   - Low: long-short pattern
   - One-shot: vibrates only on zone transition, not repeatedly
   - **Night thresholds**: optional separate thresholds during a configurable night window
-- **Threshold sound alerts**: short polyphonic chime when entering low or high BG zone (Emery and Flint have a speaker; other platforms are silent)
-  - Low: descending four-track motif at 160 BPM (E5/B4/A4 lead over D4/C4 alto, A3 tenor, B2/A2 bass)
-  - High: same voicing reversed so the melody rises
+- **Threshold sound alerts**: short melody when entering the low or high BG zone (Emery and Flint speaker)
+  - Low: descending B minor arpeggio (F#4–D4–B3), played twice, triangle wave
+  - High: the same arpeggio ascending (B3–D4–F#4)
   - Each toggle is independent of vibration; sounds can be enabled, disabled, and previewed separately
 - **Multi-region Dexcom**: US, Outside-US (OUS), and Japan servers
 
@@ -57,18 +57,20 @@ Rat Scout connects to the Dexcom Share API to display real-time blood glucose re
 - **Battery indicator**: visual bar with charging animation
 - **Step count**: daily steps from Pebble Health (on supported platforms)
 - **Persistent state**: data persists across app restarts
-- **Cross-platform**: Aplite, Basalt, Diorite, Emery, Flint
+- **Platforms**: Emery (Pebble Time 2) and Flint (Pebble 2 Duo)
 
 ### Plugin (preview)
-The pbw also contains a phone-side **plugin** that serves the latest Dexcom reading as `health/glucose` (glucose in your units and in mg/dL, delta, trend arrow and reading time), so other watchfaces, apps and Index can show it. It needs the Pebble mobile app 1.16.x with **Settings → Plugins → Plugins / permissions preview** turned on. The plugin uses the Dexcom account entered in Rat Scout's settings; it calls Dexcom at most about once a minute, reuses a reading until the next one is due (5 minutes), and pauses logins for 15 minutes if Dexcom rejects the credentials (until you change them).
+The plugin pbw (`build/rat-scout-plugin.pbw`, see [Plugin pbw](#plugin-pbw-preview-sideload-only)) also contains a phone-side **plugin** that serves the latest Dexcom reading as `health/glucose` (glucose in your units and in mg/dL, delta, trend arrow and reading time), so other watchfaces, apps and Index can show it. It needs the **Pebble mobile app 1.16.x with the plugin preview enabled** (**Settings → Plugins → Plugins / permissions preview**; off by default). Without it, or with the regular `pebble build` pbw, Rat Scout fetches Dexcom directly exactly as before.
 
-> **Sideload only.** Plugins are an unstable preview; plugin pbws must not be published to the appstore.
+The plugin uses the Dexcom account entered in Rat Scout's settings; it calls Dexcom at most once every 55 s, reuses a reading until the next one is due (5 minutes), and pauses logins for 15 minutes if Dexcom rejects the credentials (until you change them). Design details: [.github/ARCHITECTURE.md](.github/ARCHITECTURE.md#plugin-preview--healthglucose).
+
+> **Sideload only — do not publish.** Plugins are an unstable preview. Never publish a plugin pbw to the appstore (no `pebble publish`); install it only by sideloading.
 
 ## Requirements
 
 - **Pebble 2 Duo or Pebble Time 2 smartwatch**
 - **Dexcom Share account** with a connected CGM transmitter
-- **Pebble/Rebble app** on your phone
+- **Pebble/Rebble app** on your phone (the optional plugin needs Pebble app 1.16.x with the plugin preview enabled)
 - **Internet connection** on phone for API access
 
 ## Configuration
@@ -80,6 +82,7 @@ Open Rat Scout settings from the Pebble/Rebble app on your phone.
 |---------|-------------|
 | Login | Dexcom Share account email/username |
 | Password | Dexcom Share account password |
+| Region | Dexcom server: Outside US (default), US, or Japan |
 
 ### Display
 | Setting | Description |
@@ -87,12 +90,13 @@ Open Rat Scout settings from the Pebble/Rebble app on your phone.
 | BG Units | mg/dL or mmol/L |
 | Show BG Delta | Toggle glucose rate of change |
 | Show Time Delta | Toggle time since last reading |
+| Date Format | dd.mm or mm.dd |
 
 ### Notifications
 | Setting | Description |
 |---------|-------------|
 | Hourly Vibration | Double-pulse every hour on the hour |
-| Hourly Sound | Two C5 half-second tones every hour on the hour (Emery/Flint speaker only) |
+| Hourly Sound | Two short C6 tones (125 ms each) every hour on the hour |
 | BG Threshold Vibration | Enable/disable glucose threshold alerts |
 | Low BG Threshold | Alert threshold in your preferred units |
 | High BG Threshold | Alert threshold in your preferred units |
@@ -119,9 +123,19 @@ Night thresholds allow you to use different alerting ranges while you sleep (e.g
 | Units | Metric (°C, m/s) or Imperial (°F, mph) |
 | Update Interval | 30 min, 1 hour, 2 hours, or 3 hours |
 
+### Garbage Collection
+| Setting | Description |
+|---------|-------------|
+| Pickup Time | Hour of day after which the next bag is shown (default 9) |
+| Organic / Grey / Black Days | Weekdays each bag type is collected |
+
+Every settings key, its default and its fallback: [scripts/settings.md](scripts/settings.md).
+
 All settings are stored locally on your phone.
 
 ## Architecture
+
+Main files (the full layout is in [.github/ARCHITECTURE.md](.github/ARCHITECTURE.md#repository-layout)):
 
 ```
 src/
@@ -134,13 +148,20 @@ src/
 │   ├── draw_procs.c         # Custom GPath and drawing procedures
 │   ├── layout.c             # Layer positioning and watchface layout
 │   └── ui_helpers.c         # Shared UI utility functions
+├── common/
+│   └── dexcom_guard.js       # Dexcom login guard shared by the plugin and PKJS fallback
+├── plugin-src/               # Plugin sources (main.js, xhr_shim.js)
+├── plugin/index.js           # GENERATED plugin bundle (node scripts/build-plugin.js); never edit
 └── pkjs/
     ├── index.js              # App orchestrator: settings, data fetching, message queue
     ├── dexcom.js             # Dexcom Share API client (auth + glucose readings)
+    ├── glucose.js            # Glucose fetch + BG/delta formatting
     ├── glucose_plugin.js     # Chooses the plugin or direct Dexcom as the glucose source
     ├── weather.js            # OpenWeatherMap 2.5 API (current + forecast)
     ├── geolocation.js        # ipgeolocation.io astronomy API client
     ├── astronomy.js          # Astronomy time calculations (next sun/moon event logic)
+    ├── garbage.js            # Garbage bag schedule
+    ├── clay-config.js        # Clay test-button handlers
     └── config.json           # Clay settings UI definition
 ```
 
@@ -154,9 +175,9 @@ Phone JS ─→ Dexcom Share API ─→ Parse glucose + calculate delta ─┐
                                                 Settings ──────────┘
 ```
 
-With the plugin preview enabled on the phone, PKJS subscribes to Rat Scout's own plugin (`health/glucose`) instead of calling Dexcom itself, and falls back to the direct path if the plugin is unavailable, denied, failing or silent for 11 minutes (`src/pkjs/glucose_plugin.js`). When the plugin API is absent or does not list the plugin (including the legacy pbw), the direct path runs exactly as before. How a manifestVersion 2 pbw behaves on phone apps older than 1.16 is UNVERIFIED.
+With the plugin preview enabled on the phone, PKJS subscribes to Rat Scout's own plugin (`health/glucose`) instead of calling Dexcom itself, and falls back to the direct path if the plugin is unavailable, denied, failing, sends nothing within 30 s of subscribing, or is silent for more than 11 minutes (`src/pkjs/glucose_plugin.js`; modes and triggers in [.github/ARCHITECTURE.md](.github/ARCHITECTURE.md#glucose-source-selection-srcpkjsglucose_pluginjs)). When the plugin API is absent or does not list the plugin (including the legacy pbw), the direct path runs exactly as before. How a manifestVersion 2 pbw behaves on phone apps older than 1.16 is UNVERIFIED.
 
-Glucose + astronomy data are sent as a single message. Weather data is sent as a separate message. A message queue ensures only one `sendAppMessage` call is in flight at a time.
+Glucose, weather and astronomy data are sent as separate messages. A message queue ensures only one `sendAppMessage` call is in flight at a time.
 
 ### Watchface Layout
 
@@ -189,10 +210,10 @@ python3 -I scripts/pack-plugin.py && ./scripts/run-emulator.sh --pbw build/rat-s
 ### Plugin smoke test (emulator)
 
 ```bash
-./scripts/plugin-smoke.sh [--platform flint|emery] [--keep-logs DIR]
+./scripts/plugin-smoke.sh [--platform flint|emery] [--seconds N] [--keep-logs DIR]
 ```
 
-Builds the plugin pbw and runs four cases on a freshly wiped emulator (about 80 s each), checking the logs: no credentials (plugin mode, "---"), fake credentials with a seeded cached reading (served from cache, sent once, screenshot saved), fake credentials with no cache (login fails, "---", throttled), and the legacy pbw (direct mode). Every case runs with `HTTP(S)_PROXY` set to a closed local port, so nothing reaches Dexcom. **Never run it, or any emulator session, with real Dexcom credentials to test failures**: Dexcom's lockout thresholds are unknown, and login failures are tested only with mocked fetch (`test/dexcom_guard.test.js`).
+Manual; not part of the test loop. Builds the plugin pbw and runs four cases on a freshly wiped emulator (`--seconds`, default 80 s each), checking the logs: no credentials (plugin mode, "---"), fake credentials with a seeded cached reading (served from cache, sent once, screenshot saved), fake credentials with no cache (login fails, "---", throttled), and the legacy pbw (direct mode). Every case runs with `HTTP(S)_PROXY` set to a closed local port and obviously fake credentials, so nothing reaches Dexcom. **Never try wrong passwords or failing logins against the real Dexcom service** (emulator or phone): Dexcom's lockout thresholds are UNVERIFIED and stay that way by decision. Login failures are tested only with a mocked fetch (`test/dexcom_guard.test.js`, `test/plugin.test.js`).
 
 See [docs/noVNC.md](docs/noVNC.md) for viewing the emulator in a browser, stopping it, seeding Clay settings, fixing the location and taking screenshots.
 
@@ -212,12 +233,12 @@ pebble kill && pebble wipe                                             # reset a
 
 ## Building
 
-Requires Pebble SDK 4.x (tested with SDK 4.33.1 / pebble-tool 5.1.1). Settings UI uses [`@rebble/clay`](https://github.com/pebble-dev/clay), the maintained Clay fork with flint/emery support.
+Requires Pebble SDK 4.x (tested with SDK 4.33.1 / pebble-tool 5.1.1 on Python 3.13). Settings UI uses [`@rebble/clay`](https://github.com/pebble-dev/clay), the maintained Clay fork with flint/emery support.
 
 ```bash
 npm ci
 pebble build
-for t in test/*.test.js; do node "$t"; done
+for f in test/*.test.js; do node "$f" || exit 1; done
 pebble install --phone <phone_ip>
 ```
 
@@ -227,14 +248,13 @@ pebble install --phone <phone_ip>
 
 ```bash
 node scripts/build-plugin.js           # after editing src/plugin-src/, dexcom.js, glucose.js or dexcom_guard.js
+node scripts/build-plugin.js --check   # exit 1 if src/plugin/index.js is stale
 python3 -I scripts/pack-plugin.py      # clean build + build/rat-scout-plugin.pbw (manifestVersion 2 + src/plugin/index.js)
-python3 -I scripts/pack-plugin.py --selftest
+python3 -I scripts/pack-plugin.py --selftest   # packer self test on an in-memory pbw
 pebble install --phone <phone_ip> build/rat-scout-plugin.pbw
 ```
 
-`pack-plugin.py` refuses to run if `src/plugin/index.js` is stale, validates `definesPermissions`, and copies the pbw unchanged once a future SDK produces plugin-aware pbws itself. Tested with pebble-tool 5.1.1 and SDK 4.33.1 (the newest on the SDK server on 2026-10-30).
-
-> **Never publish a plugin pbw to the appstore** (no `pebble publish`). The plugin API is a preview and will change.
+`pack-plugin.py` refuses to run if `src/plugin/index.js` is stale, validates `definesPermissions`, and copies the pbw unchanged once a future SDK produces plugin-aware pbws itself; `--no-build` packs the existing build output. SDK 4.33.1 was the newest on the SDK server on 2026-10-30. The result is for sideloading only (see [Plugin (preview)](#plugin-preview)).
 
 pebble-tool 5.1.1 runs `waf` with the SDK's own venv but passes its own `sys.path` as `PYTHONPATH` (`pebble_tool/commands/sdk/project/__init__.py`), so pebble-tool and the SDK venv must use the same Python minor version; otherwise `pebble build` fails with `SRE module mismatch`. Reinstall with `uv tool install --force --python <the SDK venv's python> pebble-tool==5.1.1`.
 

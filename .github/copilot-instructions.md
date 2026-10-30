@@ -18,3 +18,4 @@ Key rules that must never be violated:
 - Speaker volume is set exactly once at app init in `sounds_init()`. Do not call `speaker_set_volume()` per playback — it adds I2C round-trips and is a no-op on cold start (the audio driver's `audio_set_volume` early-returns while `is_running == false`). Per-playback volume goes through the `volume` argument of `speaker_play_tracks()`.
 - Always call `speaker_stop()` before `speaker_play_tone` / `speaker_play_tracks` to preempt in-progress sound
 - Sound output is only audible on Emery and Flint; the SDK speaker_* calls are silent no-ops on aplite/basalt/diorite
+- Plugin preview (design in `.github/ARCHITECTURE.md`, "Plugin (preview)"): never edit the generated `src/plugin/index.js` (change `src/plugin-src/` and run `node scripts/build-plugin.js`); never publish a plugin pbw (sideload only); never try wrong passwords or failing logins against the real Dexcom service — use the mocked fetch in `test/helpers/plugin_host.js`

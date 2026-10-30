@@ -3,7 +3,8 @@
 // directly as before. ES5.
 //
 // Modes:
-//   direct   - no plugin API, or our plugin isn't listed: today's behaviour
+//   direct   - no plugin API, our plugin isn't listed, subscribing failed or
+//              the plugin answered INVALID_REQUEST: today's behaviour
 //   pending  - subscribed, waiting for the first envelope (grace timer)
 //   plugin   - BG comes from the plugin; no direct Dexcom fetch
 //   fallback - plugin failing; direct fetch with the login guard, while the

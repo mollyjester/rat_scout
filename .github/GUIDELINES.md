@@ -10,7 +10,7 @@
 - Clay test buttons must behave identically to the Save Settings button plus their specific test trigger. The mechanism in `src/pkjs/clay-config.js` is `attachFlagButton(id, flagKey, flagValue)`: on click it serializes the current form, sets the flag (`_vibeTest` / `_soundTest` / `_overlayTest`), and POSTs to `pebblejs://close#`. The `webviewclosed` handler in `src/pkjs/index.js` parses the flag, calls `clay.getSettings(e.response)` to persist all settings, calls `sendSettings()` to push them to the watch, then queues the test command. Always preserve this save-equivalent ordering when adding new test buttons.
 
 ## General
-- Language: C (Pebble SDK 4.x, tested with 4.33.1) + JavaScript (PebbleKit JS, ES5)
+- Language: C (Pebble SDK 4.x, tested with 4.33.1 / pebble-tool 5.1.1 on Python 3.13) + JavaScript (PebbleKit JS, ES5; the plugin is ES5 + Promise)
 - Build: `pebble build` (waf). Clean build: `pebble clean && pebble build`. Always verify build is clean after changes.
 - Tests: `for f in test/*.test.js; do node "$f" || exit 1; done` — all suites must pass, no warnings. Run after any JS change. (`node test/*.test.js` runs only the first file: Node passes the rest as argv.)
 - **README.md must be updated whenever there is a functional change to the watchface** (new features, removed features, changed settings, changed platforms, changed architecture).
@@ -92,10 +92,11 @@ Every non-trivial function gets a block comment:
 - ES5 plus `Promise`; no `require()` of anything outside the repo (the bundler only resolves relative paths).
 - Never edit `src/plugin/index.js`: change `src/plugin-src/` (or a bundled module) and run `node scripts/build-plugin.js`. Commit the regenerated file together with its sources; `test/plugin.test.js` fails if it is stale.
 - No state in variables: the plugin is started fresh for each request. Use localStorage (shared with PKJS) and document every new key in ARCHITECTURE.md "Shared localStorage keys".
-- Only use the runtime APIs the preview guide lists (`fetch`, `localStorage`, `console`, `Pebble.*`). Anything else (XHR, timers) goes through the bundle-scope bindings in `scripts/build-plugin.js`.
+- Only use the runtime APIs the preview guide lists (quoted in the `src/plugin-src/xhr_shim.js` header: `fetch`, `localStorage`, `console`, `Pebble.*`, ...). Anything else (XHR, timers) goes through the bundle-scope bindings in `scripts/build-plugin.js`.
 - Every property/shape the plugin emits must be declared in `package.json` `plugin.sources[].properties` (the phone drops undeclared shapes); `test/plugin.test.js` enforces this.
-- Never test Dexcom login failures or lockout against the real Dexcom service, including emulator runs with real credentials. Use the mocked fetch in `test/helpers/plugin_host.js`.
+- Never try wrong passwords, failing logins or lockout against the real Dexcom service (emulator or phone). Dexcom's lockout thresholds are permanently UNVERIFIED by decision. Use the mocked fetch in `test/helpers/plugin_host.js`; `scripts/plugin-smoke.sh` uses fake credentials and blocks the network.
 - Never publish a plugin pbw to the appstore (preview guide: "Don't ship anything that uses/offers plugins to the app store yet"); sideload only.
+- Design (modes, envelopes, localStorage keys, guard, verification status): `.github/ARCHITECTURE.md`, "Plugin (preview)". Build and packaging commands: README, "Plugin pbw".
 
 ## Testing Conventions
 - Test files: `test/*.test.js`, plain Node.js, no frameworks
