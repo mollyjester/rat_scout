@@ -251,7 +251,8 @@ Dexcom.prototype._getAccountId = function(callback) {
 
         if (req.status === 200) {
             self.accountId = self.trimQuotes(req.responseText);
-            console.log('Account ID: ' + self.accountId);
+            // Never log the ID itself: logs are read from live phones (scripts/device-check.sh).
+            console.log('Account ID received');
 
             if (self.accountId === '00000000-0000-0000-0000-000000000000') {
                 self.onError('Invalid credentials');
@@ -310,7 +311,7 @@ Dexcom.prototype._getSessionId = function(callback) {
 
         if (loginReq.status === 200) {
             self.sessionId = self.trimQuotes(loginReq.responseText);
-            console.log('Session ID: ' + self.sessionId);
+            console.log('Session ID received');
 
             if (self.sessionId === '00000000-0000-0000-0000-000000000000') {
                 self.onError('Login failed');

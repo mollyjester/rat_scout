@@ -130,9 +130,12 @@ function create(deps) {
     }
 
     function sendFromPlugin(dict) {
+        // ts lines let scripts/device-check.sh spot duplicate sends; no BG value is logged.
         if (state.lastSent && state.lastSent.BG === dict.BG && state.lastSent.TIMESTAMP === dict.TIMESTAMP) {
+            console.log('Glucose gate: skipped duplicate ts=' + dict.TIMESTAMP);
             return;
         }
+        console.log('Glucose gate: plugin send ts=' + dict.TIMESTAMP);
         record(dict);
         deps.send(dict, dict.BG === '---' ? 'No glucose data (plugin)' : 'BG (plugin)');
     }
@@ -244,7 +247,10 @@ function create(deps) {
          */
         recordingSend: function(send) {
             return function(dict, type) {
-                if (dict && dict.MSG_TYPE === deps.msgType) record(dict);
+                if (dict && dict.MSG_TYPE === deps.msgType) {
+                    console.log('Glucose gate: direct send ts=' + dict.TIMESTAMP);
+                    record(dict);
+                }
                 send(dict, type);
             };
         },

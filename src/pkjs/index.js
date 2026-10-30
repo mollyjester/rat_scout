@@ -552,7 +552,8 @@ function fetchAndSendAstronomy(attemptCount) {
             var lon = pos.coords.longitude;
             lastKnownLat = lat;
             lastKnownLon = lon;
-            console.log('Astronomy using coordinates: ' + lat + ', ' + lon);
+            // No coordinates in logs: they are read from live phones (scripts/device-check.sh).
+            console.log('Astronomy using device coordinates');
             Geolocation.fetchAstronomyData(apiKey, lat, lon,
                 function(todayData) {
                     console.log('Today astronomy data received');

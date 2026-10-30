@@ -94,6 +94,7 @@ Every non-trivial function gets a block comment:
 - No state in variables: the plugin is started fresh for each request. Use localStorage (shared with PKJS) and document every new key in ARCHITECTURE.md "Shared localStorage keys".
 - Only use the runtime APIs the preview guide lists (quoted in the `src/plugin-src/xhr_shim.js` header: `fetch`, `localStorage`, `console`, `Pebble.*`, ...). Anything else (XHR, timers) goes through the bundle-scope bindings in `scripts/build-plugin.js`.
 - Every property/shape the plugin emits must be declared in `package.json` `plugin.sources[].properties` (the phone drops undeclared shapes); `test/plugin.test.js` enforces this.
+- Never log credentials, Dexcom account or session IDs, API keys, or device coordinates: logs are read from live phones (`scripts/device-check.sh`). Log presence instead ("Session ID received").
 - Never try wrong passwords, failing logins or lockout against the real Dexcom service (emulator or phone). Dexcom's lockout thresholds are permanently UNVERIFIED by decision. Use the mocked fetch in `test/helpers/plugin_host.js`; `scripts/plugin-smoke.sh` uses fake credentials and blocks the network.
 - Never publish a plugin pbw to the appstore (preview guide: "Don't ship anything that uses/offers plugins to the app store yet"); sideload only.
 - Design (modes, envelopes, localStorage keys, guard, verification status): `.github/ARCHITECTURE.md`, "Plugin (preview)". Build and packaging commands: README, "Plugin pbw".
