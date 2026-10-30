@@ -71,7 +71,8 @@ Dexcom.prototype.xhr = function(method, url) {
     req.open(method, url, true);
     req.setRequestHeader('Content-Type', 'application/json');
     req.setRequestHeader('Accept', 'application/json');
-    req.setRequestHeader('User-Agent', 'Dexcom Share/3.0.2.11');
+    // No custom User-Agent: pydexcom's recorded Dexcom traffic logs in and
+    // reads with the client's default agent.
     return req;
 };
 
@@ -90,8 +91,9 @@ Dexcom.prototype.trimQuotes = function(str) {
  * @returns {Object} Formatted reading
  */
 Dexcom.prototype.formatReading = function(reading) {
+    // As pydexcom const.py TREND_ARROWS (indexed by DEXCOM_TREND_DIRECTIONS).
     var TREND_ARROWS = {
-        None: '→',
+        None: '',
         DoubleUp: '↑↑',
         SingleUp: '↑',
         FortyFiveUp: '↗',
@@ -100,7 +102,7 @@ Dexcom.prototype.formatReading = function(reading) {
         SingleDown: '↓',
         DoubleDown: '↓↓',
         NotComputable: '?',
-        RateOutOfRange: '⚠️'
+        RateOutOfRange: '-'
     };
 
     return {
@@ -113,7 +115,7 @@ Dexcom.prototype.formatReading = function(reading) {
         },
         _value: reading.Value,
         _trend_direction: reading.Trend,
-        _trend_arrow: TREND_ARROWS[reading.Trend] || '?',
+        _trend_arrow: TREND_ARROWS.hasOwnProperty(reading.Trend) ? TREND_ARROWS[reading.Trend] : '?',
         _datetime: new Date(parseInt(reading.WT.match(/\d+/)[0])),
         _status: this.getGlucoseStatus(reading.Value)
     };
@@ -478,7 +480,8 @@ Dexcom.prototype._handleServerError = function(error) {
     
     if (error.Code === 'SessionIdNotFound' || error.Code === 'SessionNotValid') {
         // Limit retries to prevent infinite loop
-        if (this.retryCount < 2) {
+        // One re-login per run, as pydexcom get_glucose_readings does.
+        if (this.retryCount < 1) {
             this.retryCount++;
             console.log('Session error: ' + error.Code + ', re-authenticating (attempt ' + this.retryCount + ')...');
             this.sessionId = null;

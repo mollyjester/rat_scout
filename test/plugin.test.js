@@ -72,6 +72,7 @@ test('happy path (mg/dL): every shape, glucose_mgdl is the raw value', function(
         assert(c.value === 120 && c.delta === 5 && c.ts === 1700000000, 'reading cached raw');
         var hdr = f.calls[0].headers;
         assert(hdr['Content-Type'] === 'application/json', 'dexcom.js headers pass through the shim');
+        assert(!Object.keys(hdr).some(function(k) { return k.toLowerCase() === 'user-agent'; }), 'no custom User-Agent (as pydexcom)');
     });
 });
 
@@ -84,6 +85,27 @@ test('mmol/L: glucose 6.7 while glucose_mgdl stays 120', function() {
         assert(p.glucose.numericValue.min === 2.2 && p.glucose.numericValue.max === 22.2, 'mmol range 2.2-22.2');
         assert(p.glucose_mgdl.numericValue.value === 120, 'glucose_mgdl still 120');
         assert(p.delta.shortText.text === '+0.3', 'delta +0.3 mmol/L');
+    });
+});
+
+test('trend arrows follow pydexcom (None empty, RateOutOfRange "-")', function() {
+    function run(trend) {
+        var f = host.fakeDexcom({ readings: [{ WT: 'Date(1700000000000)', ST: '', DT: '', Value: 120, Trend: trend }] });
+        var h = host.load({ fetch: f, storage: { 'clay-settings': settings() } });
+        return h.request(REQ).then(function(r) { return props(r); });
+    }
+    return run('None').then(function(p) {
+        assert(p.trend.shortText.text === '', 'None: empty arrow');
+        assert(p.glucose.longText.text === '120 mg/dL', 'None: long text has no arrow');
+        return run('RateOutOfRange');
+    }).then(function(p) {
+        assert(p.trend.shortText.text === '-', 'RateOutOfRange: "-"');
+        return run('NotComputable');
+    }).then(function(p) {
+        assert(p.trend.shortText.text === '?', 'NotComputable: "?"');
+        return run('SomethingNew');
+    }).then(function(p) {
+        assert(p.trend.shortText.text === '?', 'unknown trend: "?"');
     });
 });
 
@@ -217,6 +239,16 @@ test('500 SessionIdNotFound re-authenticates and succeeds', function() {
         assert(f.endpoints().join(',') === 'readings,session,readings', 'reads, renews the session, reads again');
         assert(props(r).glucose_mgdl.numericValue.value === 120, 'returns the reading');
         assert(h.store.sessionId === 'sess-1', 'stores the new session');
+    });
+});
+
+test('second session error in one run: no further re-login (one retry, as pydexcom)', function() {
+    var expired = { status: 500, body: JSON.stringify({ Code: 'SessionNotValid', Message: 'x' }) };
+    var f = host.fakeDexcom({ readingsQueue: [expired, expired] });
+    var h = host.load({ fetch: f, storage: { 'clay-settings': settings(), accountId: 'a0', sessionId: 's0' } });
+    return h.request(REQ).then(function(r) {
+        assert(f.endpoints().join(',') === 'readings,session,readings', 'one re-login, then gives up');
+        assert(r.data && r.data.instances.length === 0, 'instances is empty');
     });
 });
 

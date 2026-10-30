@@ -273,7 +273,7 @@ function runTests() {
         var dex = new Dexcom('user', 'pass', function() {}, 'us', function(err) {
             errorCalled = true;
         });
-        dex.retryCount = 2; // Already at max
+        dex.retryCount = 1; // Already at max (one re-login per run)
         try {
             dex._handleServerError({ Code: 'SessionIdNotFound', Message: 'Session not found' });
         } catch (e) {

@@ -92,14 +92,15 @@ function buildInstance(reading, units) {
     var mmol = units === 'mmol/L';
     var range = mmol ? MMOL_RANGE : MGDL_RANGE;
     var text = Glucose.formatBGValue(reading.value, units);
-    var arrow = reading.arrow || '?';
+    // '' is a real arrow (Trend "None", as in pydexcom); only a missing one is '?'.
+    var arrow = typeof reading.arrow === 'string' ? reading.arrow : '?';
     var props = {
         name: { shortText: { text: 'Dexcom' } },
         status: { shortText: { text: 'ok' }, longText: { text: 'Latest reading' } },
         glucose: {
             numericValue: { value: parseFloat(text), unit: units, min: range.min, max: range.max },
             shortText: { text: text },
-            longText: { text: text + ' ' + units + ' ' + arrow }
+            longText: { text: arrow ? text + ' ' + units + ' ' + arrow : text + ' ' + units }
         },
         glucose_mgdl: { numericValue: { value: reading.value, unit: 'mg/dL' } },
         trend: {

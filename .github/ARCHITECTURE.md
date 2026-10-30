@@ -99,11 +99,11 @@ The pbw also carries a phone-side plugin (Pebble plugins preview, mobile app 1.1
 |---|---|---|
 | `name` | shortText | "Dexcom" |
 | `status` | shortText, longText | shortText `ok` (longText "Latest reading") on every reading instance; shortText `busy` (longText "Signing in to Dexcom") on an instance that has only `name` and `status`, sent when Dexcom was not called (login lock held, or throttled) and no reading for these credentials is cached |
-| `glucose` | numericValue, shortText, longText | User's units (`clay-settings` `BG_UNITS`, default mg/dL), formatted by glucose.js `formatBGValue`. numericValue range: mg/dL min 40, max 400; mmol/L min 2.2, max 22.2. Long: value, units, arrow ("120 mg/dL →") |
+| `glucose` | numericValue, shortText, longText | User's units (`clay-settings` `BG_UNITS`, default mg/dL), formatted by glucose.js `formatBGValue`. numericValue range: mg/dL min 40, max 400; mmol/L min 2.2, max 22.2. Long: value, units, arrow ("120 mg/dL →"; no arrow when the trend is `None`) |
 | `delta` | numericValue, shortText | User's units, glucose.js `formatBGDelta` ("+5"). Omitted when the reading has no numeric delta (single reading) |
 | `glucose_mgdl` | numericValue | Raw Dexcom mg/dL (`unit: "mg/dL"`), no min/max: the lossless value Rat Scout's own PKJS reads |
 | `delta_mgdl` | numericValue | Raw mg/dL delta (`unit: "mg/dL"`). Omitted together with `delta` |
-| `trend` | shortText, longText | Arrow (dexcom.js `TREND_ARROWS`) and a description |
+| `trend` | shortText, longText | Arrow (dexcom.js `TREND_ARROWS`, as pydexcom: `None` → empty, `NotComputable` → `?`, `RateOutOfRange` → `-`) and a description |
 | `trend_code` | longText | Raw Dexcom `Trend` |
 | `reading_time` | timestamp | Epoch seconds |
 
@@ -162,7 +162,7 @@ Emulator = pebble-tool 5.1.1 (Python 3.13) / pypkjs 3.0.3 on flint, via `scripts
 | Plugin reads PKJS's `clay-settings` and cache keys (shared localStorage) | Emulator-verified (case 2); pypkjs keys a plugin's store off the pbw uuid (`js_plugin.py`). Phone: preview guide says shared |
 | Shim on fetch, including a rejected fetch at the account step | Emulator-verified (case 3: "Network error fetching account ID" → "---", no login pause) |
 | `XMLHttpRequest` / `setTimeout` in the phone's plugin runtime | UNVERIFIED (emulator has both; the shim is used regardless) |
-| `fetch` accepting `User-Agent` | UNVERIFIED (shim retries without it only if fetch throws synchronously) |
+| `fetch` accepting `User-Agent` | Not needed: dexcom.js sends no custom User-Agent (pydexcom's recorded traffic works with the client default) |
 | `onError` paths (`PERMISSION_DENIED`, `TIMEOUT`, ...) | Unit tests only. The emulator logs a plugin's `respond.error` and skips it instead of calling `onError` (`js_plugin.py` `_parse_envelope`), grants every caller permission (`javascript/plugins.py`), and `pebble emu-permission` only knows `WatchMicrophone` |
 | An app must declare its own plugin's `Glucose` permission | UNVERIFIED (declared anyway) |
 | `enumeratePlugins` / requests for a manifestVersion 2 pbw with plugins disabled, or on app < 1.16 | UNVERIFIED (the emulator always exposes the plugin API, regardless of the caller's manifestVersion) |
@@ -194,7 +194,7 @@ Emulator = pebble-tool 5.1.1 (Python 3.13) / pypkjs 3.0.3 on flint, via `scripts
   - `Max authentication attempts exceeded`: `SSO_AuthenticateMaxAttemptsExceeded`, Dexcom's own lockout answer. 60 min pause (`LOCKOUT_PAUSE_MS`), since the lockout's duration is unknown.
 - Everything else is transient and never pauses: other HTTP errors (`Error fetching account|session ID: <status>`), network errors and timeouts. They retry at the normal cadence (plugin throttle 55 s, watch catch-up polling once per minute), the rate the direct path has run against Dexcom for over a year.
 - Both login steps time out after 15 s (dexcom.js), so a login takes at most about 30 s, inside the 45 s lock. In the plugin the timeout needs `setTimeout` (UNVERIFIED on the phone); without it the host's request TIMEOUT is the bound.
-- Session-error re-authentication inside dexcom.js is not guarded (bounded to 2 retries per run).
+- Session-error re-authentication inside dexcom.js is not guarded (one re-login per run, as pydexcom).
 - Dexcom's lockout and rate-limit thresholds are permanently UNVERIFIED: wrong passwords and failed logins are never tried against the real service. The guard is deliberately conservative and verified only by unit tests with a mocked fetch (`test/dexcom_guard.test.js`, `test/helpers/plugin_host.js`).
 
 ### Build
