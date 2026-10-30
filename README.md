@@ -198,7 +198,7 @@ pebble kill && pebble wipe                                             # reset a
 
 ## Building
 
-Requires Pebble SDK 4.x (tested with 4.33.1 / pebble-tool 5.0). Settings UI uses [`@rebble/clay`](https://github.com/pebble-dev/clay), the maintained Clay fork with flint/emery support.
+Requires Pebble SDK 4.x (tested with SDK 4.33.1 / pebble-tool 5.1.1). Settings UI uses [`@rebble/clay`](https://github.com/pebble-dev/clay), the maintained Clay fork with flint/emery support.
 
 ```bash
 npm ci
@@ -206,6 +206,23 @@ pebble build
 for t in test/*.test.js; do node "$t"; done
 pebble install --phone <phone_ip>
 ```
+
+### Plugin pbw (preview, sideload only)
+
+`pebble build` produces a **legacy** pbw (`build/work.pbw`, named after the checkout directory): SDK 4.33.1 has no plugin support, so the pbw has no `manifestVersion` and no plugin script, and the phone treats it exactly as before. To build the plugin pbw:
+
+```bash
+node scripts/build-plugin.js           # after editing src/plugin-src/, dexcom.js, glucose.js or dexcom_guard.js
+python3 -I scripts/pack-plugin.py      # clean build + build/rat-scout-plugin.pbw (manifestVersion 2 + src/plugin/index.js)
+python3 -I scripts/pack-plugin.py --selftest
+pebble install --phone <phone_ip> build/rat-scout-plugin.pbw
+```
+
+`pack-plugin.py` refuses to run if `src/plugin/index.js` is stale, validates `definesPermissions`, and copies the pbw unchanged once a future SDK produces plugin-aware pbws itself. Tested with pebble-tool 5.1.1 and SDK 4.33.1 (the newest on the SDK server on 2026-10-30).
+
+> **Never publish a plugin pbw to the appstore** (no `pebble publish`). The plugin API is a preview and will change.
+
+pebble-tool 5.1.1 runs `waf` with the SDK's own venv but passes its own `sys.path` as `PYTHONPATH` (`pebble_tool/commands/sdk/project/__init__.py`), so pebble-tool and the SDK venv must use the same Python minor version; otherwise `pebble build` fails with `SRE module mismatch`. Reinstall with `uv tool install --force --python <the SDK venv's python> pebble-tool==5.1.1`.
 
 ## Credits
 

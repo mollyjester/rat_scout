@@ -114,6 +114,12 @@ Runtime: a plugin "is started fresh for each request" (preview guide), so all st
 
 HTTP: dexcom.js uses XMLHttpRequest; the preview guide documents only `fetch` ("Nothing else"), so the bundle binds `src/plugin-src/xhr_shim.js` as `XMLHttpRequest` in bundle scope (never as a global), and `setTimeout`/`clearTimeout` to the runtime's if present, else no-ops. Phone-side availability of XHR and setTimeout is UNVERIFIED; the emulator has both (`pypkjs/plugins/js_plugin.py` installs Timers and XHRExtension), which is why the shim is used unconditionally.
 
+### Plugin pbw
+- `python3 -I scripts/pack-plugin.py` → `build/rat-scout-plugin.pbw`: `pebble clean` + `pebble build`, then sets `manifestVersion: 2` and adds `plugin.script` (`src/plugin/index.js`) at its project-relative path, as PebbleOS PR #2483 and pebble-plugins' `pack-plugin-pbw.py` do. `build/<dir>.pbw` stays the legacy pbw.
+- Validation mirrors PR #2483 and pypkjs 3.0.3 `plugins/manifest.py`: permission name alphanumeric and not `InvokeAction`, a label, `kind` in `read`/`write`/`exfiltrating`. The preview guide also lists `dangerous`; neither validator accepts it, so we use `read`.
+- Upstream `pack-plugin-pbw.py` is not used: it opens `build/<package name>.pbw` (`build/Rat Scout.pbw`), while `pebble build` names the pbw after the directory; and the pebble-plugins repo has no LICENSE.
+- No published SDK contains PR #2483 (merged 2026-10-19): `sdk.repebble.com/v1/files/sdk-core` lists up to 4.33.1, and PebbleOS releases ship only firmware and QEMU images. When one appears, the packer detects a plugin-aware pbw and copies it unchanged.
+
 ### Shared localStorage keys
 | Key | Writer | Contents |
 |---|---|---|
