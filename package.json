@@ -30,8 +30,70 @@
                         "api.ipgeolocation.io"
                     ]
                 }
+            },
+            {
+                "name": "Glucose",
+                "plugin": "f41022a2-b149-42ac-a98d-2afbf84ca841"
             }
         ],
+        "plugin": {
+            "description": "Latest Dexcom Share CGM reading for the account set in Rat Scout's settings: glucose in the user's units and in mg/dL, delta, trend and reading time.",
+            "script": "src/plugin/index.js",
+            "definesPermissions": [
+                {
+                    "name": "Glucose",
+                    "label": "Read your glucose readings",
+                    "kind": "read"
+                }
+            ],
+            "sources": [
+                {
+                    "category": "health",
+                    "items": [
+                        "glucose"
+                    ],
+                    "properties": {
+                        "name": [
+                            "shortText"
+                        ],
+                        "status": [
+                            "shortText",
+                            "longText"
+                        ],
+                        "glucose": [
+                            "numericValue",
+                            "shortText",
+                            "longText"
+                        ],
+                        "delta": [
+                            "numericValue",
+                            "shortText"
+                        ],
+                        "glucose_mgdl": [
+                            "numericValue"
+                        ],
+                        "delta_mgdl": [
+                            "numericValue"
+                        ],
+                        "trend": [
+                            "shortText",
+                            "longText"
+                        ],
+                        "trend_code": [
+                            "longText"
+                        ],
+                        "reading_time": [
+                            "timestamp"
+                        ]
+                    },
+                    "callerPermissions": [
+                        "Glucose"
+                    ],
+                    "supportsMultiple": false,
+                    "suggestedRefreshIntervalSec": 60
+                }
+            ]
+        },
         "targetPlatforms": ["flint", "emery"],
         "watchapp": {
             "watchface": true

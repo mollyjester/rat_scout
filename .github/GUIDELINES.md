@@ -88,6 +88,15 @@ Every non-trivial function gets a block comment:
 - `attachVibeButton(id, patternId)` and `attachSoundButton(id, patternId)` are wrappers around `attachFlagButton`
 - Every button registered in config.json must be registered in clay-config.test.js mocks
 
+## Plugin Conventions (src/plugin-src/)
+- ES5 plus `Promise`; no `require()` of anything outside the repo (the bundler only resolves relative paths).
+- Never edit `src/plugin/index.js`: change `src/plugin-src/` (or a bundled module) and run `node scripts/build-plugin.js`. Commit the regenerated file together with its sources; `test/plugin.test.js` fails if it is stale.
+- No state in variables: the plugin is started fresh for each request. Use localStorage (shared with PKJS) and document every new key in ARCHITECTURE.md "Shared localStorage keys".
+- Only use the runtime APIs the preview guide lists (`fetch`, `localStorage`, `console`, `Pebble.*`). Anything else (XHR, timers) goes through the bundle-scope bindings in `scripts/build-plugin.js`.
+- Every property/shape the plugin emits must be declared in `package.json` `plugin.sources[].properties` (the phone drops undeclared shapes); `test/plugin.test.js` enforces this.
+- Never test Dexcom login failures or lockout against the real Dexcom service, including emulator runs with real credentials. Use the mocked fetch in `test/helpers/plugin_host.js`.
+- Never publish a plugin pbw to the appstore (preview guide: "Don't ship anything that uses/offers plugins to the app store yet"); sideload only.
+
 ## Testing Conventions
 - Test files: `test/*.test.js`, plain Node.js, no frameworks
 - Pattern: IIFE per test case, `assert(condition, message)`, results printed at end

@@ -59,6 +59,11 @@ Rat Scout connects to the Dexcom Share API to display real-time blood glucose re
 - **Persistent state**: data persists across app restarts
 - **Cross-platform**: Aplite, Basalt, Diorite, Emery, Flint
 
+### Plugin (preview)
+The pbw also contains a phone-side **plugin** that serves the latest Dexcom reading as `health/glucose` (glucose in your units and in mg/dL, delta, trend arrow and reading time), so other watchfaces, apps and Index can show it. It needs the Pebble mobile app 1.16.x with **Settings → Plugins → Plugins / permissions preview** turned on. The plugin uses the Dexcom account entered in Rat Scout's settings; it calls Dexcom at most about once a minute, reuses a reading until the next one is due (5 minutes), and pauses logins for 15 minutes if Dexcom rejects the credentials (until you change them).
+
+> **Sideload only.** Plugins are an unstable preview; plugin pbws must not be published to the appstore.
+
 ## Requirements
 
 - **Pebble 2 Duo or Pebble Time 2 smartwatch**

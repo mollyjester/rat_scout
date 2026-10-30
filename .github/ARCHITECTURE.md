@@ -32,26 +32,37 @@ rat_scout/
 │   │   ├── layout.c       # Layer position constants and create_text_layer / create_icon_layer helpers
 │   │   └── ui_helpers.c   # Shared utilities: persist_write_string_if_changed, destroy_icon_layer, etc.
 │   ├── common/
-│   │   └── utils.js       # Shared JS utilities (used by pkjs modules)
+│   │   ├── utils.js       # Shared JS utilities (used by pkjs modules)
+│   │   └── dexcom_guard.js # Dexcom login guard shared by the plugin and PKJS fallback
+│   ├── plugin-src/        # Plugin sources (ES5 + Promise); bundled into src/plugin/index.js
+│   │   ├── main.js        # health/glucose source handler, cache, throttle
+│   │   └── xhr_shim.js    # XMLHttpRequest subset on fetch, so dexcom.js runs unchanged
+│   ├── plugin/
+│   │   └── index.js       # GENERATED plugin script (package.json plugin.script); never edit
 │   └── pkjs/
 │       ├── index.js        # PebbleKit JS entry: app lifecycle, settings, message queue, data fetching
 │       ├── config.json     # Clay settings UI definition (all user-facing settings)
 │       ├── clay-config.js  # Clay custom function: attaches click handlers for test buttons
-│       ├── dexcom.js       # Dexcom Share API client (auth + glucose fetch)
+│       ├── dexcom.js       # Dexcom Share API client (auth + glucose fetch); also bundled into the plugin
+│       ├── glucose.js      # Glucose fetch + BG/delta formatters (formatters also bundled into the plugin)
 │       ├── weather.js      # OpenWeatherMap API client (current + forecast, smart cache)
 │       ├── geolocation.js  # ipgeolocation.io astronomy API client
 │       ├── astronomy.js    # Astronomy time calculations (next sun/moon event, phase)
 │       └── garbage.js      # Garbage bag schedule computation
 ├── test/
+│   ├── helpers/plugin_host.js  # Loads the plugin bundle in a vm with mock host APIs
 │   ├── astronomy.test.js
 │   ├── clay-config.test.js
 │   ├── dexcom.test.js
+│   ├── dexcom_guard.test.js
+│   ├── plugin.test.js
 │   ├── garbage.test.js
 │   ├── glucose.test.js
 │   ├── utils.test.js
 │   └── weather.test.js
 └── scripts/
     ├── run-emulator.sh        # Convenience wrapper: pebble install --emulator
+    ├── build-plugin.js        # Bundles src/plugin-src/ into src/plugin/index.js (--check verifies)
     ├── browser_override.py    # Override browser for Pebble config in Codespaces
     ├── settings.json          # Template for run-emulator.sh --settings
     └── settings.md            # Reference for every settings key
@@ -69,10 +80,62 @@ Declared in `package.json` `pebble.usesPermissions`, for the phone app's plugin-
 | `Internet` → `share2.dexcom.com`, `shareous1.dexcom.com`, `share.dexcom.jp` | Dexcom Share regions (`dexcom.js` base URLs) |
 | `Internet` → `api.openweathermap.org` | `weather.js` |
 | `Internet` → `api.ipgeolocation.io` | `geolocation.js` |
+| `Glucose` (plugin: own uuid) | Rat Scout's PKJS reading its own plugin. Whether an app must declare its own plugin's permission is UNVERIFIED (the guide shows this only for other plugins); declared to be safe |
 
 - They only take effect when the pbw is marked `manifestVersion: 2` and the user has plugins enabled (Pebble plugins preview guide, "Permissions" and "Declaring": "only in place when plugins are enabled"; "Without that it's a legacy app"). A legacy pbw keeps the old implicit internet + location access.
 - SDK 4.33.1 copies the whole `pebble` block into `appinfo.json` but sets no `manifestVersion`, so `pebble build` alone still produces a legacy pbw.
 - Keep `Internet` limited to domains the JS actually requests. `pebble convert-manifest --dry-run` also lists hosts found in comments and help text (github.com, openweathermap.org, ipgeolocation.io); those are never requested and are deliberately not declared.
+
+## Plugin (preview) — `health/glucose`
+The pbw also carries a phone-side plugin (Pebble plugins preview, mobile app 1.16.x, disabled by default) that serves the latest Dexcom reading to any watchface, app or Index. Category contract (our own; no published `health` category exists yet):
+
+`health/glucose`, one instance, `instanceId: "dexcom"`, `supportsMultiple: false`, `suggestedRefreshIntervalSec: 60`, caller permission `Glucose` (defined by the plugin, kind `read`, label "Read your glucose readings").
+
+| Property | Shapes | Notes |
+|---|---|---|
+| `name` | shortText | "Dexcom" |
+| `status` | shortText, longText | `ok` with a reading; `busy` (no glucose properties) when another context is logging in and nothing is cached |
+| `glucose` | numericValue, shortText, longText | User's units (`clay-settings` `BG_UNITS`). mg/dL: min 40, max 400; mmol/L: 1 decimal, min 2.2, max 22.2. Long: "120 mg/dL →" |
+| `delta` | numericValue, shortText | User's units, "+5". Omitted with a single reading |
+| `glucose_mgdl` | numericValue | Always integer mg/dL, no min/max: the lossless value Rat Scout's own PKJS reads |
+| `delta_mgdl` | numericValue | Integer mg/dL. Omitted with a single reading |
+| `trend` | shortText, longText | Arrow (dexcom.js `TREND_ARROWS`) and a description |
+| `trend_code` | longText | Raw Dexcom `Trend` |
+| `reading_time` | timestamp | Epoch seconds |
+
+Answers:
+- No credentials, Dexcom failure, rejected login, login paused → `instances: []`, `validUntilMs` now + 60 s.
+- Wrong category/item → `respond.error('INVALID_REQUEST')`; an exception → `UNKNOWN` (from the host shim).
+- Reading younger than 310 s (cached, same credentials) → served from cache, no Dexcom call; `validUntilMs = max(now + 60 s, (ts + 310) * 1000)`.
+- Dexcom is called at most once per 55 s (`ratscout.plugin.lastAttempt`; 55 rather than 60 so jitter in a 60 s poll never skips one).
+- Login lock held by PKJS, or throttled → cached reading if any (any age), else the `busy` instance (`validUntilMs` now + 30 s).
+
+Runtime: a plugin "is started fresh for each request" (preview guide), so all state is in localStorage, which is shared with PKJS. The plugin reads Clay's `clay-settings` (`DEX_LOGIN`, `DEX_PASSWORD`, `DEX_REGION`, `BG_UNITS`) and shares PKJS's `accountId` / `sessionId` session keys. Credentials stay in `clay-settings`: `Pebble.secureStorage` is private to the plugin and there is no PKJS → plugin channel without a `configPage`.
+
+HTTP: dexcom.js uses XMLHttpRequest; the preview guide documents only `fetch` ("Nothing else"), so the bundle binds `src/plugin-src/xhr_shim.js` as `XMLHttpRequest` in bundle scope (never as a global), and `setTimeout`/`clearTimeout` to the runtime's if present, else no-ops. Phone-side availability of XHR and setTimeout is UNVERIFIED; the emulator has both (`pypkjs/plugins/js_plugin.py` installs Timers and XHRExtension), which is why the shim is used unconditionally.
+
+### Shared localStorage keys
+| Key | Writer | Contents |
+|---|---|---|
+| `clay-settings` | Clay (PKJS) | Settings; read by the plugin |
+| `accountId`, `sessionId` | PKJS and plugin | Dexcom session |
+| `ratscout.plugin.lastReading` | plugin | `{credKey, value, delta, trend, arrow, ts}`, raw mg/dL |
+| `ratscout.plugin.lastAttempt` | plugin | Epoch ms of the last Dexcom call |
+| `ratscout.auth.inflight` | plugin, PKJS fallback | `{owner, at}` login lock, TTL 45 s |
+| `ratscout.auth.badcreds` | plugin, PKJS fallback | `{credKey, until}`: no login for 15 min after a rejection, unless the credentials change |
+| `ratscout.auth.sessionCredKey` | plugin, PKJS fallback | credKey of the stored session; a mismatch forces a new login (no key = trusted) |
+
+`credKey` is a djb2 hash of `login|region|password`: a change detector, not security.
+
+### Login guard (`src/common/dexcom_guard.js`)
+- A login is needed when there is no usable session. Before it: skip if `badcreds` matches, or if a lock younger than 45 s exists; otherwise take the lock. The lock is released (by its owner only) in both outcomes.
+- Rejections: only `Invalid credentials` / `Login failed` (zero GUID, dexcom.js). HTTP 4xx/5xx, network errors and timeouts are transient and never pause; they retry at the normal cadence (plugin throttle 55 s, watch catch-up polling once per minute), the rate the direct path has run against Dexcom for over a year.
+- Session-error re-authentication inside dexcom.js is not guarded (bounded to 2 retries per run).
+- Dexcom's lockout and rate-limit thresholds are UNVERIFIED and are never tested against the real service; the guard is deliberately conservative and verified only by unit tests with a mocked fetch.
+
+### Build
+- `node scripts/build-plugin.js` regenerates `src/plugin/index.js` (modules in a small IIFE module table); `--check` fails if it is stale, and `test/plugin.test.js` checks the same.
+- SDK 4.33.1 copies the `plugin` block into `appinfo.json` (after a clean build: the bundle step does not track appinfo changes) but neither sets `manifestVersion` nor adds the script to the pbw, and does not validate `definesPermissions` (a bogus `kind` builds fine). So `pebble build` alone does not produce a plugin pbw.
 
 ## Message Types (C ↔ JS)
 | Value | Constant              | Direction  | Handler                   |
