@@ -36,9 +36,8 @@ __defs["plugin-src/xhr_shim"] = function (module, exports, require) {
 // a different code path from the phone.
 //
 // DEVIATIONS from a real XMLHttpRequest, all for dexcom.js's benefit:
-// - A network failure calls onerror; if there is no onerror (dexcom.js
-//   _getAccountId sets only onload) it calls onload with status 0, so the
-//   caller still gets an error callback.
+// - A network failure calls onerror; if a caller sets no onerror it calls
+//   onload with status 0, so the caller still gets an error callback.
 // - abort() calls onabort, else ontimeout, else onerror (dexcom.js aborts
 //   only from its own timeout fallback and sets no onabort).
 // - Every request finishes at most once.
@@ -178,6 +177,14 @@ var DEXCOM_BASE_URL_JP = 'https://share.dexcom.jp/ShareWebServices/Services/';
 var DEXCOM_AUTHENTICATE_ENDPOINT = "General/AuthenticatePublisherAccount";
 var DEXCOM_LOGIN_ID_ENDPOINT = "General/LoginPublisherAccountById";
 var DEXCOM_GLUCOSE_READINGS_ENDPOINT = "Publisher/ReadPublisherLatestGlucoseValues";
+
+// Dexcom Share error codes that mean the credentials were refused, and the
+// account-lockout code. Taken from pydexcom (dexcom.py _handle_error_code);
+// its recorded traffic shows a wrong password as HTTP 500 with
+// Code "AccountPasswordInvalid" at both login steps (tests/cassettes).
+var DEXCOM_ERROR_PASSWORD_INVALID = 'AccountPasswordInvalid';
+var DEXCOM_ERROR_MAX_ATTEMPTS = 'SSO_AuthenticateMaxAttemptsExceeded';
+var DEXCOM_ERROR_SSO_INTERNAL = 'SSO_InternalError';
 
 var Regions = {
     US: 'us',
@@ -330,6 +337,37 @@ Dexcom.prototype.parseResponse = function(status, responseText) {
 };
 
 /**
+ * Map a failed login-step response to a dexcom.js error message.
+ * Dexcom answers a refused login with HTTP 500 and a JSON {Code, Message}
+ * body; anything else (or an unparsable body) is a plain HTTP error.
+ * @param {string} step - 'account' or 'session'
+ * @param {number} status - HTTP status
+ * @param {string} responseText - Response body
+ * @returns {string} 'Invalid credentials', 'Max authentication attempts exceeded'
+ *   or 'Error fetching <step> ID: <status>'
+ */
+Dexcom.prototype.loginErrorMessage = function(step, status, responseText) {
+    if (status === 500) {
+        var body = null;
+        try {
+            body = JSON.parse(responseText);
+        } catch (e) {
+            body = null;
+        }
+        var code = body && body.Code;
+        var message = String((body && body.Message) || '');
+        if (code === DEXCOM_ERROR_PASSWORD_INVALID ||
+            (code === DEXCOM_ERROR_SSO_INTERNAL && message.indexOf('Cannot Authenticate by Account') !== -1)) {
+            return 'Invalid credentials';
+        }
+        if (code === DEXCOM_ERROR_MAX_ATTEMPTS) {
+            return 'Max authentication attempts exceeded';
+        }
+    }
+    return 'Error fetching ' + step + ' ID: ' + status;
+};
+
+/**
  * Authenticate with Dexcom API
  * @param {Function} callback - Callback when done
  */
@@ -364,8 +402,13 @@ Dexcom.prototype._getAccountId = function(callback) {
     var self = this;
     var authUrl = this.baseUrl + DEXCOM_AUTHENTICATE_ENDPOINT;
     var req = this.xhr('POST', authUrl);
+    var timeoutHandle = null;
+
+    // Set 15 second timeout for account ID fetch
+    req.timeout = 15000;
 
     req.onload = function() {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
         if (req.readyState !== 4) return;
 
         if (req.status === 200) {
@@ -379,9 +422,29 @@ Dexcom.prototype._getAccountId = function(callback) {
 
             callback.call(self);
         } else {
-            self.onError('Error fetching account ID: ' + req.status);
+            self.onError(self.loginErrorMessage('account', req.status, req.responseText));
         }
     };
+
+    req.onerror = function() {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        console.error('Network error fetching account ID');
+        self.onError('Network error fetching account ID');
+    };
+
+    req.ontimeout = function() {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        console.error('Timeout fetching account ID (15s)');
+        self.onError('Timeout fetching account ID');
+    };
+
+    // Fallback timeout using setTimeout for better compatibility
+    timeoutHandle = setTimeout(function() {
+        if (req.readyState !== 4) {
+            console.error('Request timeout: account ID fetch took too long');
+            req.abort();
+        }
+    }, 15000);
 
     req.send(JSON.stringify({
         accountName: this.username,
@@ -418,7 +481,7 @@ Dexcom.prototype._getSessionId = function(callback) {
 
             callback.call(self);
         } else {
-            self.onError('Error fetching session ID: ' + loginReq.status);
+            self.onError(self.loginErrorMessage('session', loginReq.status, loginReq.responseText));
         }
     };
 
@@ -776,10 +839,17 @@ var INFLIGHT_KEY = 'ratscout.auth.inflight';
 var BADCREDS_KEY = 'ratscout.auth.badcreds';
 var SESSION_CREDKEY_KEY = 'ratscout.auth.sessionCredKey';
 
-// Longer than two back-to-back 15 s Dexcom request timeouts (dexcom.js).
+// Longer than the two back-to-back login requests (account + session),
+// each of which dexcom.js times out after 15 s. In the plugin that timeout
+// needs setTimeout (UNVERIFIED on the phone, see xhr_shim.js); without it the
+// host's own request TIMEOUT is the bound.
 var INFLIGHT_TTL_MS = 45000;
 // Pause after Dexcom rejects the credentials, until they change.
 var BADCREDS_PAUSE_MS = 15 * 60 * 1000;
+// After Dexcom's own lockout answer. How long Dexcom locks for is UNVERIFIED,
+// so stay away for an hour rather than extend it.
+var LOCKOUT_PAUSE_MS = 60 * 60 * 1000;
+var MAX_ATTEMPTS_ERROR = 'Max authentication attempts exceeded';
 
 /**
  * djb2 hash of a string as unsigned hex. A change detector, not security.
@@ -808,16 +878,18 @@ function credKey(settings) {
 
 /**
  * Whether a dexcom.js onError message means Dexcom refused the login.
- * Only the explicit zero-GUID answers ('Invalid credentials' / 'Login failed')
- * count. HTTP errors, network errors and timeouts are transient and retry at
- * the normal cadence (at most once per ~minute), which has run against Dexcom
- * for over a year without problems.
+ * Counts: 'Invalid credentials' (HTTP 500 AccountPasswordInvalid, or a zero
+ * account GUID), 'Login failed' (zero session GUID) and Dexcom's lockout
+ * answer 'Max authentication attempts exceeded' (see dexcom.js
+ * loginErrorMessage). Other HTTP errors, network errors and timeouts are
+ * transient and retry at the normal cadence (at most once per ~minute), which
+ * has run against Dexcom for over a year without problems.
  * @param {string} message - Error message from dexcom.js
  * @returns {boolean} True if the credentials should be paused
  */
 function isAuthRejection(message) {
     var m = String(message || '');
-    return m === 'Invalid credentials' || m === 'Login failed';
+    return m === 'Invalid credentials' || m === 'Login failed' || m === MAX_ATTEMPTS_ERROR;
 }
 
 /**
@@ -890,7 +962,8 @@ function create(storage, owner, now) {
                 storage.removeItem(BADCREDS_KEY);
                 storage.setItem(SESSION_CREDKEY_KEY, key);
             } else if (isAuthRejection(error)) {
-                storage.setItem(BADCREDS_KEY, JSON.stringify({ credKey: key, until: now() + BADCREDS_PAUSE_MS }));
+                var pause = error === MAX_ATTEMPTS_ERROR ? LOCKOUT_PAUSE_MS : BADCREDS_PAUSE_MS;
+                storage.setItem(BADCREDS_KEY, JSON.stringify({ credKey: key, until: now() + pause }));
             }
         },
 
@@ -913,6 +986,7 @@ module.exports = {
     SESSION_CREDKEY_KEY: SESSION_CREDKEY_KEY,
     INFLIGHT_TTL_MS: INFLIGHT_TTL_MS,
     BADCREDS_PAUSE_MS: BADCREDS_PAUSE_MS,
+    LOCKOUT_PAUSE_MS: LOCKOUT_PAUSE_MS,
     credKey: credKey,
     isAuthRejection: isAuthRejection,
     create: create

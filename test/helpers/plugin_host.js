@@ -12,7 +12,8 @@ var BUNDLE = path.join(__dirname, '..', '..', 'src', 'plugin', 'index.js');
 
 /**
  * Fake Dexcom Share server for fetch.
- * @param {Object} opts - {accountId, sessionId, readings, readingsStatus, readingsBody, fail}
+ * @param {Object} opts - {accountId, sessionId, accountResponse, sessionResponse ({status, body}),
+ *   readings, readingsStatus, readingsBody, readingsQueue, fail}
  * @returns {Function} fetch implementation; .calls lists endpoint names
  */
 function fakeDexcom(opts) {
@@ -27,6 +28,8 @@ function fakeDexcom(opts) {
             : url.indexOf('ReadPublisherLatestGlucoseValues') !== -1 ? 'readings' : 'other';
         calls.push({ ep: ep, url: url, body: options && options.body, headers: options && options.headers });
         if (opts.fail && opts.fail[ep]) return Promise.reject(new TypeError('fetch failed: ' + url));
+        if (ep === 'account' && opts.accountResponse) return res(opts.accountResponse.status, opts.accountResponse.body);
+        if (ep === 'session' && opts.sessionResponse) return res(opts.sessionResponse.status, opts.sessionResponse.body);
         if (ep === 'account') return res(200, '"' + (opts.accountId || 'acc-1') + '"');
         if (ep === 'session') return res(200, '"' + (opts.sessionId || 'sess-1') + '"');
         if (ep === 'readings') {

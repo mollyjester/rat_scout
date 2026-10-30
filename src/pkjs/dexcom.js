@@ -14,6 +14,14 @@ var DEXCOM_AUTHENTICATE_ENDPOINT = "General/AuthenticatePublisherAccount";
 var DEXCOM_LOGIN_ID_ENDPOINT = "General/LoginPublisherAccountById";
 var DEXCOM_GLUCOSE_READINGS_ENDPOINT = "Publisher/ReadPublisherLatestGlucoseValues";
 
+// Dexcom Share error codes that mean the credentials were refused, and the
+// account-lockout code. Taken from pydexcom (dexcom.py _handle_error_code);
+// its recorded traffic shows a wrong password as HTTP 500 with
+// Code "AccountPasswordInvalid" at both login steps (tests/cassettes).
+var DEXCOM_ERROR_PASSWORD_INVALID = 'AccountPasswordInvalid';
+var DEXCOM_ERROR_MAX_ATTEMPTS = 'SSO_AuthenticateMaxAttemptsExceeded';
+var DEXCOM_ERROR_SSO_INTERNAL = 'SSO_InternalError';
+
 var Regions = {
     US: 'us',
     OUS: 'ous',
@@ -165,6 +173,37 @@ Dexcom.prototype.parseResponse = function(status, responseText) {
 };
 
 /**
+ * Map a failed login-step response to a dexcom.js error message.
+ * Dexcom answers a refused login with HTTP 500 and a JSON {Code, Message}
+ * body; anything else (or an unparsable body) is a plain HTTP error.
+ * @param {string} step - 'account' or 'session'
+ * @param {number} status - HTTP status
+ * @param {string} responseText - Response body
+ * @returns {string} 'Invalid credentials', 'Max authentication attempts exceeded'
+ *   or 'Error fetching <step> ID: <status>'
+ */
+Dexcom.prototype.loginErrorMessage = function(step, status, responseText) {
+    if (status === 500) {
+        var body = null;
+        try {
+            body = JSON.parse(responseText);
+        } catch (e) {
+            body = null;
+        }
+        var code = body && body.Code;
+        var message = String((body && body.Message) || '');
+        if (code === DEXCOM_ERROR_PASSWORD_INVALID ||
+            (code === DEXCOM_ERROR_SSO_INTERNAL && message.indexOf('Cannot Authenticate by Account') !== -1)) {
+            return 'Invalid credentials';
+        }
+        if (code === DEXCOM_ERROR_MAX_ATTEMPTS) {
+            return 'Max authentication attempts exceeded';
+        }
+    }
+    return 'Error fetching ' + step + ' ID: ' + status;
+};
+
+/**
  * Authenticate with Dexcom API
  * @param {Function} callback - Callback when done
  */
@@ -199,8 +238,13 @@ Dexcom.prototype._getAccountId = function(callback) {
     var self = this;
     var authUrl = this.baseUrl + DEXCOM_AUTHENTICATE_ENDPOINT;
     var req = this.xhr('POST', authUrl);
+    var timeoutHandle = null;
+
+    // Set 15 second timeout for account ID fetch
+    req.timeout = 15000;
 
     req.onload = function() {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
         if (req.readyState !== 4) return;
 
         if (req.status === 200) {
@@ -214,9 +258,29 @@ Dexcom.prototype._getAccountId = function(callback) {
 
             callback.call(self);
         } else {
-            self.onError('Error fetching account ID: ' + req.status);
+            self.onError(self.loginErrorMessage('account', req.status, req.responseText));
         }
     };
+
+    req.onerror = function() {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        console.error('Network error fetching account ID');
+        self.onError('Network error fetching account ID');
+    };
+
+    req.ontimeout = function() {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        console.error('Timeout fetching account ID (15s)');
+        self.onError('Timeout fetching account ID');
+    };
+
+    // Fallback timeout using setTimeout for better compatibility
+    timeoutHandle = setTimeout(function() {
+        if (req.readyState !== 4) {
+            console.error('Request timeout: account ID fetch took too long');
+            req.abort();
+        }
+    }, 15000);
 
     req.send(JSON.stringify({
         accountName: this.username,
@@ -253,7 +317,7 @@ Dexcom.prototype._getSessionId = function(callback) {
 
             callback.call(self);
         } else {
-            self.onError('Error fetching session ID: ' + loginReq.status);
+            self.onError(self.loginErrorMessage('session', loginReq.status, loginReq.responseText));
         }
     };
 

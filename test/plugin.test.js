@@ -9,6 +9,7 @@
 var fs = require('fs');
 var path = require('path');
 var host = require('./helpers/plugin_host');
+var Guard = require('../src/common/dexcom_guard');
 var pkg = require('../package.json');
 var builder = require('../scripts/build-plugin');
 
@@ -153,7 +154,53 @@ test('fetch TypeError on readings: empty instances, session keys cleared', funct
     });
 });
 
-test('network failure at the account step still answers (shim falls back to onload)', function() {
+// Wrong-password answer as recorded from Dexcom in pydexcom's test cassettes (HTTP 500).
+var PASSWORD_INVALID = JSON.stringify({ Code: 'AccountPasswordInvalid', Message: 'Publisher account password failed' });
+
+test('500 AccountPasswordInvalid at the account step pauses logins for 15 minutes', function() {
+    var f = host.fakeDexcom({ accountResponse: { status: 500, body: PASSWORD_INVALID } });
+    var t0 = 1700000100000;
+    var h = host.load({ fetch: f, now: t0, storage: { 'clay-settings': settings() } });
+    return h.request(REQ).then(function(r) {
+        assert(f.endpoints().join(',') === 'account', 'one login attempt');
+        assert(r.data && r.data.instances.length === 0, 'instances is empty');
+        assert(h.store['ratscout.auth.badcreds'] !== undefined, 'logins paused');
+        h.setNow(t0 + 5 * 60000);
+        return h.request(REQ);
+    }).then(function() {
+        assert(f.calls.length === 1, 'no Dexcom call 5 minutes later');
+    });
+});
+
+test('500 AccountPasswordInvalid at the session step pauses logins', function() {
+    var f = host.fakeDexcom({ sessionResponse: { status: 500, body: PASSWORD_INVALID } });
+    var h = host.load({ fetch: f, storage: { 'clay-settings': settings() } });
+    return h.request(REQ).then(function() {
+        assert(f.endpoints().join(',') === 'account,session', 'account then session');
+        assert(h.store['ratscout.auth.badcreds'] !== undefined, 'logins paused');
+    });
+});
+
+test('500 SSO_AuthenticateMaxAttemptsExceeded pauses logins for an hour', function() {
+    var f = host.fakeDexcom({ accountResponse: { status: 500, body: JSON.stringify({ Code: 'SSO_AuthenticateMaxAttemptsExceeded', Message: 'x' }) } });
+    var t0 = 1700000100000;
+    var h = host.load({ fetch: f, now: t0, storage: { 'clay-settings': settings() } });
+    return h.request(REQ).then(function() {
+        var bad = JSON.parse(h.store['ratscout.auth.badcreds']);
+        assert(bad.until === t0 + Guard.LOCKOUT_PAUSE_MS, 'paused for LOCKOUT_PAUSE_MS');
+    });
+});
+
+test('other 500 at the account step is transient (no pause)', function() {
+    var f = host.fakeDexcom({ accountResponse: { status: 500, body: '<html>bad gateway</html>' } });
+    var h = host.load({ fetch: f, storage: { 'clay-settings': settings() } });
+    return h.request(REQ).then(function(r) {
+        assert(r.data && r.data.instances.length === 0, 'instances is empty');
+        assert(h.store['ratscout.auth.badcreds'] === undefined, 'no pause');
+    });
+});
+
+test('network failure at the account step still answers', function() {
     var f = host.fakeDexcom({ fail: { account: true } });
     var h = host.load({ fetch: f, storage: { 'clay-settings': settings() } });
     return h.request(REQ).then(function(r) {

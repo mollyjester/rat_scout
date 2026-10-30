@@ -160,7 +160,7 @@ Emulator = pebble-tool 5.1.1 (Python 3.13) / pypkjs 3.0.3 on flint, via `scripts
 | Host loads the plugin from our pbw; a legacy pbw's plugin is not loaded | Emulator-verified (`pypkjs/runner/__init__.py` `_load_plugin`, smoke cases 1 and 4) |
 | Detection, `pending` → `plugin`, envelope → watch, gate, host refresh every 60 s | Emulator-verified (cases 1–3; screenshot shows 6.7 +0.3 from a seeded 120/+5 mg/dL) |
 | Plugin reads PKJS's `clay-settings` and cache keys (shared localStorage) | Emulator-verified (case 2); pypkjs keys a plugin's store off the pbw uuid (`js_plugin.py`). Phone: preview guide says shared |
-| Shim on fetch, including a rejected fetch at the account step | Emulator-verified (case 3: "Error fetching account ID: 0" → "---") |
+| Shim on fetch, including a rejected fetch at the account step | Emulator-verified (case 3: "Network error fetching account ID" → "---", no login pause) |
 | `XMLHttpRequest` / `setTimeout` in the phone's plugin runtime | UNVERIFIED (emulator has both; the shim is used regardless) |
 | `fetch` accepting `User-Agent` | UNVERIFIED (shim retries without it only if fetch throws synchronously) |
 | `onError` paths (`PERMISSION_DENIED`, `TIMEOUT`, ...) | Unit tests only. The emulator logs a plugin's `respond.error` and skips it instead of calling `onError` (`js_plugin.py` `_parse_envelope`), grants every caller permission (`javascript/plugins.py`), and `pebble emu-permission` only knows `WatchMicrophone` |
@@ -169,7 +169,8 @@ Emulator = pebble-tool 5.1.1 (Python 3.13) / pypkjs 3.0.3 on flint, via `scripts
 | Clay's `openURL` settings page in a manifestVersion 2 pbw | UNVERIFIED |
 | Phone host reading immediately on (re)subscribe | UNVERIFIED (emulator does) |
 | Phone dropping undeclared shapes | Not exercised (emulator does not validate); `test/plugin.test.js` keeps every shape declared |
-| How Dexcom reports a wrong password; lockout/rate-limit thresholds; whether a new login invalidates older sessions | UNVERIFIED, permanently: never tested against the real service |
+| How Dexcom reports a wrong password | Secondary source: pydexcom's recorded Dexcom traffic (`tests/cassettes`, 2025-04-19) shows HTTP 500 `{"Code":"AccountPasswordInvalid"}` at both login steps; pydexcom also maps `SSO_InternalError` "Cannot Authenticate by AccountName/AccountId" and the lockout code `SSO_AuthenticateMaxAttemptsExceeded` (`dexcom.py` `_handle_error_code`). Never tried by us |
+| Lockout/rate-limit thresholds and duration; whether a new login invalidates older sessions | UNVERIFIED, permanently: never tested against the real service |
 | Atomicity of localStorage between plugin and PKJS | UNVERIFIED; the guard is best-effort |
 
 ### Shared localStorage keys
@@ -180,14 +181,19 @@ Emulator = pebble-tool 5.1.1 (Python 3.13) / pypkjs 3.0.3 on flint, via `scripts
 | `ratscout.plugin.lastReading` | plugin | `{credKey, value, delta, trend, arrow, ts}`, raw mg/dL |
 | `ratscout.plugin.lastAttempt` | plugin | Epoch ms of the last Dexcom call |
 | `ratscout.auth.inflight` | plugin, PKJS fallback | `{owner, at}` login lock, TTL 45 s |
-| `ratscout.auth.badcreds` | plugin, PKJS fallback | `{credKey, until}`: no login for 15 min after a rejection, unless the credentials change |
+| `ratscout.auth.badcreds` | plugin, PKJS fallback | `{credKey, until}`: no login for 15 min after a refused login (60 min after Dexcom's lockout answer), unless the credentials change |
 | `ratscout.auth.sessionCredKey` | plugin, PKJS fallback | credKey of the stored session; a mismatch forces a new login (no key = trusted) |
 
 `credKey` is a djb2 hash of `login|region|password`: a change detector, not security.
 
 ### Login guard (`src/common/dexcom_guard.js`)
 - A login is needed when there is no usable session. Before it: skip if `badcreds` matches, or if a lock younger than 45 s exists; otherwise take the lock. The lock is released (by its owner only) in both outcomes.
-- Rejections: only `Invalid credentials` / `Login failed` (zero GUID, dexcom.js). HTTP 4xx/5xx, network errors and timeouts are transient and never pause; they retry at the normal cadence (plugin throttle 55 s, watch catch-up polling once per minute), the rate the direct path has run against Dexcom for over a year.
+- Rejections, mapped by dexcom.js `loginErrorMessage()` from the login steps' HTTP 500 `{Code, Message}` body (codes as in pydexcom):
+  - `Invalid credentials`: `AccountPasswordInvalid`, `SSO_InternalError` "Cannot Authenticate by Account…", or a zero account GUID. 15 min pause.
+  - `Login failed`: zero session GUID. 15 min pause.
+  - `Max authentication attempts exceeded`: `SSO_AuthenticateMaxAttemptsExceeded`, Dexcom's own lockout answer. 60 min pause (`LOCKOUT_PAUSE_MS`), since the lockout's duration is unknown.
+- Everything else is transient and never pauses: other HTTP errors (`Error fetching account|session ID: <status>`), network errors and timeouts. They retry at the normal cadence (plugin throttle 55 s, watch catch-up polling once per minute), the rate the direct path has run against Dexcom for over a year.
+- Both login steps time out after 15 s (dexcom.js), so a login takes at most about 30 s, inside the 45 s lock. In the plugin the timeout needs `setTimeout` (UNVERIFIED on the phone); without it the host's request TIMEOUT is the bound.
 - Session-error re-authentication inside dexcom.js is not guarded (bounded to 2 retries per run).
 - Dexcom's lockout and rate-limit thresholds are permanently UNVERIFIED: wrong passwords and failed logins are never tried against the real service. The guard is deliberately conservative and verified only by unit tests with a mocked fetch (`test/dexcom_guard.test.js`, `test/helpers/plugin_host.js`).
 

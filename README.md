@@ -62,7 +62,7 @@ Rat Scout connects to the Dexcom Share API to display real-time blood glucose re
 ### Plugin (preview)
 The plugin pbw (`build/rat-scout-plugin.pbw`, see [Plugin pbw](#plugin-pbw-preview-sideload-only)) also contains a phone-side **plugin** that serves the latest Dexcom reading as `health/glucose` (glucose in your units and in mg/dL, delta, trend arrow and reading time), so other watchfaces, apps and Index can show it. It needs the **Pebble mobile app 1.16.x with the plugin preview enabled** (**Settings → Plugins → Plugins / permissions preview**; off by default). Without it, or with the regular `pebble build` pbw, Rat Scout fetches Dexcom directly exactly as before.
 
-The plugin uses the Dexcom account entered in Rat Scout's settings; it calls Dexcom at most once every 55 s, reuses a reading until the next one is due (5 minutes), and pauses logins for 15 minutes if Dexcom rejects the credentials (until you change them). Design details: [.github/ARCHITECTURE.md](.github/ARCHITECTURE.md#plugin-preview--healthglucose).
+The plugin uses the Dexcom account entered in Rat Scout's settings; it calls Dexcom at most once every 55 s, reuses a reading until the next one is due (5 minutes), and pauses logins for 15 minutes if Dexcom refuses the password (an hour if Dexcom reports too many attempts), until you change the credentials. Design details: [.github/ARCHITECTURE.md](.github/ARCHITECTURE.md#plugin-preview--healthglucose).
 
 > **Sideload only — do not publish.** Plugins are an unstable preview. Never publish a plugin pbw to the appstore (no `pebble publish`); install it only by sideloading.
 

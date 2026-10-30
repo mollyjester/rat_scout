@@ -36,7 +36,8 @@ test('credKey', function() {
 });
 
 test('isAuthRejection', function() {
-    assert(Guard.isAuthRejection('Invalid credentials'), 'zero account GUID');
+    assert(Guard.isAuthRejection('Invalid credentials'), 'refused password (500 AccountPasswordInvalid or zero account GUID)');
+    assert(Guard.isAuthRejection('Max authentication attempts exceeded'), 'Dexcom lockout answer');
     assert(Guard.isAuthRejection('Login failed'), 'zero session GUID');
     assert(!Guard.isAuthRejection('Error fetching account ID: 500'), 'HTTP 500 at account step is transient');
     assert(!Guard.isAuthRejection('Error fetching session ID: 401'), 'HTTP 401 at session step is transient');
@@ -90,6 +91,20 @@ test('bad credentials pause for 15 minutes for that key only', function() {
     assert(g.blockReason(key) === 'badcreds', 'still paused at 15 min - 1 ms');
     t += 1;
     assert(g.blockReason(key) === null, 'pause over at 15 min');
+});
+
+test('Dexcom lockout answer pauses for LOCKOUT_PAUSE_MS', function() {
+    var st = memStorage();
+    var t = 5000000;
+    var g = Guard.create(st, 'plugin', function() { return t; });
+    var key = Guard.credKey(CREDS);
+    g.begin(key);
+    g.end(key, 'Max authentication attempts exceeded');
+    assert(Guard.LOCKOUT_PAUSE_MS === 60 * 60 * 1000, 'one hour');
+    t += Guard.LOCKOUT_PAUSE_MS - 1;
+    assert(g.blockReason(key) === 'badcreds', 'still paused at 1 h - 1 ms');
+    t += 1;
+    assert(g.blockReason(key) === null, 'pause over at 1 h');
 });
 
 test('sessionUsable', function() {

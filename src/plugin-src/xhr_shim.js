@@ -12,9 +12,8 @@
 // a different code path from the phone.
 //
 // DEVIATIONS from a real XMLHttpRequest, all for dexcom.js's benefit:
-// - A network failure calls onerror; if there is no onerror (dexcom.js
-//   _getAccountId sets only onload) it calls onload with status 0, so the
-//   caller still gets an error callback.
+// - A network failure calls onerror; if a caller sets no onerror it calls
+//   onload with status 0, so the caller still gets an error callback.
 // - abort() calls onabort, else ontimeout, else onerror (dexcom.js aborts
 //   only from its own timeout fallback and sets no onabort).
 // - Every request finishes at most once.
