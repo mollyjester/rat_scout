@@ -137,6 +137,7 @@ function create(deps) {
     }
 
     function onData(envelope) {
+        console.log('Glucose plugin data: ' + (((envelope && envelope.instances) || []).length) + ' instance(s)');
         state.lastPluginOkMs = now();
         state.errorCount = 0;
         clearGrace();

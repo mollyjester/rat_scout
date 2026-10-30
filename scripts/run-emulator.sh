@@ -24,6 +24,7 @@ VALID_PLATFORMS="flint emery"
 LOCATION_NAME=""
 SKIP_BUILD=true
 SETTINGS_FILE=""
+PBW_FILE=""
 
 # ---------------------------------------------------------------------------
 # Cleanup helper — kills the emulator and Xvfb if we launched them
@@ -76,6 +77,11 @@ while [[ $# -gt 0 ]]; do
             SETTINGS_FILE="$(cd "$(dirname "$2")" 2>/dev/null && pwd)/$(basename "$2")"
             shift 2
             ;;
+        --pbw)
+            # Resolve to absolute path now, before the script cd's to PROJECT_ROOT
+            PBW_FILE="$(cd "$(dirname "$2")" 2>/dev/null && pwd)/$(basename "$2")"
+            shift 2
+            ;;
         --logs)
             # Accepted for backward compatibility; logs are always shown now
             shift
@@ -100,6 +106,9 @@ OPTIONS:
                       template with all keys.
   --build             Run pebble clean + pebble build before installing.
                       By default the build step is skipped.
+  --pbw <file>        Install this pbw instead of the project build, e.g.
+                      build/rat-scout-plugin.pbw from scripts/pack-plugin.py.
+                      --build still rebuilds the project first.
   --logs              Accepted for backward compatibility (logs are always shown)
   --help, -h          Show this help message
 
@@ -109,6 +118,7 @@ EXAMPLES:
   ./scripts/run-emulator.sh --loc Malta
   ./scripts/run-emulator.sh --settings scripts/settings.json
   ./scripts/run-emulator.sh --platform flint --loc Moscow --settings scripts/settings.json
+  ./scripts/run-emulator.sh --pbw build/rat-scout-plugin.pbw
 
 In a GitHub Codespace the config page URL will be printed in the terminal.
 VS Code will offer to open the forwarded port in your browser automatically.
@@ -381,6 +391,11 @@ if [[ -n "$SETTINGS_FILE" ]]; then
     fi
 fi
 
+if [[ -n "$PBW_FILE" && ! -f "$PBW_FILE" ]]; then
+    echo "Error: pbw not found: $PBW_FILE" >&2
+    exit 1
+fi
+
 seed_localstorage() {
     [[ -z "$SETTINGS_FILE" ]] && return 0
     echo "==> Seeding emulator localStorage from $SETTINGS_FILE..."
@@ -448,7 +463,7 @@ for INSTALL_ATTEMPT in 1 2 3; do
     seed_localstorage
     set_emulator_location
     echo "    install attempt $INSTALL_ATTEMPT of 3..."
-    pebble install --emulator "$PLATFORM" --vnc 2>&1
+    pebble install --emulator "$PLATFORM" --vnc ${PBW_FILE:+"$PBW_FILE"} 2>&1
     INSTALL_RC=$?
 
     if [[ $INSTALL_RC -eq 0 ]]; then

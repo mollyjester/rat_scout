@@ -179,9 +179,20 @@ Outside the dev container, follow the [official SDK install guide](https://devel
 # Clean build first, specific platform, pre-seeded settings:
 ./scripts/run-emulator.sh --build --platform emery --settings scripts/settings.json
 
+# Install the plugin pbw instead of the project build:
+python3 -I scripts/pack-plugin.py && ./scripts/run-emulator.sh --pbw build/rat-scout-plugin.pbw
+
 # See all options:
 ./scripts/run-emulator.sh --help
 ```
+
+### Plugin smoke test (emulator)
+
+```bash
+./scripts/plugin-smoke.sh [--platform flint|emery] [--keep-logs DIR]
+```
+
+Builds the plugin pbw and runs four cases on a freshly wiped emulator (about 80 s each), checking the logs: no credentials (plugin mode, "---"), fake credentials with a seeded cached reading (served from cache, sent once, screenshot saved), fake credentials with no cache (login fails, "---", throttled), and the legacy pbw (direct mode). Every case runs with `HTTP(S)_PROXY` set to a closed local port, so nothing reaches Dexcom. **Never run it, or any emulator session, with real Dexcom credentials to test failures**: Dexcom's lockout thresholds are unknown, and login failures are tested only with mocked fetch (`test/dexcom_guard.test.js`).
 
 See [docs/noVNC.md](docs/noVNC.md) for viewing the emulator in a browser, stopping it, seeding Clay settings, fixing the location and taking screenshots.
 

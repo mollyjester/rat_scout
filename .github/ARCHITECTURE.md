@@ -63,8 +63,10 @@ rat_scout/
 │   ├── utils.test.js
 │   └── weather.test.js
 └── scripts/
-    ├── run-emulator.sh        # Convenience wrapper: pebble install --emulator
+    ├── run-emulator.sh        # Convenience wrapper: pebble install --emulator (--pbw for another pbw)
     ├── build-plugin.js        # Bundles src/plugin-src/ into src/plugin/index.js (--check verifies)
+    ├── pack-plugin.py         # Builds build/rat-scout-plugin.pbw (manifestVersion 2 + plugin script)
+    ├── plugin-smoke.sh        # Emulator smoke test for the plugin (manual; network blocked)
     ├── browser_override.py    # Override browser for Pebble config in Codespaces
     ├── settings.json          # Template for run-emulator.sh --settings
     └── settings.md            # Reference for every settings key
@@ -147,6 +149,28 @@ Errors (`onError(err)`, by `err.code` only; whether `err.message` carries the pl
 - Validation mirrors PR #2483 and pypkjs 3.0.3 `plugins/manifest.py`: permission name alphanumeric and not `InvokeAction`, a label, `kind` in `read`/`write`/`exfiltrating`. The preview guide also lists `dangerous`; neither validator accepts it, so we use `read`.
 - Upstream `pack-plugin-pbw.py` is not used: it opens `build/<package name>.pbw` (`build/Rat Scout.pbw`), while `pebble build` names the pbw after the directory; and the pebble-plugins repo has no LICENSE.
 - No published SDK contains PR #2483 (merged 2026-10-19): `sdk.repebble.com/v1/files/sdk-core` lists up to 4.33.1, and PebbleOS releases ship only firmware and QEMU images. When one appears, the packer detects a plugin-aware pbw and copies it unchanged.
+
+### Verification status
+Emulator = pebble-tool 5.1.1 / pypkjs 3.0.3 on flint, via `scripts/plugin-smoke.sh` (all checks pass). The phone (Pebble app 1.16.x) is not tested yet.
+
+| Item | Status |
+|---|---|
+| SDK 4.33.1 passes `usesPermissions`/`plugin` into appinfo, sets no `manifestVersion`, omits the script, does not validate | Verified (clean builds; bogus `kind` builds) |
+| A published SDK with plugin support | None on 2026-10-30 (SDK server lists up to 4.33.1; PebbleOS releases ship firmware/QEMU only) |
+| Host loads the plugin from our pbw; a legacy pbw's plugin is not loaded | Emulator-verified (`pypkjs/runner/__init__.py` `_load_plugin`, smoke cases 1 and 4) |
+| Detection, `pending` → `plugin`, envelope → watch, gate, host refresh every 60 s | Emulator-verified (cases 1–3; screenshot shows 6.7 +0.3 from a seeded 120/+5 mg/dL) |
+| Plugin reads PKJS's `clay-settings` and cache keys (shared localStorage) | Emulator-verified (case 2); pypkjs keys a plugin's store off the pbw uuid (`js_plugin.py`). Phone: preview guide says shared |
+| Shim on fetch, including a rejected fetch at the account step | Emulator-verified (case 3: "Error fetching account ID: 0" → "---") |
+| `XMLHttpRequest` / `setTimeout` in the phone's plugin runtime | UNVERIFIED (emulator has both; the shim is used regardless) |
+| `fetch` accepting `User-Agent` | UNVERIFIED (shim retries without it only if fetch throws synchronously) |
+| `onError` paths (`PERMISSION_DENIED`, `TIMEOUT`, ...) | Unit tests only. The emulator logs a plugin's `respond.error` and skips it instead of calling `onError` (`js_plugin.py` `_parse_envelope`), grants every caller permission (`javascript/plugins.py`), and `pebble emu-permission` only knows `WatchMicrophone` |
+| An app must declare its own plugin's `Glucose` permission | UNVERIFIED (declared anyway) |
+| `enumeratePlugins` / requests for a manifestVersion 2 pbw with plugins disabled, or on app < 1.16 | UNVERIFIED (the emulator always exposes the plugin API, regardless of the caller's manifestVersion) |
+| Clay's `openURL` settings page in a manifestVersion 2 pbw | UNVERIFIED |
+| Phone host reading immediately on (re)subscribe | UNVERIFIED (emulator does) |
+| Phone dropping undeclared shapes | Not exercised (emulator does not validate); `test/plugin.test.js` keeps every shape declared |
+| How Dexcom reports a wrong password; lockout/rate-limit thresholds; whether a new login invalidates older sessions | UNVERIFIED, permanently: never tested against the real service |
+| Atomicity of localStorage between plugin and PKJS | UNVERIFIED; the guard is best-effort |
 
 ### Shared localStorage keys
 | Key | Writer | Contents |
