@@ -60,6 +60,20 @@ rat_scout/
 ## Target Platforms
 flint, emery (`package.json` `targetPlatforms`; `pebble build` builds only these).
 
+## Permissions (`usesPermissions`)
+Declared in `package.json` `pebble.usesPermissions`, for the phone app's plugin-era permission system:
+
+| Permission | Why |
+|---|---|
+| `Location` | `navigator.geolocation` in `index.js` (astronomy, weather) and `weather.js` |
+| `Internet` → `share2.dexcom.com`, `shareous1.dexcom.com`, `share.dexcom.jp` | Dexcom Share regions (`dexcom.js` base URLs) |
+| `Internet` → `api.openweathermap.org` | `weather.js` |
+| `Internet` → `api.ipgeolocation.io` | `geolocation.js` |
+
+- They only take effect when the pbw is marked `manifestVersion: 2` and the user has plugins enabled (Pebble plugins preview guide, "Permissions" and "Declaring": "only in place when plugins are enabled"; "Without that it's a legacy app"). A legacy pbw keeps the old implicit internet + location access.
+- SDK 4.33.1 copies the whole `pebble` block into `appinfo.json` but sets no `manifestVersion`, so `pebble build` alone still produces a legacy pbw.
+- Keep `Internet` limited to domains the JS actually requests. `pebble convert-manifest --dry-run` also lists hosts found in comments and help text (github.com, openweathermap.org, ipgeolocation.io); those are never requested and are deliberately not declared.
+
 ## Message Types (C ↔ JS)
 | Value | Constant              | Direction  | Handler                   |
 |-------|-----------------------|------------|---------------------------|

@@ -17,6 +17,21 @@
         "capabilities": [
             "configurable"
         ],
+        "usesPermissions": [
+            "Location",
+            {
+                "name": "Internet",
+                "parameters": {
+                    "domains": [
+                        "share2.dexcom.com",
+                        "shareous1.dexcom.com",
+                        "share.dexcom.jp",
+                        "api.openweathermap.org",
+                        "api.ipgeolocation.io"
+                    ]
+                }
+            }
+        ],
         "targetPlatforms": ["flint", "emery"],
         "watchapp": {
             "watchface": true
