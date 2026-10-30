@@ -45,6 +45,7 @@ rat_scout/
 │       ├── clay-config.js  # Clay custom function: attaches click handlers for test buttons
 │       ├── dexcom.js       # Dexcom Share API client (auth + glucose fetch); also bundled into the plugin
 │       ├── glucose.js      # Glucose fetch + BG/delta formatters (formatters also bundled into the plugin)
+│       ├── glucose_plugin.js # Glucose source selection: own plugin vs direct Dexcom, fallback, watchdog, gate
 │       ├── weather.js      # OpenWeatherMap API client (current + forecast, smart cache)
 │       ├── geolocation.js  # ipgeolocation.io astronomy API client
 │       ├── astronomy.js    # Astronomy time calculations (next sun/moon event, phase)
@@ -55,6 +56,7 @@ rat_scout/
 │   ├── clay-config.test.js
 │   ├── dexcom.test.js
 │   ├── dexcom_guard.test.js
+│   ├── glucose_plugin.test.js
 │   ├── plugin.test.js
 │   ├── garbage.test.js
 │   ├── glucose.test.js
@@ -114,6 +116,32 @@ Runtime: a plugin "is started fresh for each request" (preview guide), so all st
 
 HTTP: dexcom.js uses XMLHttpRequest; the preview guide documents only `fetch` ("Nothing else"), so the bundle binds `src/plugin-src/xhr_shim.js` as `XMLHttpRequest` in bundle scope (never as a global), and `setTimeout`/`clearTimeout` to the runtime's if present, else no-ops. Phone-side availability of XHR and setTimeout is UNVERIFIED; the emulator has both (`pypkjs/plugins/js_plugin.py` installs Timers and XHRExtension), which is why the shim is used unconditionally.
 
+### Glucose source selection (`src/pkjs/glucose_plugin.js`)
+PKJS reads BG from its own plugin when the phone app offers it, else fetches Dexcom directly as before.
+
+| Mode | Glucose comes from | Entered when |
+|---|---|---|
+| `direct` | `fetchGlucoseReading` (no guard): exactly the pre-plugin behaviour | no `Pebble.subscribeToSource`/`enumeratePlugins`, `enumeratePlugins` throws or does not list our uuid with `health/glucose`, or `INVALID_REQUEST` |
+| `pending` | nothing yet | `ready`: subscribed with `plugin: <own uuid>`; grace timer 30 s |
+| `plugin` | the subscription's envelopes | any `onData` (empty included: it shows the host is alive) |
+| `fallback` | `fetchGlucoseReading` with the login guard; subscription kept | see errors below, grace expiry, or the stall watchdog |
+
+Errors (`onError(err)`, by `err.code` only; whether `err.message` carries the plugin's text is UNVERIFIED):
+
+| Code | Action |
+|---|---|
+| `INVALID_REQUEST` | unsubscribe, `direct`, one direct fetch |
+| `PERMISSION_DENIED`, `PLUGIN_UNAVAILABLE` | `fallback` + one direct fetch, keep the subscription (the guide: `PERMISSION_DENIED` lasts until the user answers; an error does not end a subscription) |
+| anything else | count; `fallback` + one direct fetch at the 2nd consecutive error, while `pending`, or if no envelope for 11 min |
+
+- **Grace:** still `pending` 30 s after subscribing → `fallback` + one direct fetch.
+- **Stall watchdog:** `checkStall(now)` at the top of `fetchAllData()` (runs on `ready`, `webviewclosed` and every watch ping, at least every 5 min, `rat_scout.c` tick handler). In `plugin` mode with no envelope for more than 11 min → `fallback`, and that same `fetchAllData()` fetches directly. A later envelope returns to `plugin`. An old reading timestamp alone (sensor gap) never triggers it.
+- **Envelope → watch:** an instance with `glucose_mgdl` + `reading_time` becomes `{current: {_value, _delta: delta_mgdl or null, _datetime}}` passed to the same `Glucose.buildGlucoseDictionary` the direct path uses, so the dictionary is byte-identical (no mmol round trip). `status: busy` sends nothing (the watch keeps its value). Anything else sends `"---"` with `TIMESTAMP 0`, as the direct path does on failure.
+- **Plugin gate:** a plugin dictionary whose `BG` and `TIMESTAMP` equal the last glucose message sent (by either path) is dropped, which stops repeat host refreshes and the first envelope after a fallback. The direct path is never gated: it goes through `recordingSend`, which only records. That keeps three existing flows intact: catch-up polling (every glucose message sets `s_next_fetch_time = ts + 305`, `messaging.c`, so a repeated reading makes the watch ping every minute until a new one), settings re-sends (`BGDELTA`/`BG_SHOW_TIMEDELTA` only arrive in glucose messages, `messaging.c`), and restarts. Alerts are unaffected: they fire only on a zone change (`glucose.c`, `new_zone != s_bg_zone`).
+- **Settings saved:** `onSettingsChanged()` clears the gate and resubscribes, so the next envelope is re-formatted and sent. Whether the phone host reads immediately on subscribe is UNVERIFIED (the emulator does: `pypkjs/plugins/base.py` `observe()` reads before its first wait); otherwise the change shows within one refresh (60 s).
+- **Guard:** `guardFor()` returns a `pkjs` guard only in `fallback`; `fetchGlucoseReading` then skips the login (sending nothing) while the plugin holds the lock or the credentials are paused, ignores a session recorded for other credentials, and records the outcome. With no guard (`direct`) it is unchanged.
+- All watch messages still go through `sendToPebble()`.
+
 ### Plugin pbw
 - `python3 -I scripts/pack-plugin.py` → `build/rat-scout-plugin.pbw`: `pebble clean` + `pebble build`, then sets `manifestVersion: 2` and adds `plugin.script` (`src/plugin/index.js`) at its project-relative path, as PebbleOS PR #2483 and pebble-plugins' `pack-plugin-pbw.py` do. `build/<dir>.pbw` stays the legacy pbw.
 - Validation mirrors PR #2483 and pypkjs 3.0.3 `plugins/manifest.py`: permission name alphanumeric and not `InvokeAction`, a label, `kind` in `read`/`write`/`exfiltrating`. The preview guide also lists `dangerous`; neither validator accepts it, so we use `read`.
@@ -169,11 +197,13 @@ HTTP: dexcom.js uses XMLHttpRequest; the preview guide documents only `fetch` ("
 ## Data Flow
 ```
 Phone JS:
-  Pebble ready → getSettings() → sendSettings() + fetchAllData()
-  webviewclosed → clay.getSettings() → sendSettings() [then test command if flagged]
+  Pebble ready → getSettings() → sendSettings() → glucoseSource.start() → fetchAllData()
+  webviewclosed → clay.getSettings() → sendSettings() → glucoseSource.onSettingsChanged() [then test command if flagged]
+  plugin subscription onData → envelope → gate → MSG_TYPE_GLUCOSE (plugin mode)
 
   fetchAllData():
-    Glucose.fetchGlucoseReading() → MSG_TYPE_GLUCOSE
+    glucoseSource.checkStall()
+    Glucose.fetchGlucoseReading() → MSG_TYPE_GLUCOSE   (direct / fallback modes only)
     fetchAndSendWeather()         → MSG_TYPE_WEATHER  (cached per interval)
     fetchAndSendAstronomy()       → MSG_TYPE_ASTRONOMY (cached daily)
 

@@ -4,6 +4,8 @@ var Weather = require('./weather');
 var Astronomy = require('./astronomy');
 var Garbage = require('./garbage');
 var Glucose = require('./glucose');
+var GlucosePlugin = require('./glucose_plugin');
+var DexcomGuard = require('../common/dexcom_guard');
 var Clay = require('@rebble/clay');
 var clayConfig = require('./config.json');
 var customFn = require('./clay-config');
@@ -177,12 +179,38 @@ function sendSettings() {
 }
 
 /**
+ * Fetch glucose straight from Dexcom (direct and fallback modes).
+ * Sends go through the plugin selector's recorder so a later identical
+ * plugin envelope is not re-sent; the guard is set only in fallback mode.
+ */
+function fetchGlucoseDirect() {
+    Glucose.fetchGlucoseReading(appSettings, CONFIG, glucoseSource.recordingSend(sendToPebble),
+        function() { /* no-op: astronomy decoupled */ }, Dexcom, MSG_TYPE_GLUCOSE, glucoseSource.guardFor());
+}
+
+// Glucose source selection: Rat Scout's own plugin when available, else direct.
+var glucoseSource = GlucosePlugin.create({
+    Pebble: Pebble,
+    Glucose: Glucose,
+    DexcomGuard: DexcomGuard,
+    storage: window.localStorage,
+    settings: function() { return appSettings; },
+    msgType: MSG_TYPE_GLUCOSE,
+    send: sendToPebble,
+    fetchDirect: fetchGlucoseDirect
+});
+
+/**
  * Fetch all watchface data (glucose reading, weather, and astronomy)
  * Astronomy is fetched independently based on its daily cache,
  * not on every glucose cycle, to reduce unnecessary API calls.
+ * In plugin mode glucose arrives through the plugin subscription instead.
  */
 function fetchAllData() {
-    Glucose.fetchGlucoseReading(appSettings, CONFIG, sendToPebble, function() { /* no-op: astronomy decoupled */ }, Dexcom, MSG_TYPE_GLUCOSE);
+    glucoseSource.checkStall(Date.now());
+    if (glucoseSource.shouldFetchDirect()) {
+        fetchGlucoseDirect();
+    }
     // Fetch weather independently (sent as separate message)
     fetchAndSendWeather();
     // Fetch astronomy independently — only hits the API when cache is stale (daily)
@@ -194,6 +222,7 @@ Pebble.addEventListener('ready', function() {
     console.log('PebbleKit JS ready!');
     appSettings = getSettings();
     sendSettings();
+    glucoseSource.start();
     fetchAllData();
 });
 
@@ -250,6 +279,8 @@ Pebble.addEventListener('webviewclosed', function(e) {
         // so any test command that follows sees the current configuration.
         appSettings = getSettings();
         sendSettings();
+        // Re-read the plugin so a unit/delta change is re-sent even if the reading is unchanged.
+        glucoseSource.onSettingsChanged();
 
         // Queue test commands after settings so they arrive in order
         if (vibePattern > 0) {

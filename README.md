@@ -137,6 +137,7 @@ src/
 └── pkjs/
     ├── index.js              # App orchestrator: settings, data fetching, message queue
     ├── dexcom.js             # Dexcom Share API client (auth + glucose readings)
+    ├── glucose_plugin.js     # Chooses the plugin or direct Dexcom as the glucose source
     ├── weather.js            # OpenWeatherMap 2.5 API (current + forecast)
     ├── geolocation.js        # ipgeolocation.io astronomy API client
     ├── astronomy.js          # Astronomy time calculations (next sun/moon event logic)
@@ -152,6 +153,8 @@ Phone JS ─→ Dexcom Share API ─→ Parse glucose + calculate delta ─┐
                                                                    ├─→ Message Queue ─→ Pebble Watch
                                                 Settings ──────────┘
 ```
+
+With the plugin preview enabled on the phone, PKJS subscribes to Rat Scout's own plugin (`health/glucose`) instead of calling Dexcom itself, and falls back to the direct path if the plugin is unavailable, denied, failing or silent for 11 minutes (`src/pkjs/glucose_plugin.js`). When the plugin API is absent or does not list the plugin (including the legacy pbw), the direct path runs exactly as before. How a manifestVersion 2 pbw behaves on phone apps older than 1.16 is UNVERIFIED.
 
 Glucose + astronomy data are sent as a single message. Weather data is sent as a separate message. A message queue ensures only one `sendAppMessage` call is in flight at a time.
 

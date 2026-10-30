@@ -89,5 +89,96 @@ var settingsNoUnits = {};
 var dictDefault = Glucose.buildGlucoseDictionary(mockResult, settingsNoUnits, 1);
 assert(dictDefault.BG_UNITS === 'mg/dL', 'defaults to mg/dL when no BG_UNITS');
 
+// --- fetchGlucoseReading: optional guard argument ---
+console.log('\nfetchGlucoseReading guard');
+
+var DexcomGuard = require('../src/common/dexcom_guard');
+var store = {};
+global.window = { localStorage: {
+    getItem: function(k) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; },
+    setItem: function(k, v) { store[k] = String(v); },
+    removeItem: function(k) { delete store[k]; }
+} };
+var CFG = { STORAGE_KEYS: { ACCOUNT_ID: 'accountId', SESSION_ID: 'sessionId' } };
+var CREDS = { DEX_LOGIN: 'u', DEX_PASSWORD: 'p', DEX_REGION: 'ous', BG_UNITS: 'mg/dL' };
+
+/**
+ * Fake Dexcom constructor: records instances; outcome 'ok' or an error string.
+ */
+function fakeDexcom(outcome, made) {
+    return function(user, pass, onResults, region, onError) {
+        var self = this;
+        made.push(self);
+        self.accountId = null;
+        self.sessionId = null;
+        self.getLatestGlucoseWithDelta = function() {
+            self.startedWith = { accountId: self.accountId, sessionId: self.sessionId };
+            if (outcome === 'ok') {
+                self.accountId = self.accountId || 'acc-new';
+                self.sessionId = self.sessionId || 'sess-new';
+                onResults({ current: { _value: 120, _delta: 5, _datetime: new Date(1700000000000), _json: { WT: 'x' } } });
+            } else {
+                onError(outcome);
+            }
+        };
+    };
+}
+
+function reset(values) {
+    Object.keys(store).forEach(function(k) { delete store[k]; });
+    Object.keys(values || {}).forEach(function(k) { store[k] = values[k]; });
+}
+
+(function() {
+    reset({ accountId: 'a0', sessionId: 's0', 'ratscout.auth.sessionCredKey': 'not-these-creds' });
+    var made = [];
+    var sent = [];
+    Glucose.fetchGlucoseReading(CREDS, CFG, function(d) { sent.push(d); }, function() {}, fakeDexcom('ok', made), 1);
+    assert(made.length === 1 && made[0].startedWith.sessionId === 's0', 'guard undefined: cached session used as before (sessionCredKey ignored)');
+    assert(sent.length === 1 && sent[0].BG === '120', 'guard undefined: reading sent');
+    assert(store['ratscout.auth.inflight'] === undefined, 'guard undefined: no lock written');
+})();
+
+(function() {
+    reset({ accountId: 'a0', sessionId: 's0' });
+    var made = [];
+    var g = DexcomGuard.create(window.localStorage, 'pkjs');
+    Glucose.fetchGlucoseReading(CREDS, CFG, function() {}, function() {}, fakeDexcom('ok', made), 1, g);
+    assert(made[0].startedWith.sessionId === 's0', 'guard: usable cached session skips the lock');
+    assert(store['ratscout.auth.sessionCredKey'] === DexcomGuard.credKey(CREDS), 'guard: success records the session credKey');
+})();
+
+(function() {
+    reset({ 'ratscout.auth.inflight': JSON.stringify({ owner: 'plugin', at: Date.now() }) });
+    var made = [];
+    var sent = [];
+    var g = DexcomGuard.create(window.localStorage, 'pkjs');
+    Glucose.fetchGlucoseReading(CREDS, CFG, function(d) { sent.push(d); }, function() {}, fakeDexcom('ok', made), 1, g);
+    assert(made.length === 0, 'guard: login skipped while the plugin holds the lock');
+    assert(sent.length === 0, 'guard: nothing sent, so the display keeps its value');
+})();
+
+(function() {
+    reset({});
+    var made = [];
+    var sent = [];
+    var g = DexcomGuard.create(window.localStorage, 'pkjs');
+    Glucose.fetchGlucoseReading(CREDS, CFG, function(d) { sent.push(d); }, function() {}, fakeDexcom('Invalid credentials', made), 1, g);
+    assert(made.length === 1 && made[0].startedWith.accountId === null, 'guard: logs in when no session');
+    assert(store['ratscout.auth.inflight'] === undefined, 'guard: lock released on error');
+    assert(store['ratscout.auth.badcreds'] !== undefined, 'guard: rejection pauses logins');
+    assert(sent.length === 1 && sent[0].BG === '---', 'guard: "---" sent on failure as before');
+    Glucose.fetchGlucoseReading(CREDS, CFG, function(d) { sent.push(d); }, function() {}, fakeDexcom('ok', made), 1, g);
+    assert(made.length === 1, 'guard: no second login while paused');
+})();
+
+(function() {
+    reset({ accountId: 'a0', sessionId: 's0', 'ratscout.auth.sessionCredKey': 'other' });
+    var made = [];
+    var g = DexcomGuard.create(window.localStorage, 'pkjs');
+    Glucose.fetchGlucoseReading(CREDS, CFG, function() {}, function() {}, fakeDexcom('ok', made), 1, g);
+    assert(made[0].startedWith.accountId === null, 'guard: session from other credentials is not reused');
+})();
+
 console.log('\nResults: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed > 0 ? 1 : 0);

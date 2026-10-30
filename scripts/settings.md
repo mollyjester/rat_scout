@@ -49,6 +49,10 @@ The **Default** columns below are Clay's `defaultValue`, which applies only when
 
 ---
 
+## Read by the plugin
+
+The plugin (`src/plugin/index.js`, preview) shares this localStorage and reads `clay-settings` too: `DEX_LOGIN`, `DEX_PASSWORD` and `DEX_REGION` for the Dexcom account, and `BG_UNITS` to format `glucose`/`delta` (its `glucose_mgdl`/`delta_mgdl` are always mg/dL). It has no settings of its own. Besides `clay-settings`, the plugin and PKJS keep these non-settings keys in the same store (see `.github/ARCHITECTURE.md`, "Shared localStorage keys"): `accountId`, `sessionId`, `ratscout.plugin.lastReading`, `ratscout.plugin.lastAttempt`, `ratscout.auth.inflight`, `ratscout.auth.badcreds`, `ratscout.auth.sessionCredKey`. `--settings` only writes `clay-settings`; `pebble wipe` clears all of them.
+
 ## Dexcom Account
 
 | Key | Type | Default | Description |

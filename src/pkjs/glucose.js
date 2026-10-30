@@ -73,8 +73,10 @@ function sendNoGlucoseData(msgTypeGlucose, sendToPebble) {
  * @param {Function} fetchAndSendAstronomy - Function to fetch astronomy data
  * @param {Function} DexcomConstructor - Dexcom constructor
  * @param {number} msgTypeGlucose - MSG_TYPE_GLUCOSE constant
+ * @param {Object} guard - Optional login guard (src/common/dexcom_guard.js create()),
+ *   passed only in plugin fallback mode. When undefined behaviour is exactly as before.
  */
-function fetchGlucoseReading(appSettings, config, sendToPebble, fetchAndSendAstronomy, DexcomConstructor, msgTypeGlucose) {
+function fetchGlucoseReading(appSettings, config, sendToPebble, fetchAndSendAstronomy, DexcomConstructor, msgTypeGlucose, guard) {
     console.log('Getting glucose reading');
 
     if (!appSettings || !appSettings.DEX_LOGIN || !appSettings.DEX_PASSWORD) {
@@ -85,6 +87,20 @@ function fetchGlucoseReading(appSettings, config, sendToPebble, fetchAndSendAstr
 
     var accountId = window.localStorage.getItem(config.STORAGE_KEYS.ACCOUNT_ID);
     var sessionId = window.localStorage.getItem(config.STORAGE_KEYS.SESSION_ID);
+
+    var guardKey = guard ? guard.credKey(appSettings) : null;
+    if (guard && !guard.sessionUsable(guardKey)) {
+        accountId = null;
+        sessionId = null;
+    }
+    if (guard && !(accountId && sessionId)) {
+        var blocked = guard.begin(guardKey);
+        if (blocked) {
+            // Keep whatever the watch shows; the plugin or a later ping will retry.
+            console.log('Skipping Dexcom login (' + blocked + ')');
+            return;
+        }
+    }
 
     var dex = new DexcomConstructor(
         appSettings.DEX_LOGIN,
@@ -97,6 +113,7 @@ function fetchGlucoseReading(appSettings, config, sendToPebble, fetchAndSendAstr
             // Cache session IDs for faster subsequent requests
             window.localStorage.setItem(config.STORAGE_KEYS.ACCOUNT_ID, dex.accountId);
             window.localStorage.setItem(config.STORAGE_KEYS.SESSION_ID, dex.sessionId);
+            if (guard) guard.end(guardKey, null);
 
             // Send BG data immediately without waiting for astronomy
             sendToPebble(dictionary, 'BG');
@@ -110,6 +127,7 @@ function fetchGlucoseReading(appSettings, config, sendToPebble, fetchAndSendAstr
             // Clear stale cached session to force full re-authentication on next attempt
             window.localStorage.removeItem(config.STORAGE_KEYS.ACCOUNT_ID);
             window.localStorage.removeItem(config.STORAGE_KEYS.SESSION_ID);
+            if (guard) guard.end(guardKey, String(error));
             sendNoGlucoseData(msgTypeGlucose, sendToPebble);
         }
     );
@@ -123,6 +141,7 @@ function fetchGlucoseReading(appSettings, config, sendToPebble, fetchAndSendAstr
         dex.getLatestGlucoseWithDelta();
     } catch (error) {
         console.error('Error fetching glucose: ' + (error.message || error));
+        if (guard) guard.end(guardKey, String(error.message || error));
         sendNoGlucoseData(msgTypeGlucose, sendToPebble);
     }
 }

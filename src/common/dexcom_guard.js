@@ -100,6 +100,8 @@ function create(storage, owner, now) {
     return {
         owner: owner,
 
+        credKey: credKey,
+
         blockReason: blockReason,
 
         /**
