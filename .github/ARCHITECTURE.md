@@ -58,7 +58,7 @@ rat_scout/
 ```
 
 ## Target Platforms
-aplite, basalt, diorite, emery, flint
+flint, emery (`package.json` `targetPlatforms`; `pebble build` builds only these).
 
 ## Message Types (C ↔ JS)
 | Value | Constant              | Direction  | Handler                   |

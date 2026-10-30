@@ -7,10 +7,10 @@ Key rules that must never be violated:
 - **Never make assumptions stated as facts.** Before claiming any technical behavior (hardware sharing, SDK semantics, peripheral interaction, platform identity, etc.), verify it against primary sources (PebbleOS source under `/tmp/PebbleOS` or upstream, SDK headers, board configs). If you cannot verify, say so explicitly.
 - **Never assume the user's device platform.** Ask before debugging platform-specific issues.
 - Always run `pebble build` after C changes and confirm it succeeds on all platforms
-- Always run `node test/*.test.js` after JS changes and confirm all suites pass with no warnings
+- Always run `for f in test/*.test.js; do node "$f" || exit 1; done` after JS changes and confirm all suites pass with no warnings
 - Update README.md whenever there is a functional change to the watchface
 - Never use `Pebble.sendAppMessage` directly — always use `sendToPebble()` queue
-- Target platforms are aplite, basalt, diorite, emery, flint
+- Target platforms are flint and emery (`package.json` `targetPlatforms`)
 - Overlay layer must always be added last in window load (top z-order)
 - Use GCompOpSet before drawing PNG bitmaps that require transparency
 - Clay test buttons (Vibe Test, Sound Test, Overlay Test) MUST behave identically to the Save Settings button — they serialize the current form state, persist via `clay.getSettings`, push via `sendSettings()`, then send the test command. Never bypass this save-equivalent path. New test buttons must route through `attachFlagButton()` in `clay-config.js` so they inherit save-on-click automatically.

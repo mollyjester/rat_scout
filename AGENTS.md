@@ -9,8 +9,8 @@ Before doing any work in this repository, read these two files in full:
 
 | Change type      | Required verification                                      |
 |------------------|------------------------------------------------------------|
-| Any C file       | `pebble build` must succeed (all 5 platforms, 0 errors)    |
-| Any JS file      | `node test/*.test.js` — all suites pass, no warnings       |
+| Any C file       | `pebble build` must succeed (flint + emery, 0 errors)      |
+| Any JS file      | `for f in test/*.test.js; do node "$f" || exit 1; done` — all suites pass, no warnings |
 | Functional change| Update README.md to reflect the change                     |
 
 ## Hard rules

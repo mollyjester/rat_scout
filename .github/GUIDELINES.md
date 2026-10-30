@@ -2,7 +2,7 @@
 
 ## Investigation discipline (READ FIRST)
 - **Never state technical behavior as fact without primary-source evidence.** Before claiming SDK semantics, hardware sharing, peripheral behavior, platform identity, or any other low-level fact, verify it against PebbleOS source (`/tmp/PebbleOS` or `https://github.com/coredevices/PebbleOS`), SDK headers, or board configs. If you cannot verify, say so explicitly. Cite file paths and line numbers when stating verified facts.
-- **Never assume the user's device platform.** Ask before debugging platform-specific issues; the 5 target platforms (aplite, basalt, diorite, emery, flint) have very different hardware.
+- **Never assume the user's device platform.** Ask before debugging platform-specific issues; the target platforms (flint and emery, per `package.json` `targetPlatforms`) have different hardware.
 - Verified flint/asterix hardware reference: speaker is DA7212 codec over I2S (`src/fw/board/boards/board_asterix.c` `AudioDevice`); vibe is DRV2604 via NRF5 GPIO pin 0,2 (`board_asterix.h` `BoardConfigActuator BOARD_CONFIG_VIBE`). They are independent peripherals.
 - Verified PebbleOS speaker behavior: `speaker_service_play_tracks` is self-preempting (`src/fw/services/speaker/speaker_service.c:513-518` calls `prv_stop_internal(SpeakerFinishReasonPreempted)` if not idle). Do NOT add `speaker_get_status()` idle guards before calling `speaker_play_tracks` — they block legitimate preemption.
 - Verified DA7212 codec mute behavior: `prv_codec_prepare()` clears the soft-mute bit (`DAC_FILTERS5 = 0x00`) on every cold start (`src/fw/drivers/nrf5/audio/audio.c:158`), so the codec is unmuted at 0 dB before samples flow. `audio_set_volume()` early-returns while `is_running == false`, which makes per-playback `speaker_set_volume()` calls a no-op on cold start. Set volume once in `sounds_init()` and rely on the `volume` argument to `speaker_play_tracks()` for per-playback level.
@@ -12,7 +12,7 @@
 ## General
 - Language: C (Pebble SDK 4.x, tested with 4.33.1) + JavaScript (PebbleKit JS, ES5)
 - Build: `pebble build` (waf). Clean build: `pebble clean && pebble build`. Always verify build is clean after changes.
-- Tests: `node test/*.test.js` — all suites must pass, no warnings. Run after any JS change.
+- Tests: `for f in test/*.test.js; do node "$f" || exit 1; done` — all suites must pass, no warnings. Run after any JS change. (`node test/*.test.js` runs only the first file: Node passes the rest as argv.)
 - **README.md must be updated whenever there is a functional change to the watchface** (new features, removed features, changed settings, changed platforms, changed architecture).
 
 ## C Conventions
