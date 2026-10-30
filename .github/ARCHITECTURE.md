@@ -67,6 +67,7 @@ rat_scout/
     ├── build-plugin.js        # Bundles src/plugin-src/ into src/plugin/index.js (--check verifies)
     ├── pack-plugin.py         # Builds build/rat-scout-plugin.pbw (manifestVersion 2 + plugin script)
     ├── plugin-smoke.sh        # Emulator smoke test for the plugin (manual; network blocked)
+    ├── device-check.sh        # On-device checklist: install/logs/screenshot over CloudPebble, log analysis
     ├── browser_override.py    # Override browser for Pebble config in Codespaces
     ├── settings.json          # Template for run-emulator.sh --settings
     └── settings.md            # Reference for every settings key
@@ -151,7 +152,9 @@ Errors (`onError(err)`, by `err.code` only, missing code = `UNKNOWN`; ignored in
 - No published SDK contains PR #2483 (merged 2026-10-19): `sdk.repebble.com/v1/files/sdk-core` lists up to 4.33.1, and PebbleOS releases ship only firmware and QEMU images. When one appears, the packer detects a plugin-aware pbw and copies it unchanged.
 
 ### Verification status
-Emulator = pebble-tool 5.1.1 (Python 3.13) / pypkjs 3.0.3 on flint, via `scripts/plugin-smoke.sh` (all checks pass). The phone (Pebble app 1.16.x) is not tested yet.
+Emulator = pebble-tool 5.1.1 (Python 3.13) / pypkjs 3.0.3 on flint, via `scripts/plugin-smoke.sh` (all checks pass). The phone (Pebble app 1.16.x) is not tested yet; `scripts/device-check.sh steps` lists the on-device checklist (README, "Plugin check on a real phone").
+
+Log lines the checks rely on (PKJS): `Glucose source: mode=<mode>`, `Glucose plugin data: N instance(s)`, `Glucose plugin error: <code>`, `Glucose gate: plugin send|direct send|skipped duplicate ts=<TIMESTAMP>`, `<type> sent to Pebble successfully`, and dexcom.js `Getting account ID...`, `Session ID received`, `Fetching glucose readings...`. pebble-tool tags plugin output `plugin>` (`pebble_tool/util/logs.py` `PLUGIN_LOG_MARKER`).
 
 | Item | Status |
 |---|---|

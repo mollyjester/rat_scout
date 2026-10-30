@@ -215,6 +215,23 @@ python3 -I scripts/pack-plugin.py && ./scripts/run-emulator.sh --pbw build/rat-s
 
 Manual; not part of the test loop. Builds the plugin pbw and runs four cases on a freshly wiped emulator (`--seconds`, default 80 s each), checking the logs: no credentials (plugin mode, "---"), fake credentials with a seeded cached reading (served from cache, sent once, screenshot saved), fake credentials with no cache (login fails, "---", throttled), and the legacy pbw (direct mode). Every case runs with `HTTP(S)_PROXY` set to a closed local port and obviously fake credentials, so nothing reaches Dexcom. **Never try wrong passwords or failing logins against the real Dexcom service** (emulator or phone): Dexcom's lockout thresholds are UNVERIFIED and stay that way by decision. Login failures are tested only with a mocked fetch (`test/dexcom_guard.test.js`, `test/plugin.test.js`).
 
+### Plugin check on a real phone
+
+```bash
+./scripts/device-check.sh steps                       # the checklist: operator action + command per step
+./scripts/device-check.sh login                       # prints a sign-in URL, waits for the callback
+./scripts/device-check.sh callback 'http://localhost:60000/?...'
+./scripts/device-check.sh install plugin --expect plugin [--seconds N]
+./scripts/device-check.sh logs --seconds 1800 --expect plugin
+./scripts/device-check.sh screenshot
+```
+
+Needs the Pebble mobile app 1.16.x with the plugin preview enabled. Each command installs or captures logs for `--seconds` (default 120), then summarises the watch (C), `pkjs>` and `plugin>` log lines: the glucose modes seen, plugin envelopes, plugin and direct sends, duplicates the gate skipped, Dexcom logins and reading fetches, plugin error codes, permission and crash lines. It fails on a crash, on the plugin path resending the last reading, or when the final mode differs from `--expect`.
+
+- **Transport:** the CloudPebble proxy by default (`pebble --phone` with no IP), which works when this machine can't reach the phone. It needs `pebble login`. In a container your browser can't reach, run `login`, open the URL, then paste the `http://localhost:60000/?...` address the browser fails to load into `callback`. With a reachable phone use `--phone-ip IP`; on Android over USB use `--adb`.
+- **Privacy:** logs are written under `build/device-check/` (gitignored), with UUIDs other than the app's and email addresses masked. The app never logs Dexcom account or session IDs or device coordinates.
+- **Safety:** this uses the real Dexcom account set in the app. The wrong-password step stays off-device (mocked unit tests only).
+
 See [docs/noVNC.md](docs/noVNC.md) for viewing the emulator in a browser, stopping it, seeding Clay settings, fixing the location and taking screenshots.
 
 The script streams logs from both sides once the app is running: lines prefixed `pkjs>` come from PebbleKit JS `console.log`, and lines prefixed `<file>.c:<line>>` come from C `APP_LOG`.
