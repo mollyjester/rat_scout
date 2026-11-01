@@ -250,6 +250,38 @@ console.log('\nerrors');
 })();
 
 // 6. Watchdog
+console.log('\nre-check in direct mode');
+(function() {
+    // The plugin preview turned on while the face runs: the plugin appears after start().
+    var opts = { plugins: [] };
+    var h = harness(opts);
+    h.gp.start();
+    assert(h.gp.mode() === 'direct', 'starts direct');
+    assert(h.gp.recheck() === false && h.subs.length === 0, 'still unavailable → stays direct, no subscription');
+    opts.plugins = LISTED;
+    assert(h.gp.recheck() === true, 'plugin appeared → recheck subscribes');
+    assert(h.gp.mode() === 'pending' && h.sub().cfg.plugin === UUID, '→ pending, subscribed to our plugin');
+    assert(!h.gp.shouldFetchDirect(), 'this cycle does not fetch directly');
+    assert(h.gp.recheck() === false && h.subs.length === 1, 'recheck while pending does nothing');
+    h.data(reading(120, 5));
+    assert(h.gp.mode() === 'plugin' && h.sent.length === 1, 'first envelope → plugin mode, sent');
+    assert(h.gp.recheck() === false && h.subs.length === 1, 'recheck in plugin mode does nothing');
+
+    var f = harness();
+    f.gp.start();
+    f.error('PERMISSION_DENIED');
+    assert(f.gp.mode() === 'fallback' && f.gp.recheck() === false && f.subs.length === 1, 'recheck in fallback does nothing (subscription kept)');
+
+    var i = harness();
+    i.gp.start();
+    i.error('INVALID_REQUEST');
+    assert(i.gp.mode() === 'direct' && i.gp.recheck() === false && i.subs.length === 1, 'INVALID_REQUEST pins direct: no re-subscribe');
+
+    var n = harness({ noApi: true });
+    n.gp.start();
+    assert(n.gp.recheck() === false && n.gp.mode() === 'direct', 'no plugin API → recheck is a no-op');
+})();
+
 console.log('\nwatchdog');
 (function() {
     var h = harness();

@@ -125,7 +125,7 @@ PKJS reads BG from its own plugin when the phone app offers it, else fetches Dex
 | Mode | Glucose comes from | Entered when |
 |---|---|---|
 | `direct` | `fetchGlucoseReading` (no guard): exactly the pre-plugin behaviour | no `Pebble.subscribeToSource`/`enumeratePlugins`, `enumeratePlugins` throws or does not list our uuid with `health/glucose`, `subscribeToSource` throws (on start or resubscribe), or `INVALID_REQUEST` |
-| `pending` | nothing yet | `ready`: subscribed with `plugin: <own uuid>`; grace timer 30 s |
+| `pending` | nothing yet | `ready`, or a re-check from `direct`: subscribed with `plugin: <own uuid>`; grace timer 30 s |
 | `plugin` | the subscription's envelopes | any `onData` (empty included: it shows the host is alive) |
 | `fallback` | `fetchGlucoseReading` with the login guard; subscription kept | see errors below, grace expiry, or the stall watchdog |
 
@@ -133,11 +133,12 @@ Errors (`onError(err)`, by `err.code` only, missing code = `UNKNOWN`; ignored in
 
 | Code | Action |
 |---|---|
-| `INVALID_REQUEST` | unsubscribe, `direct`, one direct fetch |
+| `INVALID_REQUEST` | unsubscribe, `direct` (pinned: no re-check), one direct fetch |
 | `PERMISSION_DENIED`, `PLUGIN_UNAVAILABLE` | `fallback` + one direct fetch, keep the subscription (the guide: `PERMISSION_DENIED` lasts until the user answers; an error does not end a subscription) |
 | anything else | count (reset by any `onData`); `fallback` + one direct fetch at the 2nd consecutive error, while `pending`, or if no envelope for more than 11 min |
 
 - **Grace:** still `pending` 30 s after subscribing → `fallback` + one direct fetch.
+- **Re-check:** `recheck()` runs at the top of `fetchAllData()` after the stall watchdog. In `direct` (unless pinned by `INVALID_REQUEST`) it repeats the detection and subscribes if the plugin is listed now, e.g. when the user turns the plugin preview on while the face runs; that cycle then skips the direct fetch. Detection is a local `enumeratePlugins()` call, so a re-check on every watch ping costs nothing.
 - **Stall watchdog:** `checkStall(now)` at the top of `fetchAllData()` (runs on `ready`, `webviewclosed` and every watch ping, at least every 5 min, `rat_scout.c` tick handler). In `plugin` mode with no envelope for more than 11 min → `fallback`, and that same `fetchAllData()` fetches directly. A later envelope returns to `plugin`. An old reading timestamp alone (sensor gap) never triggers it.
 - **Envelope → watch:** an instance with `glucose_mgdl` + `reading_time` becomes `{current: {_value, _delta: delta_mgdl or null, _datetime}}` passed to the same `Glucose.buildGlucoseDictionary` the direct path uses, so the dictionary is byte-identical (no mmol round trip). `status: busy` sends nothing (the watch keeps its value). Anything else sends `"---"` with `TIMESTAMP 0`, as the direct path does on failure.
 - **Plugin gate:** a plugin dictionary whose `BG` and `TIMESTAMP` equal the last glucose message sent (by either path) is dropped, which stops repeat host refreshes and the first envelope after a fallback. The direct path is never gated: it goes through `recordingSend`, which only records. That keeps three existing flows intact: catch-up polling (every glucose message sets `s_next_fetch_time = ts + 305`, `messaging.c`, so a repeated reading makes the watch ping every minute until a new one), settings re-sends (`BGDELTA`/`BG_SHOW_TIMEDELTA` only arrive in glucose messages, `messaging.c`), and restarts. Alerts are unaffected: they fire only on a zone change (`glucose.c`, `new_zone != s_bg_zone`).

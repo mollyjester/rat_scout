@@ -98,7 +98,9 @@ function create(deps) {
         graceTimer: null,
         lastPluginOkMs: 0,
         errorCount: 0,
-        lastSent: null
+        lastSent: null,
+        // Set by INVALID_REQUEST: the host refused our request shape, so re-checking cannot help.
+        directPinned: false
     };
 
     function setMode(mode, why) {
@@ -158,6 +160,7 @@ function create(deps) {
         if (code === 'INVALID_REQUEST') {
             unsubscribe();
             clearGrace();
+            state.directPinned = true;
             var was = state.mode;
             setMode('direct', code);
             if (was !== 'fallback') deps.fetchDirect();
@@ -184,6 +187,35 @@ function create(deps) {
         });
     }
 
+    /**
+     * Detect the plugin and subscribe.
+     * @param {boolean} quiet - Don't log when the plugin is still unavailable (periodic re-check)
+     * @returns {boolean} True if subscribed
+     */
+    function tryStart(quiet) {
+        if (state.subscription) return true;
+        if (!pluginAvailable(deps.Pebble)) {
+            if (!quiet) {
+                setMode('direct', 'plugin not available');
+                console.log('Glucose source: mode=direct');
+            }
+            return false;
+        }
+        try {
+            subscribe();
+        } catch (e) {
+            console.log('subscribeToSource failed: ' + e);
+            setMode('direct', 'subscribe failed');
+            return false;
+        }
+        setMode('pending', 'subscribed');
+        state.graceTimer = setT(function() {
+            state.graceTimer = null;
+            if (state.mode === 'pending') toFallback('no data in ' + (PLUGIN_GRACE_MS / 1000) + ' s', true);
+        }, PLUGIN_GRACE_MS);
+        return true;
+    }
+
     function unsubscribe() {
         if (state.subscription && typeof state.subscription.unsubscribe === 'function') {
             try {
@@ -205,24 +237,18 @@ function create(deps) {
          * Detect the plugin and subscribe, or stay direct.
          */
         start: function() {
-            if (state.subscription) return;
-            if (!pluginAvailable(deps.Pebble)) {
-                setMode('direct', 'plugin not available');
-                console.log('Glucose source: mode=direct');
-                return;
-            }
-            try {
-                subscribe();
-            } catch (e) {
-                console.log('subscribeToSource failed: ' + e);
-                setMode('direct', 'subscribe failed');
-                return;
-            }
-            setMode('pending', 'subscribed');
-            state.graceTimer = setT(function() {
-                state.graceTimer = null;
-                if (state.mode === 'pending') toFallback('no data in ' + (PLUGIN_GRACE_MS / 1000) + ' s', true);
-            }, PLUGIN_GRACE_MS);
+            tryStart(false);
+        },
+
+        /**
+         * Re-check for the plugin while in direct mode, run at the top of fetchAllData() (every
+         * watch ping). The plugin can appear after start, e.g. when the user turns the plugin
+         * preview on while the face runs. Unless INVALID_REQUEST pinned direct mode.
+         * @returns {boolean} True if it subscribed now (this cycle should not fetch directly)
+         */
+        recheck: function() {
+            if (state.mode !== 'direct' || state.directPinned || state.subscription) return false;
+            return tryStart(true);
         },
 
         /**

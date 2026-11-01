@@ -208,6 +208,7 @@ var glucoseSource = GlucosePlugin.create({
  */
 function fetchAllData() {
     glucoseSource.checkStall(Date.now());
+    glucoseSource.recheck();
     if (glucoseSource.shouldFetchDirect()) {
         fetchGlucoseDirect();
     }
