@@ -50,6 +50,9 @@ rat_scout/
 │       ├── geolocation.js  # ipgeolocation.io astronomy API client
 │       ├── astronomy.js    # Astronomy time calculations (next sun/moon event, phase)
 │       └── garbage.js      # Garbage bag schedule computation
+├── docs/
+│   ├── plugins.md         # Developing plugins for the current app/SDK/tools: sandbox, packaging, testing, pitfalls
+│   └── noVNC.md           # Viewing and driving the emulator in a browser
 ├── test/
 │   ├── helpers/plugin_host.js  # Loads the plugin bundle in a vm with mock host APIs
 │   ├── astronomy.test.js

@@ -1,0 +1,200 @@
+# Developing Pebble plugins (preview, November 2026)
+
+A practical guide to building a phone-side **plugin** and a watchface that consumes it, for the
+versions available on 2026-11-01. It complements the official guide with what we learned
+building Rat Scout's `health/glucose` plugin and running it on a real phone.
+
+> **Preview.** The API will change. Don't publish apps that use or offer plugins to the
+> appstore; publishing plugins is limited to invited developers. Sideload only.
+
+Every statement here is either cited (official guide, upstream source with file and line) or
+was observed on a device. Anything else is marked **UNVERIFIED**.
+
+## 1. Versions
+
+| Component | Version used | Notes |
+|---|---|---|
+| Pebble mobile app | **1.16.0.5**, Android (beta channel) | The preview needs 1.16.x. Turn it on in **Settings → Plugins → Plugins / permissions preview** (off by default). iOS: UNVERIFIED |
+| Official guide | `developer.repebble.com/guides/plugins/preview`, updated 2026-10-30 | Describes app 1.16.0.5; items marked **Next release** aren't in it yet |
+| pebble-tool | **5.1.2** (PyPI) | 5.1.0+ is required. Run it on the same Python minor version as the SDK venv (3.13 here), or `pebble build` fails with "SRE module mismatch" |
+| pypkjs (emulator JS) | **3.0.3** | Has a plugin host: see §7 for how it differs from the phone |
+| Pebble SDK | **4.33.1** | The newest on `sdk.repebble.com`. It **cannot build a plugin pbw**; see §6 |
+| Watch firmware | not involved | Plugins run only on the phone; a watch-side (C / Alloy) API is listed under the guide's "Future". The watchapp reaches its plugin's data through PKJS and AppMessage, so normal SDK 4.33.1 watch APIs apply |
+| Examples | `github.com/coredevices/pebble-apps` | Renamed from `pebble-plugins` (the old URL redirects). No LICENSE file as of 2026-11-01 |
+| Phone app source | `github.com/coredevices/mobileapp` @ `dbc937e` (2026-10-30) | Cited below. It may be ahead of 1.16.0.5 |
+
+## 2. The model in one page
+
+Taken from the official guide.
+- **What a plugin is:** JavaScript in a `.pbw` that runs **inside the Pebble app on the phone**.
+- **Sources:** data any watchface, watchapp or the Index assistant can read. Addressing goes `category/item` → instances (stable `instanceId`) → properties → **shapes**.
+- **Actions:** operations with JSON-Schema arguments that other apps or Index can invoke.
+- **Shapes:** `shortText` (about 7 characters), `longText`, `numericValue` (`value`, `unit`, optional `min`/`max`), `timestamp` (epoch seconds), `boolean`, `icon` and `image` (4-bpp palettised, only when the request asks for `iconPixelSize`), plus `series.<shape>`.
+  - **Every shape of a property must be the same reading.** Rat Scout's `glucose.longText` is "120 mg/dL", not "120 mg/dL →": the trend is its own property.
+- **How a source is chosen:** apps ask for a category and item, not a plugin. The phone serves the user's preferred plugin. To use your own, pin it with `plugin: "<your uuid>"`.
+- **Defining a category:** names are free-form. If an existing category fits, reuse its names; otherwise define your own and document it, as Rat Scout does for `health/glucose`.
+- **Lifetime:** a plugin **runs only when needed** (a subscription, an action, or its open settings page), starts fresh for every request, and keeps state in `localStorage`, which it shares with your PKJS.
+
+## 3. Manifest (`package.json`, `pebble` block)
+
+```json
+"usesPermissions": [
+  "Location",
+  { "name": "Internet", "parameters": { "domains": ["share2.dexcom.com", "api.openweathermap.org"] } },
+  { "name": "Glucose", "plugin": "<your own uuid>" }
+],
+"plugin": {
+  "description": "Read by Index too: say what the data is.",
+  "script": "src/plugin/index.js",
+  "definesPermissions": [{ "name": "Glucose", "label": "Read your glucose readings", "kind": "read" }],
+  "sources": [{
+    "category": "health", "items": ["glucose"],
+    "properties": { "glucose": ["numericValue", "shortText", "longText"], "reading_time": ["timestamp"] },
+    "callerPermissions": ["Glucose"],
+    "supportsMultiple": false,
+    "suggestedRefreshIntervalSec": 60
+  }]
+}
+```
+
+- **`manifestVersion: 2`** in `appinfo.json` is required on both sides. Without it the pbw is a "legacy app": `enumeratePlugins()` returns nothing and every request fails with `PERMISSION_DENIED`. SDK 4.33.1 doesn't write it (§6).
+- **Declare every domain the app uses,** PKJS's as well as the plugin's. When the user turns the preview on, the permission system applies to the whole app.
+- **Your own plugin's permission:** on the phone, `{ "name": "Glucose", "plugin": "<own uuid>" }` showed up as "Read your glucose readings (via Rat Scout)" and was granted. A pbw installed under a *new* uuid answered `PERMISSION_DENIED … waiting for approval` until the user approved it. Whether leaving the declaration out breaks things is UNVERIFIED.
+- **`kind`:** the guide lists `read`, `write`, `exfiltrating` and `dangerous`. The SDK validator in PebbleOS PR #2483 and pypkjs `plugins/manifest.py` accept only the first three. Use `read` for read-only data.
+- **Declare every shape you emit.** The phone drops undeclared shapes (guide). Next release: undeclared *property names* in a request are dropped too.
+- **`configPage`** (a bundled settings page) replaces the legacy `showConfiguration` flow when it's set. Clay keeps working if you don't set it: on 1.16.0.5 Rat Scout's Clay page opened and saved in a manifestVersion 2 pbw.
+
+## 4. Writing the plugin script
+
+```js
+Pebble.registerSourceHandler(function (request, respond) {
+  // request: { category, item, properties?, iconPixelSize? }
+  if (request.category !== 'health' || request.item !== 'glucose') return respond.error('INVALID_REQUEST');
+  return load().then(function (r) {
+    respond.data({ validUntilMs: Date.now() + 60000, instances: [ /* ... */ ] });
+  });
+});
+```
+
+### 4.1 The Android sandbox (the most important section)
+
+On Android the plugin runs in a **WebView**. Before your script runs, the app evaluates
+`LOCKDOWN_JS`, which replaces dozens of browser globals with getters that **throw**
+`"<name> is not available to plugins"` (mobileapp `libpebble3/src/androidMain/.../js/JsEngine.android.kt:143`).
+The list includes:
+
+`setTimeout`, `setInterval`, `clearTimeout`, `clearInterval`, `XMLHttpRequest`, `WebSocket`,
+`window`, `self`, `document`, `navigator`, `localStorage`, `fetch`, `Image`, `location`, …
+
+The host then installs its own `fetch`, `WebSocket`, `localStorage`, `navigator.geolocation`,
+`console` and `Pebble` (`plugin/JsPlugin.kt:315-326`). Consequences:
+
+- **No timers and no XHR at all.** Shared PKJS code that uses them needs an adapter. Rat Scout bundles an XHR-on-`fetch` shim with no-op timers (`src/plugin-src/xhr_shim.js`).
+- **`typeof setTimeout` throws.** `typeof` only guards *unresolvable* names, not a getter that throws. A feature check at the top of your script kills it.
+- **The failure is silent.** `evaluateJavascript` swallows the exception: no log, no error. Every request is then answered `PLUGIN_UNAVAILABLE` with the message "no source handler registered", because the handler was never registered. That's exactly what Rat Scout's first phone run showed.
+- **Probe host globals only inside `try/catch`**, outside your module code:
+  ```js
+  (function (hostFetch, hostSetTimeout) { /* bundle */ })(
+    (function () { try { if (typeof fetch === 'function') return function (u, o) { return fetch(u, o); }; } catch (e) {} return null; })(),
+    (function () { try { if (typeof setTimeout === 'function') return function (f, ms) { return setTimeout(f, ms); }; } catch (e) {} return null; })());
+  ```
+- **Don't read globals through `this`** either. The phone evaluates the script as plain code (`engine.eval(script())`), but `this`-based access fails under strict or wrapped evaluation, and it touches the throwing getters anyway.
+- **The emulator does NOT apply this lockdown** (§7). Code that passes there can still die on the phone. Simulate it in your unit tests: Rat Scout's `test/helpers/plugin_host.js` defines the same throwing getters before loading the bundle.
+
+The lockdown comment says it exists so that scripts fail on Android the same way they would on
+iOS's JavaScriptCore. iOS itself wasn't tested.
+
+### 4.2 Runtime facts
+
+- **Fresh per request:** keep nothing in variables between runs. Use `localStorage`, which is shared with PKJS; that was seen in the emulator and on the phone.
+- **Credentials:** use `Pebble.secureStorage`, which only the plugin can read, and filling it needs a bundled settings page. Rat Scout still reads credentials from Clay's `clay-settings` in `localStorage` (a follow-up).
+- **One self-contained file.** The packager copies `plugin.script` into the pbw unchanged: there's no `require()` and no bundler (PR #2483). Rat Scout concatenates its modules into a small IIFE module table (`scripts/build-plugin.js`) and commits the result.
+- **`console.log` shows in `pebble logs`** as `plugin>` lines. The phone streams them to the developer connection (`plugin/PluginLogs.kt`), and they also arrived through CloudPebble.
+- **Return data, not errors, for "no data".** Keep `respond.error` for real faults; an empty `instances: []` keeps the caller's subscription healthy.
+- **Keep sessions across runs.** Store login tokens in `localStorage` and drop them only on a login or session failure. Rat Scout first cleared them on *any* failure, so every 60 s poll became a full login while Dexcom had no reading.
+- **Polling cadence:** while something is subscribed the host calls your handler about every `suggestedRefreshIntervalSec` ("may change"). On the phone we saw anywhere from 60 s to over 2 minutes. Use your own throttle and cache for an upstream API you must not hammer.
+
+## 5. Consuming a plugin from PKJS
+
+```js
+var list = Pebble.enumeratePlugins();          // synchronous: [{ uuid, name, sources: [{ category, items }] }]
+var sub = Pebble.subscribeToSource({
+  category: 'health', item: 'glucose',
+  plugin: OWN_UUID,                            // pin your own plugin; omit to get the user's preferred one
+  onData: function (envelope) { /* envelope.instances[...].properties */ },
+  onError: function (err) { /* err.code, err.message */ }
+});
+```
+
+What we saw on Pebble app 1.16.0.5:
+
+| Situation | What PKJS sees |
+|---|---|
+| Legacy pbw (no `manifestVersion: 2`) | Rat Scout stays direct (the guide: `enumeratePlugins()` returns nothing for a legacy app) |
+| Preview **off** | Plugin not listed (`LockerPluginLoader.kt:40` registers plugins only while `enablePlugins` is on) |
+| Preview on, plugin fine | First envelope about 1 s after subscribing |
+| Plugin script failed to load or register | `PLUGIN_UNAVAILABLE` "no source handler registered", repeated every refresh |
+| New app, permission not yet approved | `PERMISSION_DENIED` "… is waiting for approval of `<uuid>`:`<permission>`" |
+
+- **Log `err.message` as well as `err.code`.** The message is what tells "no plugin" apart from "no handler".
+- **An error doesn't end a subscription** (guide), so keep it alive and fall back. Rat Scout's modes are `direct` / `pending` / `plugin` / `fallback`, with a 30 s grace period, an 11-minute stall watchdog, and a re-check on every watch ping so it can upgrade when the preview is turned on (`src/pkjs/glucose_plugin.js`).
+- **Check, during detection, that your uuid is listed with the category/item you need,** not just that the API functions exist. Whether they exist with the preview off wasn't checked, and their existence alone says nothing about your plugin being usable.
+
+## 6. Building the pbw
+
+- **SDK 4.33.1 can't build a plugin pbw.** `pebble build` copies the `plugin` and `usesPermissions` blocks into `appinfo.json`, but it doesn't set `manifestVersion`, doesn't add the script to the pbw, and doesn't validate `definesPermissions`.
+- **The fix exists but isn't released.** PebbleOS PR #2483 (merged 2026-10-19) adds all three, plus `"projectType": "plugin"` for plugin-only pbws. No SDK on the server contains it yet.
+- **Until then, post-process the pbw:**
+  - **Upstream:** `scripts/pack-plugin-pbw.py` in `coredevices/pebble-apps`. Note that it opens `build/<package.json name>.pbw`, while `pebble build` names the pbw after the *directory*.
+  - **Rat Scout:** `python3 -I scripts/pack-plugin.py` does the same: build, set `manifestVersion: 2`, validate `definesPermissions`, add the script. It writes `build/rat-scout-plugin.pbw` and leaves `build/<dir>.pbw` as the legacy build.
+- **Bump the version when you change the manifest.** The phone re-registers a plugin only when its locker version changes (`LockerPluginLoader.kt:60`), so a reinstall at the same version keeps the old manifest, `script` path included. The script itself is read from the cached pbw on every run.
+
+## 7. Testing
+
+### Unit tests (fast, run on every change)
+- Load the bundle in a Node `vm` context with mock `fetch`, `localStorage` and `Pebble`, **after applying the lockdown getters** (§4.1). See `test/helpers/plugin_host.js` and `test/plugin.test.js`.
+- Assert that every emitted shape is declared, and that the committed bundle matches a fresh build.
+
+### Emulator (pebble-tool 5.1.2 / pypkjs 3.0.3)
+- **What works:**
+  - `pebble install --emulator flint --logs <plugin pbw>` loads the plugin, and `pebble plugins` lists it.
+  - `plugin>` logs show up.
+  - `localStorage` is shared with PKJS.
+- **How it differs from the phone:**
+  - **No lockdown:** XHR and timers exist, so a plugin that touches them still works here.
+  - A plugin's `respond.error` is logged and skipped instead of reaching the caller's `onError`.
+  - Every caller permission is granted; `pebble emu-permission` only knows `WatchMicrophone`.
+  - The plugin API is exposed whatever the caller's `manifestVersion` is.
+- **Use it for:** the data path and logging. Use the phone for the sandbox, errors and permissions.
+- **Network safety:** pypkjs uses `requests`, so `HTTPS_PROXY=http://127.0.0.1:9` blocks every request. `scripts/plugin-smoke.sh` relies on that to run with fake credentials.
+
+### Real phone
+1. **Turn on the app's developer connection** in the Pebble app's settings.
+2. **If your machine can't reach the phone's IP** (a container, another network), go through CloudPebble: `pebble login`, then `pebble install <pbw> --logs --phone`. With `--phone` and no IP, the CloudPebble proxy is used.
+   - Headless login: `pebble login --no-open-browser` prints a URL. After signing in, the browser fails to load `http://localhost:60000/?…`; deliver that address inside the container (`curl '<address>'`). Rat Scout wraps this as `scripts/device-check.sh login` / `callback`.
+3. **Put the pbw path before `--phone`.** `--phone` takes an optional value, so a pbw after it is read as the phone address.
+4. **pebble-tool 5.1.1/5.1.2 log-printer race:** it registers its log handlers before loading `build/pebble-js-app.js.map`. A PKJS log line arriving in between crashes it with `'PebbleLogPrinter' object has no attribute 'sourcemap'`. Running `pebble` from an empty directory (no sourcemap to load) avoids it.
+5. **On the phone itself:**
+   - **Apps → Plugins** lists your plugin. Its page shows permissions with "used … ago" and the sources it serves.
+   - **"PLUGIN CODE → View Source"** shows the script the app actually loads. "Couldn't load `<path>`" means the cached pbw doesn't contain the manifest's `script` path.
+6. **`scripts/device-check.sh`** wraps all of this: install, capture redacted logs, screenshots, and a log summary that fails on crashes, resends or an unexpected mode. Run `scripts/device-check.sh steps` for the checklist.
+7. **Never log secrets:** logs from a real phone end up in terminals and transcripts. Rat Scout logs "Session ID received", not the ID.
+
+## 8. Pitfalls we hit (in order)
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Emulator fine, phone `PLUGIN_UNAVAILABLE` "no source handler registered", no `plugin>` logs | Bundle probed `setTimeout` at load; the lockdown getter threw; the error was swallowed | Probe host globals in `try/catch` only; simulate the lockdown in tests (§4.1) |
+| "Couldn't load src/plugin/index.js" in View Source | Reinstalled a pbw with a different `script` path at the **same version**, so the stale manifest pointed at a file that wasn't in the new pbw | Bump the version on manifest changes (§6) |
+| A full login every poll while the upstream had no data | Session cleared on every failure | Keep the session unless the login itself failed (§4.2) |
+| Plugin build stayed direct after turning the preview on | Detection ran only on `ready` | Re-check while in direct mode (§5) |
+| `pebble logs` crashed on the first PKJS line | pebble-tool sourcemap race | Run from an empty directory (§7) |
+| `pebble build` "SRE module mismatch" | pebble-tool and the SDK venv on different Python versions | Install pebble-tool on the SDK's Python (3.13) |
+
+## 9. References
+
+- Official guide: https://developer.repebble.com/guides/plugins/preview/ (2026-10-30) and https://developer.repebble.com/guides/plugins/publishing-plugins/
+- Examples: https://github.com/coredevices/pebble-apps (`stocks` is the simplest plugin; `weather-face` consumes one from ES5 PKJS; `plugin-test` bundles a plugin with a watchapp)
+- SDK support: https://github.com/coredevices/PebbleOS/pull/2483
+- Phone host source: https://github.com/coredevices/mobileapp (`libpebble3/.../plugin/`, `.../js/JsEngine.android.kt`, `.../locker/Locker.kt`)
+- In this repo: design and verification status in [.github/ARCHITECTURE.md](../.github/ARCHITECTURE.md) ("Plugin (preview)", "Verification status"); commands in [README.md](../README.md)

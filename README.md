@@ -215,6 +215,8 @@ python3 -I scripts/pack-plugin.py && ./scripts/run-emulator.sh --pbw build/rat-s
 
 Manual; not part of the test loop. Builds the plugin pbw and runs four cases on a freshly wiped emulator (`--seconds`, default 80 s each), checking the logs: no credentials (plugin mode, "---"), fake credentials with a seeded cached reading (served from cache, sent once, screenshot saved), fake credentials with no cache (login fails, "---", throttled), and the legacy pbw (direct mode). Every case runs with `HTTP(S)_PROXY` set to a closed local port and obviously fake credentials, so nothing reaches Dexcom. **Never try wrong passwords or failing logins against the real Dexcom service** (emulator or phone): Dexcom's lockout thresholds are UNVERIFIED and stay that way by decision. Login failures are tested only with a mocked fetch (`test/dexcom_guard.test.js`, `test/plugin.test.js`).
 
+For developing plugins with the current app, SDK and tools (versions, the Android sandbox, packaging, testing, pitfalls), see [docs/plugins.md](docs/plugins.md).
+
 ### Plugin check on a real phone
 
 ```bash
