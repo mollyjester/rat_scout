@@ -113,7 +113,12 @@ function fakeDexcom(outcome, made) {
         self.sessionId = null;
         self.getLatestGlucoseWithDelta = function() {
             self.startedWith = { accountId: self.accountId, sessionId: self.sessionId };
-            if (outcome === 'ok') {
+            if (outcome === 'noreadings') {
+                // Logged in, but Dexcom returned no reading (dexcom.js _handleGlucoseResponse).
+                self.accountId = self.accountId || 'acc-new';
+                self.sessionId = self.sessionId || 'sess-new';
+                onError('No readings available');
+            } else if (outcome === 'ok') {
                 self.accountId = self.accountId || 'acc-new';
                 self.sessionId = self.sessionId || 'sess-new';
                 onResults({ current: { _value: 120, _delta: 5, _datetime: new Date(1700000000000), _json: { WT: 'x' } } });
@@ -178,6 +183,27 @@ function reset(values) {
     var g = DexcomGuard.create(window.localStorage, 'pkjs');
     Glucose.fetchGlucoseReading(CREDS, CFG, function() {}, function() {}, fakeDexcom('ok', made), 1, g);
     assert(made[0].startedWith.accountId === null, 'guard: session from other credentials is not reused');
+})();
+
+(function() {
+    reset({});
+    var made = [];
+    var sent = [];
+    Glucose.fetchGlucoseReading(CREDS, CFG, function(d) { sent.push(d); }, function() {}, fakeDexcom('noreadings', made), 1);
+    assert(store.accountId === 'acc-new' && store.sessionId === 'sess-new', 'direct: no readings keeps the new session');
+    assert(sent.length === 1 && sent[0].BG === '---', 'direct: "---" sent');
+    Glucose.fetchGlucoseReading(CREDS, CFG, function() {}, function() {}, fakeDexcom('noreadings', made), 1);
+    assert(made[1].startedWith.sessionId === 'sess-new', 'direct: next poll reuses the session (no login)');
+})();
+
+(function() {
+    reset({ accountId: 'a0', sessionId: 's0' });
+    var made = [];
+    Glucose.fetchGlucoseReading(CREDS, CFG, function() {}, function() {}, fakeDexcom('Session validation failed after 1 attempts', made), 1);
+    assert(store.accountId === undefined && store.sessionId === undefined, 'direct: session failure clears the session');
+    reset({});
+    Glucose.fetchGlucoseReading(CREDS, CFG, function() {}, function() {}, fakeDexcom('Error fetching account ID: 500', made), 1);
+    assert(store.accountId === undefined && store.sessionId === undefined, 'direct: login-step failure stores no session');
 })();
 
 console.log('\nResults: ' + passed + ' passed, ' + failed + ' failed');

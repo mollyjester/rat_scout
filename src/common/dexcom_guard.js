@@ -51,6 +51,22 @@ function credKey(settings) {
                 String(settings.DEX_PASSWORD || ''));
 }
 
+// dexcom.js errors from the login steps or a failed session. Anything else (no readings, a
+// readings timeout or network error) happened with a valid session.
+var LOGIN_ERROR = /^(Invalid credentials|Login failed|Max authentication attempts exceeded|Session validation failed|Authentication error|(Error|Network error|Timeout) fetching (account|session) ID)/;
+
+/**
+ * Whether a failed fetch still holds a Dexcom session worth keeping.
+ * Dropping it after every failure made each poll a full login while Dexcom had no
+ * reading (seen on the phone, plugin path; the direct path did the same every 5 min).
+ * @param {Object} dex - dexcom.js instance after the failed run
+ * @param {string} error - dexcom.js onError message
+ * @returns {boolean} True to keep dex.accountId/sessionId
+ */
+function keepsSession(dex, error) {
+    return !!(dex && dex.accountId && dex.sessionId && !LOGIN_ERROR.test(String(error || '')));
+}
+
 /**
  * Whether a dexcom.js onError message means Dexcom refused the login.
  * Counts: 'Invalid credentials' (HTTP 500 AccountPasswordInvalid, or a zero
@@ -164,5 +180,6 @@ module.exports = {
     LOCKOUT_PAUSE_MS: LOCKOUT_PAUSE_MS,
     credKey: credKey,
     isAuthRejection: isAuthRejection,
+    keepsSession: keepsSession,
     create: create
 };

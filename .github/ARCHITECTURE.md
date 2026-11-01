@@ -109,7 +109,7 @@ The pbw also carries a phone-side plugin (Pebble plugins preview, mobile app 1.1
 | `reading_time` | timestamp | Epoch seconds |
 
 Answers:
-- No credentials, Dexcom failure, login paused (`badcreds`) → `instances: []`, `validUntilMs` now + 60 s. A Dexcom failure also clears `accountId`/`sessionId`.
+- No credentials, Dexcom failure, login paused (`badcreds`) → `instances: []`, `validUntilMs` now + 60 s. A failure at the login steps or a failed session clears `accountId`/`sessionId`; a failure after a successful login (no readings, a readings timeout or network error) keeps them, so the next poll reads without logging in (`dexcom_guard.js` `keepsSession`, used by the plugin and the direct path alike).
 - Wrong category/item → `respond.error('INVALID_REQUEST')`; an exception while handling the Dexcom result → `respond.error('UNKNOWN')` (`main.js`), releasing the login lock if this request took it.
 - Reading younger than 310 s (cached, same credentials) → served from cache, no Dexcom call; `validUntilMs = max(now + 60 s, (ts + 310) * 1000)`.
 - Dexcom is called at most once per 55 s (`ratscout.plugin.lastAttempt`; 55 rather than 60 so jitter in a 60 s poll never skips one).

@@ -1,5 +1,7 @@
 // Glucose fetching and formatting logic
 
+var DexcomGuard = require('../common/dexcom_guard');
+
 var MMOL_CONVERSION_FACTOR = 18.0182;
 var DEFAULT_BG_UNITS = 'mg/dL';
 
@@ -124,10 +126,17 @@ function fetchGlucoseReading(appSettings, config, sendToPebble, fetchAndSendAstr
         appSettings.DEX_REGION,
         function(error) {
             console.error('Glucose fetch failed: ' + error);
-            // Clear stale cached session to force full re-authentication on next attempt
-            window.localStorage.removeItem(config.STORAGE_KEYS.ACCOUNT_ID);
-            window.localStorage.removeItem(config.STORAGE_KEYS.SESSION_ID);
-            if (guard) guard.end(guardKey, String(error));
+            if (DexcomGuard.keepsSession(dex, error)) {
+                // Logged in fine, just no reading (or the readings request failed): keep the session.
+                window.localStorage.setItem(config.STORAGE_KEYS.ACCOUNT_ID, dex.accountId);
+                window.localStorage.setItem(config.STORAGE_KEYS.SESSION_ID, dex.sessionId);
+                if (guard) guard.end(guardKey, null);
+            } else {
+                // Clear stale cached session to force full re-authentication on next attempt
+                window.localStorage.removeItem(config.STORAGE_KEYS.ACCOUNT_ID);
+                window.localStorage.removeItem(config.STORAGE_KEYS.SESSION_ID);
+                if (guard) guard.end(guardKey, String(error));
+            }
             sendNoGlucoseData(msgTypeGlucose, sendToPebble);
         }
     );

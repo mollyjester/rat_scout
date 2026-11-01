@@ -107,6 +107,18 @@ test('Dexcom lockout answer pauses for LOCKOUT_PAUSE_MS', function() {
     assert(g.blockReason(key) === null, 'pause over at 1 h');
 });
 
+test('keepsSession', function() {
+    var dex = { accountId: 'a', sessionId: 's' };
+    assert(Guard.keepsSession(dex, 'No readings available'), 'no readings: keep');
+    assert(Guard.keepsSession(dex, 'Network error'), 'readings network error: keep');
+    assert(Guard.keepsSession(dex, 'Timeout'), 'readings timeout: keep');
+    assert(!Guard.keepsSession(dex, 'Invalid credentials'), 'refused password: drop');
+    assert(!Guard.keepsSession(dex, 'Session validation failed after 1 attempts'), 'session failure: drop');
+    assert(!Guard.keepsSession(dex, 'Timeout fetching session ID'), 'login-step timeout: drop');
+    assert(!Guard.keepsSession(dex, 'Error fetching account ID: 500'), 'login-step HTTP error: drop');
+    assert(!Guard.keepsSession({ accountId: 'a', sessionId: null }, 'No readings available'), 'no session to keep');
+});
+
 test('sessionUsable', function() {
     var st = memStorage();
     var g = Guard.create(st, 'pkjs');
