@@ -176,7 +176,7 @@ Log lines the checks rely on (PKJS): `Glucose source: mode=<mode>`, `Glucose plu
 | Lockout/rate-limit thresholds and duration; whether a new login invalidates older sessions | UNVERIFIED, permanently: never tested against the real service |
 | Atomicity of localStorage between plugin and PKJS | UNVERIFIED; the guard is best-effort |
 | Plugin logs over the developer connection | Phone-verified: `plugin>` lines arrive through CloudPebble (mobileapp `plugin/PluginLogs.kt`) |
-| The Dexcom session kept across plugin runs while no reading exists | Phone-verified: one login, then reading requests only (the session used to be dropped on every failure, which meant a full login per poll) |
+| The Dexcom session kept while no reading exists | Phone-verified on both paths: one login, then reading requests only (plugin: next poll after 60 s; direct, preview off: the watch's next request about 3 min later). The session used to be dropped on every failure, which meant a full login per poll |
 
 ### Shared localStorage keys
 | Key | Writer | Contents |
