@@ -23,12 +23,12 @@
 #   steps                      print the checklist (operator action + command per step).
 #
 # Options for install/logs: --seconds N (default 120), --expect direct|pending|plugin|fallback,
-#   --name NAME (log file name). All: --out DIR (default build/device-check).
+#   --name NAME (log file name). All: --out DIR (default .device-check, gitignored; not under build/, which pack-plugin.py cleans).
 #
 # Logs are redacted before they are written: UUIDs other than the app's and email
 # addresses are masked. Dexcom IDs and coordinates are never logged by the app
 # (dexcom.js, index.js). BG values are not logged by PKJS; the watch's own logs
-# may still carry health data, so logs stay under build/ (gitignored).
+# may still carry health data, so logs stay in .device-check/ (gitignored).
 #
 # SAFETY: this talks to the real Dexcom account configured in the app. Never use it
 # to try wrong passwords or failing logins (lockout thresholds are UNVERIFIED by decision).
@@ -38,7 +38,7 @@ cd "$(dirname "$0")/.."
 PROJECT_ROOT="$(pwd)"
 
 TRANSPORT=(--phone)
-OUT=build/device-check
+OUT=.device-check
 SECS=120
 EXPECT=""
 NAME=""
@@ -72,9 +72,14 @@ redact() {  # stdin -> stdout
 
 capture() {  # capture <name> <pebble args...>; sets LOG
     local name="$1"; shift
+    mkdir -p "$OUT"
     LOG="$OUT/${NAME:-$name}-$(date +%Y%m%d-%H%M%S).log"
     echo "==> Capturing ${SECS}s of logs into $LOG"
-    timeout "$SECS" pebble "$@" "${TRANSPORT[@]}" 2>&1 | redact > "$LOG"
+    # Run outside the project: pebble-tool 5.1.1/5.1.2 registers its log handlers before
+    # loading build/pebble-js-app.js.map (util/logs.py PebbleLogPrinter.__init__), and a
+    # PKJS log arriving meanwhile crashes it. With no sourcemap the window is tiny.
+    local here; here="$(pwd)"; LOG="$here/$LOG"
+    (cd "$(mktemp -d)" && timeout "$SECS" pebble "$@" "${TRANSPORT[@]}") 2>&1 | redact > "$LOG"
     echo "==> Captured $(wc -l < "$LOG") lines"
 }
 
@@ -120,6 +125,9 @@ for label, pat in [('Permission', r'(?i)permission|NotAllowedError'), ('Crash', 
         print('%s lines (%d):' % (label, len(hits)))
         for l in hits[:5]: print('    ' + l)
 if count(r'(App|Worker) fault'): fails.append('watch app crashed')
+nodata = count(r'No glucose data( \(plugin\))? sent to Pebble successfully')
+if nodata and nodata == count(r'Glucose gate: (plugin|direct) send'):
+    print('WARN every glucose send was "---" (no reading from Dexcom, or a failure: check the log)')
 
 # The gate must never let the plugin path resend the last reading. Direct resends are expected.
 sends = [(m.group(1), m.group(2)) for l in lines for m in [re.search(r'Glucose gate: (plugin|direct) send ts=(\S+)', l)] if m]
@@ -154,7 +162,7 @@ case "$CMD" in
             *) echo "install legacy|plugin" >&2; exit 2 ;;
         esac
         # The pbw goes before the transport: `--phone` takes an optional value.
-        capture "install-$which" install "$pbw" --logs
+        capture "install-$which" install "$PROJECT_ROOT/$pbw" --logs
         analyze "$LOG" "$EXPECT" ;;
     logs)
         capture logs logs

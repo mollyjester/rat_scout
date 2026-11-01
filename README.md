@@ -229,7 +229,7 @@ Manual; not part of the test loop. Builds the plugin pbw and runs four cases on 
 Needs the Pebble mobile app 1.16.x with the plugin preview enabled. Each command installs or captures logs for `--seconds` (default 120), then summarises the watch (C), `pkjs>` and `plugin>` log lines: the glucose modes seen, plugin envelopes, plugin and direct sends, duplicates the gate skipped, Dexcom logins and reading fetches, plugin error codes, permission and crash lines. It fails on a crash, on the plugin path resending the last reading, or when the final mode differs from `--expect`.
 
 - **Transport:** the CloudPebble proxy by default (`pebble --phone` with no IP), which works when this machine can't reach the phone. It needs `pebble login`. In a container your browser can't reach, run `login`, open the URL, then paste the `http://localhost:60000/?...` address the browser fails to load into `callback`. With a reachable phone use `--phone-ip IP`; on Android over USB use `--adb`.
-- **Privacy:** logs are written under `build/device-check/` (gitignored), with UUIDs other than the app's and email addresses masked. The app never logs Dexcom account or session IDs or device coordinates.
+- **Privacy:** logs are written to `.device-check/` (gitignored; not under `build/`, which the plugin packer cleans), with UUIDs other than the app's and email addresses masked. The app never logs Dexcom account or session IDs or device coordinates.
 - **Safety:** this uses the real Dexcom account set in the app. The wrong-password step stays off-device (mocked unit tests only).
 
 See [docs/noVNC.md](docs/noVNC.md) for viewing the emulator in a browser, stopping it, seeding Clay settings, fixing the location and taking screenshots.

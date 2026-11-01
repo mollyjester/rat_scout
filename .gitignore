@@ -3,3 +3,4 @@ node_modules
 .lock-*
 scripts/params
 .clay
+.device-check
