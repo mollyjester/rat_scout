@@ -152,7 +152,7 @@ Errors (`onError(err)`, by `err.code` only, missing code = `UNKNOWN`; ignored in
 - No published SDK contains PR #2483 (merged 2026-10-19): `sdk.repebble.com/v1/files/sdk-core` lists up to 4.33.1, and PebbleOS releases ship only firmware and QEMU images. When one appears, the packer detects a plugin-aware pbw and copies it unchanged.
 
 ### Verification status
-Emulator = pebble-tool 5.1.1 (Python 3.13) / pypkjs 3.0.3 on flint, via `scripts/plugin-smoke.sh` (all checks pass). The phone (Pebble app 1.16.x) is not tested yet; `scripts/device-check.sh steps` lists the on-device checklist (README, "Plugin check on a real phone").
+Emulator = pebble-tool 5.1.1 (Python 3.13) / pypkjs 3.0.3 on flint, via `scripts/plugin-smoke.sh` (all checks pass). Phone = Pebble app 1.16.0.5 (Android, beta channel) with a flint, plugin preview on, via `scripts/device-check.sh` over CloudPebble (2026-11-01; Dexcom had no current reading during these runs, so only the "---" path was exercised on the phone); `scripts/device-check.sh steps` lists the on-device checklist (README, "Plugin check on a real phone").
 
 Log lines the checks rely on (PKJS): `Glucose source: mode=<mode>`, `Glucose plugin data: N instance(s)`, `Glucose plugin error: <code>`, `Glucose gate: plugin send|direct send|skipped duplicate ts=<TIMESTAMP>`, `<type> sent to Pebble successfully`, and dexcom.js `Getting account ID...`, `Session ID received`, `Fetching glucose readings...`. pebble-tool tags plugin output `plugin>` (`pebble_tool/util/logs.py` `PLUGIN_LOG_MARKER`).
 
@@ -160,21 +160,23 @@ Log lines the checks rely on (PKJS): `Glucose source: mode=<mode>`, `Glucose plu
 |---|---|
 | SDK 4.33.1 behaviour described in [Build](#build) | Verified (clean builds; bogus `kind` builds) |
 | A published SDK with plugin support | None on 2026-10-30 (SDK server lists up to 4.33.1; PebbleOS releases ship firmware/QEMU only) |
-| Host loads the plugin from our pbw; a legacy pbw's plugin is not loaded | Emulator-verified (`pypkjs/runner/__init__.py` `_load_plugin`, smoke cases 1 and 4) |
-| Detection, `pending` → `plugin`, envelope → watch, gate, host refresh every 60 s | Emulator-verified (cases 1–3; screenshot shows 6.7 +0.3 from a seeded 120/+5 mg/dL) |
+| Host loads the plugin from our pbw; a legacy pbw's plugin is not loaded | Emulator-verified (`pypkjs/runner/__init__.py` `_load_plugin`, smoke cases 1 and 4). Phone-verified: the Plugins tab lists Rat Scout with source Health/Glucose; the legacy pbw stays `mode=direct` |
+| Detection, `pending` → `plugin`, envelope → watch, gate, host refresh every 60 s | Emulator-verified (cases 1–3; screenshot shows 6.7 +0.3 from a seeded 120/+5 mg/dL). Phone-verified for the empty-reading envelope: `pending` → `plugin`, "---" sent once, repeats skipped by the gate; the phone re-read every 1–2+ min |
 | Plugin reads PKJS's `clay-settings` and cache keys (shared localStorage) | Emulator-verified (case 2); pypkjs keys a plugin's store off the pbw uuid (`js_plugin.py`). Phone: preview guide says shared |
 | Shim on fetch, including a rejected fetch at the account step | Emulator-verified (case 3: "Network error fetching account ID" → "---", no login pause) |
-| `XMLHttpRequest` / `setTimeout` in the phone's plugin runtime | UNVERIFIED (emulator has both; the shim is used regardless) |
+| `XMLHttpRequest` / `setTimeout` in the phone's plugin runtime | Phone-verified: **not available, and touching them throws.** Android runs plugins in a WebView whose `LOCKDOWN_JS` turns `setTimeout`, `clearTimeout`, `XMLHttpRequest`, `window`, `self` and more into throwing getters (mobileapp `libpebble3/.../js/JsEngine.android.kt`); `typeof` does not guard against them, and `evaluateJavascript` swallows the error, which showed as `PLUGIN_UNAVAILABLE (no source handler registered)`. The bundle probes host globals inside try/catch (`scripts/build-plugin.js`); `test/helpers/plugin_host.js` applies the same lockdown. The fetch shim works on the phone |
 | `fetch` accepting `User-Agent` | Not needed: dexcom.js sends no custom User-Agent (pydexcom's recorded traffic works with the client default) |
 | `onError` paths (`PERMISSION_DENIED`, `TIMEOUT`, ...) | Unit tests only. The emulator logs a plugin's `respond.error` and skips it instead of calling `onError` (`js_plugin.py` `_parse_envelope`), grants every caller permission (`javascript/plugins.py`), and `pebble emu-permission` only knows `WatchMicrophone` |
-| An app must declare its own plugin's `Glucose` permission | UNVERIFIED (declared anyway) |
+| An app must declare its own plugin's `Glucose` permission | Phone: the declaration is listed as "Read your glucose readings (via Rat Scout)" and granted; a pbw with a new uuid waited for that approval (`PERMISSION_DENIED … waiting for approval`) before serving. Whether omitting the declaration breaks it is untested |
 | `enumeratePlugins` / requests for a manifestVersion 2 pbw with plugins disabled, or on app < 1.16 | UNVERIFIED (the emulator always exposes the plugin API, regardless of the caller's manifestVersion) |
 | Clay's `openURL` settings page in a manifestVersion 2 pbw | UNVERIFIED |
-| Phone host reading immediately on (re)subscribe | UNVERIFIED (emulator does) |
+| Phone host reading immediately on (re)subscribe | Phone-verified on subscribe: first envelope within about 1 s; resubscribe after a settings change not yet exercised |
 | Phone dropping undeclared shapes | Not exercised (emulator does not validate); `test/plugin.test.js` keeps every shape declared |
 | How Dexcom reports a wrong password | Secondary source: pydexcom's recorded Dexcom traffic (`tests/cassettes`, 2025-04-19) shows HTTP 500 `{"Code":"AccountPasswordInvalid"}` at both login steps; pydexcom also maps `SSO_InternalError` "Cannot Authenticate by AccountName/AccountId" and the lockout code `SSO_AuthenticateMaxAttemptsExceeded` (`dexcom.py` `_handle_error_code`). Never tried by us |
 | Lockout/rate-limit thresholds and duration; whether a new login invalidates older sessions | UNVERIFIED, permanently: never tested against the real service |
 | Atomicity of localStorage between plugin and PKJS | UNVERIFIED; the guard is best-effort |
+| Plugin logs over the developer connection | Phone-verified: `plugin>` lines arrive through CloudPebble (mobileapp `plugin/PluginLogs.kt`) |
+| The Dexcom session kept across plugin runs while no reading exists | Phone-verified: one login, then reading requests only (the session used to be dropped on every failure, which meant a full login per poll) |
 
 ### Shared localStorage keys
 | Key | Writer | Contents |

@@ -10,6 +10,23 @@ var vm = require('vm');
 
 var BUNDLE = path.join(__dirname, '..', '..', 'src', 'plugin', 'index.js');
 
+// The Android host's LOCKDOWN_JS (mobileapp libpebble3 js/JsEngine.android.kt) turns these
+// globals into getters that throw, before the plugin script runs. fetch, localStorage and
+// navigator are left out here because the host installs its own afterwards; this context
+// provides them instead.
+var LOCKED_DOWN = [
+    'XMLHttpRequest', 'WebSocket', 'EventSource', 'Worker', 'SharedWorker', 'ServiceWorker',
+    'importScripts', 'postMessage', 'BroadcastChannel', 'RTCPeerConnection', 'Audio',
+    'AudioContext', 'webkitAudioContext', 'Image', 'Notification', 'document', 'indexedDB',
+    'openDatabase', 'caches', 'sessionStorage', 'alert', 'confirm', 'prompt', 'open', 'print',
+    'requestAnimationFrame', 'MutationObserver', 'FileReader', 'Bluetooth', 'setTimeout',
+    'setInterval', 'clearTimeout', 'clearInterval', 'geolocation', 'speechSynthesis',
+    'getComputedStyle', 'matchMedia', 'screen', 'history', 'location', 'frames', 'parent', 'top',
+    'opener', 'self', 'window'
+];
+var LOCKDOWN_JS = '(function (g) { ' + JSON.stringify(LOCKED_DOWN) + '.forEach(function (k) { ' +
+    'Object.defineProperty(g, k, { get: function () { throw new Error(k + " is not available to plugins"); }, configurable: true }); }); })(this);';
+
 /**
  * Fake Dexcom Share server for fetch.
  * @param {Object} opts - {accountId, sessionId, accountResponse, sessionResponse ({status, body}),
@@ -51,7 +68,8 @@ function fakeDexcom(opts) {
 
 /**
  * Load the bundle.
- * @param {Object} opts - {fetch, storage (object of initial values), now (ms), source (bundle text)}
+ * @param {Object} opts - {fetch, storage (object of initial values), now (ms), source (bundle text),
+ *   lockdown (default true: apply the Android host's throwing-getter lockdown first)}
  * @returns {Object} {context, handler, store, request(req) -> Promise<{data}|{error}>, setNow(ms)}
  */
 function load(opts) {
@@ -83,6 +101,7 @@ function load(opts) {
         }
     };
     vm.createContext(context);
+    if (opts.lockdown !== false) vm.runInContext(LOCKDOWN_JS, context);
     vm.runInContext(opts.source || fs.readFileSync(BUNDLE, 'utf8'), context);
 
     function request(req) {

@@ -34,8 +34,11 @@ function props(r) {
 test('registration', function() {
     var h = host.load();
     assert(typeof h.handlers.source === 'function', 'registerSourceHandler called with a function');
-    assert(typeof h.context.XMLHttpRequest === 'undefined', 'bundle does not install a global XMLHttpRequest');
-    assert(typeof h.context.setTimeout === 'undefined', 'bundle does not install a global setTimeout');
+    // Under the simulated lockdown these are throwing getters; the bundle must leave them alone.
+    ['XMLHttpRequest', 'setTimeout'].forEach(function(k) {
+        var d = Object.getOwnPropertyDescriptor(h.context, k);
+        assert(d && typeof d.get === 'function' && !('value' in d), 'bundle does not replace the global ' + k);
+    });
 });
 
 test('no credentials: empty instances, no fetch', function() {
@@ -167,11 +170,36 @@ test('changed credentials refetch', function() {
     });
 });
 
-test('fetch TypeError on readings: empty instances, session keys cleared', function() {
+test('fetch TypeError on readings: empty instances, valid session kept', function() {
     var f = host.fakeDexcom({ fail: { readings: true } });
     var h = host.load({ fetch: f, storage: { 'clay-settings': settings(), accountId: 'a0', sessionId: 's0' } });
     return h.request(REQ).then(function(r) {
         assert(r.data && r.data.instances.length === 0, 'instances is empty');
+        assert(h.store.accountId === 'a0' && h.store.sessionId === 's0', 'session kept');
+        assert(h.store['ratscout.auth.badcreds'] === undefined, 'no pause');
+    });
+});
+
+test('no readings available: session kept, next poll reads without logging in', function() {
+    // Seen on the phone: with the session dropped, every 60 s poll was a full login.
+    var f = host.fakeDexcom({ readings: [] });
+    var t0 = 1700000100000;
+    var h = host.load({ fetch: f, now: t0, storage: { 'clay-settings': settings() } });
+    return h.request(REQ).then(function(r) {
+        assert(f.endpoints().join(',') === 'account,session,readings', 'first poll logs in and reads');
+        assert(r.data.instances.length === 0, 'instances is empty');
+        assert(h.store.sessionId === 'sess-1', 'session stored');
+        h.setNow(t0 + 60000);
+        return h.request(REQ);
+    }).then(function() {
+        assert(f.endpoints().join(',') === 'account,session,readings,readings', 'second poll only reads');
+    });
+});
+
+test('login-step failure clears the session', function() {
+    var f = host.fakeDexcom({ sessionResponse: { status: 503, body: 'x' } });
+    var h = host.load({ fetch: f, storage: { 'clay-settings': settings(), accountId: 'a0' } });
+    return h.request(REQ).then(function() {
         assert(h.store.accountId === undefined && h.store.sessionId === undefined, 'session keys removed');
     });
 });
@@ -327,6 +355,27 @@ test('manifest', function() {
     assert(pl.sources[0].category === 'health' && pl.sources[0].items[0] === 'glucose', 'serves health/glucose');
     assert(pl.definesPermissions[0].kind === 'read', 'Glucose permission kind is read');
     assert(/^[A-Za-z][A-Za-z0-9]*$/.test(pl.definesPermissions[0].name), 'permission name alphanumeric');
+});
+
+test('bundle registers under strict, function-wrapped evaluation (this undefined)', function() {
+    // The phone answered "no source handler registered" for a bundle that read globals via `this`.
+    var src = fs.readFileSync(host.BUNDLE, 'utf8');
+    var handler = null;
+    var Pebble = { registerSourceHandler: function(h) { handler = h; } };
+    (new Function('Pebble', 'fetch', 'localStorage', '"use strict";\n' + src))
+        .call(undefined, Pebble, function() { return Promise.reject(new TypeError('x')); }, { getItem: function() { return null; } });
+    assert(typeof handler === 'function', 'source handler registered');
+});
+
+test('bundle registers under the Android lockdown (throwing setTimeout/XMLHttpRequest getters)', function() {
+    // Pebble app 1.16.0.5: an unguarded `typeof setTimeout` threw during evaluation, the WebView
+    // swallowed it, and every request answered "no source handler registered".
+    var old = 'var x = typeof setTimeout === "function";\nPebble.registerSourceHandler(function () {});';
+    var threw = false;
+    try { host.load({ source: old }); } catch (e) { threw = /not available to plugins/.test(e.message); }
+    assert(threw, 'the simulated lockdown throws on an unguarded typeof setTimeout');
+    var h = host.load({ storage: { 'clay-settings': settings() } });
+    assert(typeof h.handlers.source === 'function', 'real bundle registers its source handler');
 });
 
 test('committed bundle equals build() output', function() {

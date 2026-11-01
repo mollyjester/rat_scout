@@ -152,7 +152,8 @@ function create(deps) {
 
     function onError(err) {
         var code = err && err.code ? err.code : 'UNKNOWN';
-        console.log('Glucose plugin error: ' + code);
+        // The host's message says why (e.g. no plugin for the item vs. no handler registered).
+        console.log('Glucose plugin error: ' + code + (err && err.message ? ' (' + err.message + ')' : ''));
         if (state.mode === 'direct') return;
         if (code === 'INVALID_REQUEST') {
             unsubscribe();

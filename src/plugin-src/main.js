@@ -168,7 +168,7 @@ function busyEnvelope(t) {
  * @param {Object} env - {storage, Dexcom}
  * @param {Object} settings - Clay settings
  * @param {boolean} useSession - Start from the cached accountId/sessionId
- * @returns {Promise} Resolves {result, dex} or {error}
+ * @returns {Promise} Resolves {result, dex} or {error, dex}
  */
 function fetchFromDexcom(env, settings, useSession) {
     return new Promise(function(resolve) {
@@ -183,7 +183,7 @@ function fetchFromDexcom(env, settings, useSession) {
             settings.DEX_PASSWORD,
             function(result) { finish({ result: result, dex: dex }); },
             settings.DEX_REGION,
-            function(error) { finish({ error: String(error) }); }
+            function(error) { finish({ error: String(error), dex: dex }); }
         );
         if (useSession) {
             dex.accountId = env.storage.getItem(ACCOUNT_ID_KEY);
@@ -195,6 +195,22 @@ function fetchFromDexcom(env, settings, useSession) {
             finish({ error: String(e && e.message ? e.message : e) });
         }
     });
+}
+
+// dexcom.js errors from the login steps or a failed session; anything else (no readings, a
+// readings timeout or network error) happened with a valid session, which is kept.
+var LOGIN_ERROR = /^(Invalid credentials|Login failed|Max authentication attempts exceeded|Session validation failed|Authentication error|(Error|Network error|Timeout) fetching (account|session) ID)/;
+
+/**
+ * Whether a failed fetch still holds a session worth keeping.
+ * Without this, every poll while Dexcom has no reading logged in again from scratch
+ * (seen on the phone: a full login every 60 s).
+ * @param {Object} outcome - {error, dex}
+ * @returns {boolean} True to keep dex.accountId/sessionId
+ */
+function keepsSession(outcome) {
+    var dex = outcome.dex;
+    return !!(dex && dex.accountId && dex.sessionId && !LOGIN_ERROR.test(outcome.error));
 }
 
 /**
@@ -270,9 +286,15 @@ function handleSourceRequest(request, respond, env) {
     return fetchFromDexcom(env, settings, haveSession).then(function(outcome) {
         if (outcome.error) {
             console.log('Dexcom fetch failed: ' + outcome.error);
-            storage.removeItem(ACCOUNT_ID_KEY);
-            storage.removeItem(SESSION_ID_KEY);
-            guard.end(key, outcome.error);
+            if (keepsSession(outcome)) {
+                storage.setItem(ACCOUNT_ID_KEY, outcome.dex.accountId);
+                storage.setItem(SESSION_ID_KEY, outcome.dex.sessionId);
+                guard.end(key, null);
+            } else {
+                storage.removeItem(ACCOUNT_ID_KEY);
+                storage.removeItem(SESSION_ID_KEY);
+                guard.end(key, outcome.error);
+            }
             respond.data(emptyEnvelope(env.now()));
             return;
         }
