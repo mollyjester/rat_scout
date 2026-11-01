@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Builds src/plugin/index.js, the single-file plugin script shipped in the
+// Builds plugin/plugin.js, the single-file plugin script shipped in the
 // pbw, from src/plugin-src/main.js and the modules it requires. ES5.
 //
 // The plugin host evaluates one script with no require() and no bundler
@@ -18,7 +18,7 @@
 // silently leaves no source handler registered ("no source handler
 // registered", seen on Pebble app 1.16.0.5).
 //
-// Usage: node scripts/build-plugin.js          (writes src/plugin/index.js)
+// Usage: node scripts/build-plugin.js          (writes plugin/plugin.js)
 //        node scripts/build-plugin.js --check  (exit 1 if it is out of date)
 
 var fs = require('fs');
@@ -26,7 +26,7 @@ var path = require('path');
 
 var ROOT = path.join(__dirname, '..');
 var SRC = path.join(ROOT, 'src');
-var OUT = path.join(SRC, 'plugin', 'index.js');
+var OUT = path.join(ROOT, 'plugin', 'plugin.js');
 var ENTRY = 'plugin-src/main';
 var SHIM = 'plugin-src/xhr_shim';
 
@@ -61,7 +61,7 @@ function collect(id, seen, order) {
 
 /**
  * Build the bundle text.
- * @returns {string} Contents for src/plugin/index.js
+ * @returns {string} Contents for plugin/plugin.js
  */
 function build() {
     var seen = {};
@@ -120,10 +120,10 @@ if (require.main === module) {
     if (process.argv.indexOf('--check') !== -1) {
         var current = fs.existsSync(OUT) ? fs.readFileSync(OUT, 'utf8') : '';
         if (current !== text) {
-            console.error('src/plugin/index.js is out of date: run node scripts/build-plugin.js');
+            console.error('plugin/plugin.js is out of date: run node scripts/build-plugin.js');
             process.exit(1);
         }
-        console.log('src/plugin/index.js is up to date');
+        console.log('plugin/plugin.js is up to date');
     } else {
         fs.mkdirSync(path.dirname(OUT), { recursive: true });
         fs.writeFileSync(OUT, text);

@@ -1,4 +1,4 @@
-// XMLHttpRequest subset built on fetch, for running src/pkjs/dexcom.js
+// XMLHttpRequest subset built on fetch, for running src/plugin-src/dexcom.js
 // unchanged inside the plugin. ES5 + Promise.
 //
 // The plugin runtime documents fetch, WebSocket, navigator.geolocation,

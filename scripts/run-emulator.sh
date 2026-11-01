@@ -108,7 +108,8 @@ OPTIONS:
   --build             Run pebble clean + pebble build before installing.
                       By default the build step is skipped.
   --pbw <file>        Install this pbw instead of the project build, e.g.
-                      build/rat-scout-plugin.pbw from scripts/pack-plugin.py.
+                      build/rat-scout.pbw from scripts/pack-plugin.py (install
+                      build/rat-scout-glucose.pbw first for glucose data).
                       --build still rebuilds the project first.
   --logs              Accepted for backward compatibility (logs are always shown)
   --help, -h          Show this help message
@@ -119,7 +120,7 @@ EXAMPLES:
   ./scripts/run-emulator.sh --loc Malta
   ./scripts/run-emulator.sh --settings scripts/settings.json
   ./scripts/run-emulator.sh --platform flint --loc Moscow --settings scripts/settings.json
-  ./scripts/run-emulator.sh --pbw build/rat-scout-plugin.pbw
+  ./scripts/run-emulator.sh --pbw build/rat-scout.pbw
 
 In a GitHub Codespace the config page URL will be printed in the terminal.
 VS Code will offer to open the forwarded port in your browser automatically.

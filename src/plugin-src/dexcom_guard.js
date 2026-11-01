@@ -1,10 +1,9 @@
-// Dexcom login guard, shared by the plugin (src/plugin-src/main.js) and by
-// PKJS in fallback mode (src/pkjs/glucose.js). ES5.
+// Dexcom login guard for the Rat Scout Glucose plugin (src/plugin-src/main.js). ES5.
 //
-// Both run against the same localStorage (Pebble plugins preview guide:
-// "localStorage for state, shared with your app's PKJS"), so the guard's
-// state lives there. Whether writes are atomic between the two contexts is
-// UNVERIFIED, so this is best-effort: the worst case equals having no guard.
+// The plugin is started fresh for every request, so the guard's state lives in the
+// plugin's localStorage. The lock still matters if the host ever runs two requests at
+// once; whether it does is UNVERIFIED, so this is best-effort: the worst case equals
+// having no guard.
 //
 // Dexcom's lockout and rate-limit thresholds are UNVERIFIED and are never
 // tested against the real service; the limits below are deliberately
@@ -101,7 +100,7 @@ function readJson(storage, key) {
 /**
  * Create a guard bound to a storage and a clock.
  * @param {Object} storage - localStorage-like object (getItem/setItem/removeItem)
- * @param {string} owner - 'plugin' or 'pkjs', recorded with the lock
+ * @param {string} owner - Recorded with the lock ('plugin'); only the owner releases it
  * @param {Function} now - Optional clock returning epoch ms (default Date.now)
  * @returns {Object} Guard API
  */

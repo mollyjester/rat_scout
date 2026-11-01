@@ -1,12 +1,12 @@
 /**
- * Tests for src/common/dexcom_guard.js, alone and as the plugin uses it.
+ * Tests for src/plugin-src/dexcom_guard.js, alone and as the plugin uses it.
  * Dexcom is always mocked: lockout behaviour is never tested against the
  * real service.
  *
  * Run: node test/dexcom_guard.test.js
  */
 
-var Guard = require('../src/common/dexcom_guard');
+var Guard = require('../src/plugin-src/dexcom_guard');
 var host = require('./helpers/plugin_host');
 
 var s = host.suite('dexcom_guard tests');
@@ -130,7 +130,7 @@ test('sessionUsable', function() {
 test('plugin: after a rejected login (zero GUID), no auth fetch for 15 minutes', function() {
     var f = host.fakeDexcom({ accountId: ZERO });
     var t0 = 1700000100000;
-    var h = host.load({ fetch: f, now: t0, storage: { 'clay-settings': JSON.stringify(CREDS) } });
+    var h = host.load({ fetch: f, now: t0, settings: CREDS });
     return h.request(REQ).then(function(r) {
         assert(f.endpoints().join(',') === 'account', 'one login attempt');
         assert(r.data.instances.length === 0, 'empty instances');
@@ -152,10 +152,10 @@ test('plugin: after a rejected login (zero GUID), no auth fetch for 15 minutes',
 test('plugin: changing the password re-authenticates at once', function() {
     var f = host.fakeDexcom({ accountId: ZERO });
     var t0 = 1700000100000;
-    var h = host.load({ fetch: f, now: t0, storage: { 'clay-settings': JSON.stringify(CREDS) } });
+    var h = host.load({ fetch: f, now: t0, settings: CREDS });
     return h.request(REQ).then(function() {
         h.setNow(t0 + 60000);
-        h.store['clay-settings'] = JSON.stringify({ DEX_LOGIN: 'user', DEX_PASSWORD: 'fixed', DEX_REGION: 'ous' });
+        h.setSettings({ DEX_LOGIN: 'user', DEX_PASSWORD: 'fixed', DEX_REGION: 'ous' });
         return h.request(REQ);
     }).then(function() {
         assert(f.endpoints().join(',') === 'account,account', 'new credentials try again immediately');
@@ -165,7 +165,7 @@ test('plugin: changing the password re-authenticates at once', function() {
 test('plugin: lastAttempt throttles Dexcom calls to one per 55 s', function() {
     var f = host.fakeDexcom({ fail: { readings: true } });
     var t0 = 1700000100000;
-    var h = host.load({ fetch: f, now: t0, storage: { 'clay-settings': JSON.stringify(CREDS), accountId: 'a', sessionId: 's' } });
+    var h = host.load({ fetch: f, now: t0, settings: CREDS, storage: { accountId: 'a', sessionId: 's' } });
     return h.request(REQ).then(function() {
         assert(f.calls.length === 1, 'first poll calls Dexcom');
         h.setNow(t0 + 30000);

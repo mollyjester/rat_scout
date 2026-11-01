@@ -6,7 +6,7 @@ https://apps.rePebble.com/bfecfeaed9de40ef9d929b66
 
 ## Overview
 
-Rat Scout connects to the Dexcom Share API to display real-time blood glucose readings on your Pebble smartwatch. In addition to glucose tracking, it shows current time, date, week number, weather conditions (temperature, wind speed, umbrella indicator), sunrise/sunset and moonrise/moonset times, moon phase, step count, garbage collection schedule, and battery status — all on a single watchface.
+Rat Scout displays real-time Dexcom Share blood glucose readings on your Pebble smartwatch. The readings come from **Rat Scout Glucose**, a companion phone-side plugin (a separate pbw) that talks to Dexcom; the watchface itself never contacts Dexcom. In addition to glucose tracking, it shows current time, date, week number, weather conditions (temperature, wind speed, umbrella indicator), sunrise/sunset and moonrise/moonset times, moon phase, step count, garbage collection schedule, and battery status — all on a single watchface.
 
 ## Features
 
@@ -24,7 +24,7 @@ Rat Scout connects to the Dexcom Share API to display real-time blood glucose re
   - Low: descending B minor arpeggio (F#4–D4–B3), played twice, triangle wave
   - High: the same arpeggio ascending (B3–D4–F#4)
   - Each toggle is independent of vibration; sounds can be enabled, disabled, and previewed separately
-- **Multi-region Dexcom**: US, Outside-US (OUS), and Japan servers
+- **Multi-region Dexcom**: US, Outside-US (OUS), and Japan servers (set in the plugin)
 
 ### Weather (OpenWeatherMap)
 - **Temperature & wind speed** in metric or imperial units
@@ -60,29 +60,45 @@ Rat Scout connects to the Dexcom Share API to display real-time blood glucose re
 - **Platforms**: Emery (Pebble Time 2) and Flint (Pebble 2 Duo)
 
 ### Plugin (preview)
-The plugin pbw (`build/rat-scout-plugin.pbw`, see [Plugin pbw](#plugin-pbw-preview-sideload-only)) also contains a phone-side **plugin** that serves the latest Dexcom reading as `health/glucose` (glucose in your units and in mg/dL, delta, trend arrow and reading time), so other watchfaces, apps and Index can show it. It needs the **Pebble mobile app 1.16.x with the plugin preview enabled** (**Settings → Plugins → Plugins / permissions preview**; off by default). Without it, or with the regular `pebble build` pbw, Rat Scout fetches Dexcom directly as before.
+Rat Scout ships as two pbws (see [Plugin pbws](#plugin-pbws-preview-sideload-only)):
 
-The plugin uses the Dexcom account entered in Rat Scout's settings; it calls Dexcom at most once every 55 s, reuses a reading until the next one is due (5 minutes), and pauses logins for 15 minutes if Dexcom refuses the password (an hour if Dexcom reports too many attempts), until you change the credentials. Both the plugin and the direct path keep their Dexcom session when Dexcom just has no new reading, so they don't log in again on every poll. Design details: [.github/ARCHITECTURE.md](.github/ARCHITECTURE.md#plugin-preview--healthglucose).
+- **Rat Scout Glucose** (`build/rat-scout-glucose.pbw`): a plugin-only pbw that serves the latest Dexcom reading as `health/glucose` (glucose in its own units and in mg/dL, delta, trend arrow and reading time), so Rat Scout, other watchfaces, apps and Index can show it. It holds the Dexcom account, set on its own settings page.
+- **Rat Scout** (`build/rat-scout.pbw`): the watchface. It reads glucose only from the plugin; without it (not installed, preview off, permission not granted, or failing) the watch shows "---". There is no direct-Dexcom fallback.
 
-> **Sideload only — do not publish.** Plugins are an unstable preview. Never publish a plugin pbw to the appstore (no `pebble publish`); install it only by sideloading.
+Both need the **Pebble mobile app 1.16.x with the plugin preview enabled** (**Settings → Plugins → Plugins / permissions preview**; off by default). The legacy `pebble build` pbw (`build/<dir>.pbw`) can't read plugins.
+
+The plugin calls Dexcom at most once every 55 s, reuses a reading until the next one is due (5 minutes), and pauses logins for 15 minutes if Dexcom refuses the password (an hour if Dexcom reports too many attempts), until you change the credentials. It keeps its Dexcom session when Dexcom just has no new reading, so it doesn't log in again on every poll. Design details: [.github/ARCHITECTURE.md](.github/ARCHITECTURE.md#plugin-preview--healthglucose).
+
+> **Sideload only — do not publish.** Plugins are an unstable preview. Never publish either pbw to the appstore (no `pebble publish`); install them only by sideloading.
 
 ## Requirements
 
 - **Pebble 2 Duo or Pebble Time 2 smartwatch**
 - **Dexcom Share account** with a connected CGM transmitter
-- **Pebble/Rebble app** on your phone (the optional plugin needs Pebble app 1.16.x with the plugin preview enabled)
+- **Pebble app 1.16.x** on your phone with the plugin preview enabled (glucose comes from the Rat Scout Glucose plugin)
 - **Internet connection** on phone for API access
+
+## Setup
+
+1. In the Pebble app, turn on **Settings → Plugins → Plugins / permissions preview**.
+2. Sideload both pbws, the plugin first: `build/rat-scout-glucose.pbw`, then `build/rat-scout.pbw` (see [Plugin pbws](#plugin-pbws-preview-sideload-only)).
+3. Open **Apps → Plugins → Rat Scout Glucose → Settings**, enter the Dexcom login, password, region and units, and Save. Its page asks only for Internet access to the three Dexcom domains.
+4. Approve "Read your glucose readings (via Rat Scout Glucose)" when the Pebble app asks on Rat Scout's behalf. Until then the face shows "---".
 
 ## Configuration
 
-Open Rat Scout settings from the Pebble/Rebble app on your phone.
-
-### Dexcom Account
+### Rat Scout Glucose (plugin settings page)
 | Setting | Description |
 |---------|-------------|
-| Login | Dexcom Share account email/username |
-| Password | Dexcom Share account password |
+| Dexcom login | Dexcom Share account email/username |
+| Dexcom password | Stored in the plugin's `Pebble.secureStorage`; never shown again ("Saved (leave empty to keep)") |
 | Region | Dexcom server: Outside US (default), US, or Japan |
+| Units | mg/dL or mmol/L, for the plugin's own `glucose`/`delta` values (Rat Scout's display uses its own BG Units) |
+
+Saving drops the plugin's Dexcom session and throttle and asks the phone to refresh `health/glucose`, so the new account is tried at once.
+
+### Rat Scout (Clay settings)
+Open Rat Scout settings from the Pebble app on your phone. It has no Dexcom fields; the "Glucose" section points to the plugin's settings page.
 
 ### Display
 | Setting | Description |
@@ -131,7 +147,7 @@ Night thresholds allow you to use different alerting ranges while you sleep (e.g
 
 Every settings key, its default and its fallback: [scripts/settings.md](scripts/settings.md).
 
-All settings are stored locally on your phone.
+All settings are stored locally on your phone, separately per pbw: Rat Scout's in its `clay-settings`, the plugin's in its own storage. On start, Rat Scout deletes the Dexcom login, password and region and the Dexcom session keys that older versions left in its storage (`src/pkjs/legacy_cleanup.js`).
 
 ## Architecture
 
@@ -148,34 +164,41 @@ src/
 │   ├── draw_procs.c         # Custom GPath and drawing procedures
 │   ├── layout.c             # Layer positioning and watchface layout
 │   └── ui_helpers.c         # Shared UI utility functions
-├── common/
-│   └── dexcom_guard.js       # Dexcom login guard shared by the plugin and PKJS fallback
-├── plugin-src/               # Plugin sources (main.js, xhr_shim.js)
-├── plugin/index.js           # GENERATED plugin bundle (node scripts/build-plugin.js); never edit
+├── plugin-src/               # Rat Scout Glucose sources, bundled into plugin/plugin.js
+│   ├── main.js               # health/glucose source handler, cache, throttle, settings-page handler
+│   ├── settings.js           # Plugin settings: localStorage + secureStorage (password)
+│   ├── dexcom.js             # Dexcom Share API client (auth + glucose readings)
+│   ├── dexcom_guard.js       # Dexcom login guard
+│   └── xhr_shim.js           # XMLHttpRequest subset on fetch
 └── pkjs/
     ├── index.js              # App orchestrator: settings, data fetching, message queue
-    ├── dexcom.js             # Dexcom Share API client (auth + glucose readings)
-    ├── glucose.js            # Glucose fetch + BG/delta formatting
-    ├── glucose_plugin.js     # Chooses the plugin or direct Dexcom as the glucose source
+    ├── glucose.js            # BG/delta formatting (also bundled into the plugin)
+    ├── glucose_plugin.js     # Subscribes to the plugin; unavailable/pending/plugin modes
+    ├── legacy_cleanup.js     # Purges Dexcom data older versions stored in the face
     ├── weather.js            # OpenWeatherMap 2.5 API (current + forecast)
     ├── geolocation.js        # ipgeolocation.io astronomy API client
     ├── astronomy.js          # Astronomy time calculations (next sun/moon event logic)
     ├── garbage.js            # Garbage bag schedule
     ├── clay-config.js        # Clay test-button handlers
     └── config.json           # Clay settings UI definition
+plugin/                       # The Rat Scout Glucose pbw (plugin-only)
+├── package.json              # Its manifest: own uuid, Dexcom domains, plugin block, configPage
+├── plugin.js                 # GENERATED bundle (node scripts/build-plugin.js); never edit
+└── config.html               # Its settings page (Dexcom account, units)
 ```
 
 ### Data Flow
 
 ```
-Phone JS ─→ Dexcom Share API ─→ Parse glucose + calculate delta ─┐
-         ─→ ipgeolocation.io ─→ Astronomy data (cached daily)   ─┤
-         ─→ OpenWeatherMap   ─→ Weather data (cached per interval)─┤
-                                                                   ├─→ Message Queue ─→ Pebble Watch
-                                                Settings ──────────┘
+Rat Scout Glucose plugin ─→ Dexcom Share API ─→ health/glucose envelope ─┐
+Phone JS (face) ─→ subscription to the plugin ─→ glucose dictionary  ←───┘ ─┐
+                ─→ ipgeolocation.io ─→ Astronomy data (cached daily)          ─┤
+                ─→ OpenWeatherMap   ─→ Weather data (cached per interval)     ─┤
+                                                                               ├─→ Message Queue ─→ Pebble Watch
+                                                            Settings ──────────┘
 ```
 
-With the plugin preview enabled on the phone, PKJS subscribes to Rat Scout's own plugin (`health/glucose`) instead of calling Dexcom itself, and falls back to the direct path if the plugin is unavailable, denied, failing, sends nothing within 30 s of subscribing, or is silent for more than 11 minutes. In direct mode it checks for the plugin again on every watch request (at least every 5 minutes), so turning the preview on while the face runs switches to the plugin without restarting the face (`src/pkjs/glucose_plugin.js`; modes and triggers in [.github/ARCHITECTURE.md](.github/ARCHITECTURE.md#glucose-source-selection-srcpkjsglucose_pluginjs)). When the plugin API is absent or does not list the plugin (including the legacy pbw), the direct path runs exactly as before. How a manifestVersion 2 pbw behaves on phone apps older than 1.16 is UNVERIFIED.
+PKJS subscribes to the Rat Scout Glucose plugin (`health/glucose`) and shows "---" (mode `unavailable`) when the plugin API is absent, the plugin isn't listed, the permission is denied, the plugin fails, sends nothing within 30 s of subscribing, or is silent for more than 11 minutes. One transient error keeps the shown reading; a second leads to "---". While unavailable without a subscription it checks for the plugin again on every watch request (at least every 5 minutes), so installing the plugin or turning the preview on while the face runs switches to it without restarting the face (`src/pkjs/glucose_plugin.js`; modes and triggers in [.github/ARCHITECTURE.md](.github/ARCHITECTURE.md#glucose-source-selection-srcpkjsglucose_pluginjs)). How a manifestVersion 2 pbw behaves on phone apps older than 1.16 is UNVERIFIED.
 
 Glucose, weather and astronomy data are sent as separate messages. A message queue ensures only one `sendAppMessage` call is in flight at a time.
 
@@ -200,8 +223,9 @@ Outside the dev container, follow the [official SDK install guide](https://devel
 # Clean build first, specific platform, pre-seeded settings:
 ./scripts/run-emulator.sh --build --platform emery --settings scripts/settings.json
 
-# Install the plugin pbw instead of the project build:
-python3 -I scripts/pack-plugin.py && ./scripts/run-emulator.sh --pbw build/rat-scout-plugin.pbw
+# Install the plugin-aware watchface instead of the legacy project build
+# (install build/rat-scout-glucose.pbw with `pebble install --emulator` for glucose):
+python3 -I scripts/pack-plugin.py && ./scripts/run-emulator.sh --pbw build/rat-scout.pbw
 
 # See all options:
 ./scripts/run-emulator.sh --help
@@ -213,7 +237,7 @@ python3 -I scripts/pack-plugin.py && ./scripts/run-emulator.sh --pbw build/rat-s
 ./scripts/plugin-smoke.sh [--platform flint|emery] [--seconds N] [--keep-logs DIR]
 ```
 
-Manual; not part of the test loop. Builds the plugin pbw and runs four cases on a freshly wiped emulator (`--seconds`, default 80 s each), checking the logs: no credentials (plugin mode, "---"), fake credentials with a seeded cached reading (served from cache, sent once, screenshot saved), fake credentials with no cache (login fails, "---", throttled), and the legacy pbw (direct mode). Every case runs with `HTTP(S)_PROXY` set to a closed local port and obviously fake credentials, so nothing reaches Dexcom. **Never try wrong passwords or failing logins against the real Dexcom service** (emulator or phone): Dexcom's lockout thresholds are UNVERIFIED and stay that way by decision. Login failures are tested only with a mocked fetch (`test/dexcom_guard.test.js`, `test/plugin.test.js`).
+Manual; not part of the test loop. Builds both pbws and runs four cases on a freshly wiped emulator (`--seconds`, default 80 s each). Each case seeds the plugin's localStorage and its secureStorage file (`plugin-secure-storage/<plugin uuid>.json`, for the password), installs the plugin pbw, then installs the face pbw with logs and checks them: no account (plugin mode, "---"), a fake account with a seeded cached reading (served from cache, sent once, screenshot saved; on flint it shows 6.7 +0.3), a fake account with no cache (login fails, "---", throttled), and no plugin installed (unavailable, "---", no subscription, no Dexcom request). Lines the face logs at `ready` can precede the log stream, so no check relies on them. Every case runs with `HTTP(S)_PROXY` set to a closed local port and obviously fake credentials, so nothing reaches Dexcom. **Never try wrong passwords or failing logins against the real Dexcom service** (emulator or phone): Dexcom's lockout thresholds are UNVERIFIED and stay that way by decision. Login failures are tested only with a mocked fetch (`test/dexcom_guard.test.js`, `test/plugin.test.js`).
 
 For developing plugins with the current app, SDK and tools (versions, the Android sandbox, packaging, testing, pitfalls), see [docs/plugins.md](docs/plugins.md).
 
@@ -223,16 +247,17 @@ For developing plugins with the current app, SDK and tools (versions, the Androi
 ./scripts/device-check.sh steps                       # the checklist: operator action + command per step
 ./scripts/device-check.sh login                       # prints a sign-in URL, waits for the callback
 ./scripts/device-check.sh callback 'http://localhost:60000/?...'
-./scripts/device-check.sh install plugin --expect plugin [--seconds N]
+./scripts/device-check.sh install glucose               # the plugin pbw first
+./scripts/device-check.sh install face --expect plugin [--seconds N]
 ./scripts/device-check.sh logs --seconds 1800 --expect plugin
 ./scripts/device-check.sh screenshot
 ```
 
-Needs the Pebble mobile app 1.16.x with the plugin preview enabled. Each command installs or captures logs for `--seconds` (default 120), then summarises the watch (C), `pkjs>` and `plugin>` log lines: the glucose modes seen, plugin envelopes, plugin and direct sends, duplicates the gate skipped, Dexcom logins and reading fetches, plugin error codes, permission and crash lines. It fails on a crash, on the plugin path resending the last reading, or when the final mode differs from `--expect`.
+Needs the Pebble mobile app 1.16.x with the plugin preview enabled. `install face|glucose` builds both pbws (`pack-plugin.py`) and installs `build/rat-scout.pbw` or `build/rat-scout-glucose.pbw`. Each command installs or captures logs for `--seconds` (default 120), running pebble from an empty temporary directory (pebble-tool 5.1.1/5.1.2 can crash on a PKJS log that arrives while it loads the project's sourcemap), then summarises the watch (C), `pkjs>` and `plugin>` log lines: the glucose modes seen, plugin envelopes, gate sends, duplicates the gate skipped, Dexcom logins and reading fetches, plugin error codes, permission and crash lines. It fails on a crash, on the plugin path resending the last reading, or when the final mode differs from `--expect`.
 
 - **Transport:** the CloudPebble proxy by default (`pebble --phone` with no IP), which works when this machine can't reach the phone. It needs `pebble login`. In a container your browser can't reach, run `login`, open the URL, then paste the `http://localhost:60000/?...` address the browser fails to load into `callback`. With a reachable phone use `--phone-ip IP`; on Android over USB use `--adb`.
 - **Privacy:** logs are written to `.device-check/` (gitignored; not under `build/`, which the plugin packer cleans), with UUIDs other than the app's and email addresses masked. The app never logs Dexcom account or session IDs or device coordinates.
-- **Safety:** this uses the real Dexcom account set in the app. The wrong-password step stays off-device (mocked unit tests only).
+- **Safety:** this uses the real Dexcom account set on the plugin's settings page. The wrong-password step stays off-device (mocked unit tests only).
 
 See [docs/noVNC.md](docs/noVNC.md) for viewing the emulator in a browser, stopping it, seeding Clay settings, fixing the location and taking screenshots.
 
@@ -258,22 +283,27 @@ Requires Pebble SDK 4.x (tested with SDK 4.33.1 / pebble-tool 5.1.1 on Python 3.
 npm ci
 pebble build
 for f in test/*.test.js; do node "$f" || exit 1; done
-pebble install --phone <phone_ip>
 ```
 
-### Plugin pbw (preview, sideload only)
+The legacy `pebble build` pbw can't read plugins, so it always shows "---" for glucose; install the two pbws below instead.
 
-`pebble build` produces a **legacy** pbw (`build/work.pbw`, named after the checkout directory): SDK 4.33.1 has no plugin support, so the pbw has no `manifestVersion` and no plugin script, and the phone treats it exactly as before. To build the plugin pbw:
+### Plugin pbws (preview, sideload only)
+
+`pebble build` produces a **legacy** watchface pbw (`build/work.pbw`, named after the checkout directory): SDK 4.33.1 has no plugin support, so the pbw has no `manifestVersion` and can't read plugins. To build the two pbws:
 
 ```bash
-node scripts/build-plugin.js           # after editing src/plugin-src/, dexcom.js, glucose.js or dexcom_guard.js
-node scripts/build-plugin.js --check   # exit 1 if src/plugin/index.js is stale
-python3 -I scripts/pack-plugin.py      # clean build + build/rat-scout-plugin.pbw (manifestVersion 2 + src/plugin/index.js)
-python3 -I scripts/pack-plugin.py --selftest   # packer self test on an in-memory pbw
-pebble install --phone <phone_ip> build/rat-scout-plugin.pbw
+node scripts/build-plugin.js           # after editing src/plugin-src/ or src/pkjs/glucose.js
+node scripts/build-plugin.js --check   # exit 1 if plugin/plugin.js is stale
+python3 -I scripts/pack-plugin.py      # clean build + build/rat-scout.pbw and build/rat-scout-glucose.pbw
+python3 -I scripts/pack-plugin.py --selftest   # packer self test on in-memory pbws
+pebble install --phone <phone_ip> build/rat-scout-glucose.pbw   # the plugin first
+pebble install --phone <phone_ip> build/rat-scout.pbw
 ```
 
-`pack-plugin.py` refuses to run if `src/plugin/index.js` is stale, validates `definesPermissions`, and copies the pbw unchanged once a future SDK produces plugin-aware pbws itself; `--no-build` packs the existing build output. SDK 4.33.1 was the newest on the SDK server on 2026-10-30. The result is for sideloading only (see [Plugin (preview)](#plugin-preview)).
+- `build/rat-scout.pbw`: the `pebble build` output with `manifestVersion: 2` (a watchapp needs it to read plugins), no plugin.
+- `build/rat-scout-glucose.pbw`: plugin-only, built from `plugin/` without the SDK: `appinfo.json` (from `plugin/package.json`), `plugin.js` and `config.html`.
+
+`pack-plugin.py` refuses to run if `plugin/plugin.js` is stale, validates `definesPermissions`, and copies the watchface pbw unchanged once a future SDK sets `manifestVersion` itself; `--no-build` packs the existing build output. SDK 4.33.1 was the newest on the SDK server on 2026-10-30. The results are for sideloading only (see [Plugin (preview)](#plugin-preview)).
 
 pebble-tool 5.1.1 runs `waf` with the SDK's own venv but passes its own `sys.path` as `PYTHONPATH` (`pebble_tool/commands/sdk/project/__init__.py`), so pebble-tool and the SDK venv must use the same Python minor version; otherwise `pebble build` fails with `SRE module mismatch`. Reinstall with `uv tool install --force --python <the SDK venv's python> pebble-tool==5.1.1`.
 
@@ -288,4 +318,4 @@ pebble-tool 5.1.1 runs `waf` with the SDK's own venv but passes its own `sys.pat
 
 This is an unofficial, community-maintained project not affiliated with or endorsed by Dexcom, Inc. Always verify glucose readings with an official Dexcom receiver or app before making medical decisions. This watchface is a convenience tool only.
 
-> **Credential storage notice:** Your Dexcom username and password are stored in plain text in the Pebble app's local storage on your phone. This is a limitation of the Pebble SDK and cannot be worked around. Your Dexcom Share credentials provide access to your full glucose history — treat them with the same care as any medical account password and ensure your phone is protected with a screen lock.
+> **Credential storage notice:** Your Dexcom password is stored in the Rat Scout Glucose plugin's `Pebble.secureStorage` on your phone, which only that plugin can read (the Pebble plugins preview guide says the phone's keystore encrypts it; not independently verified). Your Dexcom login and region are in the plugin's plain localStorage. Older Rat Scout versions kept all three in plain text in the watchface's settings; the current watchface deletes them on start. Your Dexcom Share credentials provide access to your full glucose history — treat them with the same care as any medical account password and ensure your phone is protected with a screen lock.

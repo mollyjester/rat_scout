@@ -18,9 +18,6 @@ The **Default** columns below are Clay's `defaultValue`, which applies only when
 
 | Key | Clay default | If missing |
 |-----|--------------|------------|
-| `DEX_LOGIN` | `""` | no glucose fetch |
-| `DEX_PASSWORD` | `""` | no glucose fetch |
-| `DEX_REGION` | `"ous"` | `"ous"` |
 | `BG_UNITS` | `"mg/dL"` | `"mg/dL"` |
 | `BG_SHOW_DELTA` | `true` | **off** |
 | `BG_SHOW_TIMEDELTA` | `true` | **off** |
@@ -49,25 +46,9 @@ The **Default** columns below are Clay's `defaultValue`, which applies only when
 
 ---
 
-## Read by the plugin
+## Not here: the Dexcom account
 
-The plugin (`src/plugin/index.js`, preview) shares this localStorage and reads `clay-settings` too: `DEX_LOGIN`, `DEX_PASSWORD` and `DEX_REGION` for the Dexcom account, and `BG_UNITS` to format `glucose`/`delta` (its `glucose_mgdl`/`delta_mgdl` are always mg/dL). It has no settings of its own. Besides `clay-settings`, the plugin and PKJS keep non-settings keys in the same store (Dexcom session, plugin cache, login guard); they are listed in [`.github/ARCHITECTURE.md`, "Shared localStorage keys"](../.github/ARCHITECTURE.md#shared-localstorage-keys). `--settings` only writes `clay-settings`; `pebble wipe` clears all of them.
-
-## Dexcom Account
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `DEX_LOGIN` | string | `""` | Dexcom account username / phone number |
-| `DEX_PASSWORD` | string | `""` | Dexcom account password |
-| `DEX_REGION` | string | `"ous"` | Dexcom server region |
-
-**`DEX_REGION` values:**
-
-| Value | Meaning |
-|-------|---------|
-| `"ous"` | Outside US (default) |
-| `"us"` | United States |
-| `"jp"` | Japan |
+The Dexcom login, password and region are not Clay settings. They are set on the Rat Scout Glucose plugin's own settings page (`plugin/config.html`) and stored in the plugin's storage (its localStorage, the password in `Pebble.secureStorage`), which the watchface cannot read: [`.github/ARCHITECTURE.md`, "Plugin storage keys"](../.github/ARCHITECTURE.md#plugin-storage-keys). The plugin has its own units setting for its `glucose`/`delta` values; the watchface formats the plugin's mg/dL values with `BG_UNITS` below. Older versions stored `DEX_LOGIN`, `DEX_PASSWORD` and `DEX_REGION` in `clay-settings`; the watchface deletes them on start (`src/pkjs/legacy_cleanup.js`). `--settings` only writes the watchface's `clay-settings`; `pebble wipe` clears the emulator's stored app data.
 
 ---
 

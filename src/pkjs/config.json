@@ -5,49 +5,18 @@
     },
     {
         "type": "text",
-        "defaultValue": "Configure your Dexcom account credentials and display preferences."
+        "defaultValue": "Configure display, notifications, weather and astronomy. The Dexcom account is set in the Rat Scout Glucose plugin."
     },
     {
         "type": "section",
         "items": [
             {
                 "type": "heading",
-                "defaultValue": "Dexcom Account"
+                "defaultValue": "Glucose"
             },
             {
-                "type": "input",
-                "messageKey": "DEX_LOGIN",
-                "defaultValue": "",
-                "label": "Dexcom Login"
-            },
-            {
-                "type": "input",
-                "messageKey": "DEX_PASSWORD",
-                "defaultValue": "",
-                "label": "Dexcom Password",
-                "attributes": {
-                    "type": "password"
-                }
-            },
-            {
-                "type": "select",
-                "messageKey": "DEX_REGION",
-                "defaultValue": "ous",
-                "label": "Dexcom Region",
-                "options": [
-                    {
-                        "label": "Outside US",
-                        "value": "ous"
-                    },
-                    {
-                        "label": "US",
-                        "value": "us"
-                    },
-                    {
-                        "label": "Japan",
-                        "value": "jp"
-                    }
-                ]
+                "type": "text",
+                "defaultValue": "Glucose readings come from the <b>Rat Scout Glucose</b> plugin. Install it, then enter your Dexcom account on its settings page in the Pebble app (Apps → Plugins → Rat Scout Glucose → Settings). Plugins are a preview: turn them on in the Pebble app under Settings → Plugins → Plugins / permissions preview. Without the plugin the watch shows ---."
             }
         ]
     },

@@ -1,28 +1,27 @@
 #!/usr/bin/env python3
-"""Package Rat Scout as a plugin pbw (manifestVersion 2 + the plugin script).
+"""Package Rat Scout's two pbws for the plugin preview.
 
-Until `pebble build` supports plugins (Pebble plugins preview guide, "Packaging and
-sideloading": "planned for the next SDK release"), SDK 4.33.1 builds a legacy pbw: it
-copies package.json's `plugin` block into appinfo.json but sets no manifestVersion and
-leaves the plugin script out. This script fixes that up:
+  build/rat-scout.pbw          the watchface: `pebble build` output with manifestVersion 2,
+                               which a watchapp needs to read any plugin (preview guide,
+                               "Writing a watchface or app that uses plugins").
+  build/rat-scout-glucose.pbw  the plugin-only pbw built from plugin/ (no SDK needed):
+                               appinfo.json from plugin/package.json plus the files it names
+                               (plugin.script and a file configPage).
 
-  1. checks src/plugin/index.js is up to date (node scripts/build-plugin.js --check);
-  2. runs `pebble clean` + `pebble build` (the bundle step does not notice appinfo changes);
-  3. opens build/<project dir name>.pbw;
-  4. sets manifestVersion 2 and validates definesPermissions;
-  5. adds plugin.script at its project-relative path;
-  6. writes build/rat-scout-plugin.pbw.
+SDK 4.33.1 can't do either: it copies package.json's `pebble` block into appinfo.json but sets
+no manifestVersion, adds no plugin files and has no plugin-only projects (PebbleOS PR #2483
+adds all three; no published SDK has it yet). build/<project dir name>.pbw is left as the
+legacy watchface pbw, which can't read plugins.
 
-build/<project dir name>.pbw is left as the legacy pbw, for comparison.
-
-If the input is already manifestVersion 2 and carries the script, the pbw is copied unchanged
-("official build already plugin-aware") so this script retires itself once the SDK catches up.
+Steps: check plugin/plugin.js is up to date (node scripts/build-plugin.js --check); run
+`pebble clean` + `pebble build`; write both pbws. A watchface pbw that is already
+manifestVersion 2 is copied unchanged, so this retires itself once the SDK catches up.
 
 Run with `python3 -I scripts/pack-plugin.py` from anywhere. Options:
-  --no-build   pack the existing build output without rebuilding
-  --selftest   run the built-in self test on an in-memory pbw and exit
+  --no-build   pack the existing watchface build output without rebuilding
+  --selftest   run the built-in self test on in-memory pbws and exit
 
-Sideload only: never publish the result to the appstore.
+Sideload only: never publish the results to the appstore.
 """
 
 import io
@@ -34,7 +33,9 @@ import sys
 import zipfile
 
 MANIFEST_VERSION = 2
-OUTPUT_NAME = 'rat-scout-plugin.pbw'
+FACE_OUTPUT = 'rat-scout.pbw'
+PLUGIN_DIR = 'plugin'
+PLUGIN_OUTPUT = 'rat-scout-glucose.pbw'
 
 # definesPermissions rules as PebbleOS PR #2483 and pypkjs 3.0.3 (plugins/manifest.py) check them.
 # The preview guide also lists `dangerous`, but neither of those accepts it.
@@ -63,37 +64,71 @@ def permission_errors(plugin):
     return errors
 
 
-def pack(pbw_bytes, read_project_file):
-    """Return (new pbw bytes, message). read_project_file(path) -> bytes or None."""
+def pack_face(pbw_bytes):
+    """Return (watchface pbw bytes with manifestVersion 2, message)."""
     with zipfile.ZipFile(io.BytesIO(pbw_bytes)) as z:
         appinfo = json.loads(z.read('appinfo.json'))
-        names = z.namelist()
         entries = [(info, z.read(info)) for info in z.infolist() if info.filename != 'appinfo.json']
-
-    plugin = appinfo.get('plugin')
-    if not isinstance(plugin, dict):
-        raise PackError('appinfo.json has no plugin block (was package.json changed without a clean build?)')
-    script = plugin.get('script', 'plugin.js')
-
-    if int(appinfo.get('manifestVersion', 0) or 0) >= MANIFEST_VERSION and script in names:
-        return pbw_bytes, 'official build already plugin-aware: copied unchanged'
-
-    errors = permission_errors(plugin)
-    if errors:
-        raise PackError('bad plugin manifest:\n  ' + '\n  '.join(errors))
-
+    if int(appinfo.get('manifestVersion', 0) or 0) >= MANIFEST_VERSION:
+        return pbw_bytes, 'watchface already manifestVersion %d: copied unchanged' % MANIFEST_VERSION
     appinfo['manifestVersion'] = MANIFEST_VERSION
     out = io.BytesIO()
     with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
         z.writestr('appinfo.json', json.dumps(appinfo, indent=2))
         for info, data in entries:
             z.writestr(info, data)
-        if script not in names:
-            data = read_project_file(script)
+    return out.getvalue(), 'watchface: set manifestVersion %d' % MANIFEST_VERSION
+
+
+def plugin_appinfo(pkg):
+    """appinfo.json for a plugin-only pbw, as upstream pack-plugin-pbw.py builds it."""
+    pebble = pkg.get('pebble', {})
+    display = pebble.get('displayName') or pkg.get('name', '')
+    appinfo = dict(pebble)
+    appinfo['manifestVersion'] = MANIFEST_VERSION
+    appinfo.setdefault('shortName', display)
+    appinfo.setdefault('longName', display)
+    appinfo.setdefault('companyName', pkg.get('author', ''))
+    appinfo.setdefault('versionLabel', pkg.get('version', '1.0.0'))
+    appinfo.setdefault('sdkVersion', '3')
+    appinfo.setdefault('resources', {'media': []})
+    appinfo.setdefault('watchapp', {'watchface': False})
+    return appinfo
+
+
+def files_named_by(appinfo):
+    """The loose files the phone reads: plugin.script, and configPage unless it is a URL."""
+    names = []
+    plugin = appinfo.get('plugin')
+    if isinstance(plugin, dict):
+        names.append(plugin.get('script') or 'plugin.js')
+    config = appinfo.get('configPage')
+    if isinstance(config, str) and not config.startswith(('http://', 'https://')):
+        names.append(config)
+    return names
+
+
+def pack_plugin_only(pkg, read_file):
+    """Return (plugin-only pbw bytes, message). read_file(path) -> bytes or None."""
+    appinfo = plugin_appinfo(pkg)
+    if not appinfo.get('uuid'):
+        raise PackError('plugin/package.json pebble block needs a uuid')
+    plugin = appinfo.get('plugin')
+    if not isinstance(plugin, dict):
+        raise PackError('plugin/package.json pebble block has no plugin')
+    errors = permission_errors(plugin)
+    if errors:
+        raise PackError('bad plugin manifest:\n  ' + '\n  '.join(errors))
+    out = io.BytesIO()
+    names = files_named_by(appinfo)
+    with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
+        z.writestr('appinfo.json', json.dumps(appinfo, indent=2))
+        for name in names:
+            data = read_file(name)
             if data is None:
-                raise PackError("plugin.script '%s' does not exist in the project" % script)
-            z.writestr(script, data)
-    return out.getvalue(), 'set manifestVersion %d, added %s' % (MANIFEST_VERSION, script)
+                raise PackError("appinfo names '%s' but it does not exist in %s/" % (name, PLUGIN_DIR))
+            z.writestr(name, data)
+    return out.getvalue(), 'plugin: %s' % ', '.join(['appinfo.json'] + names)
 
 
 def selftest():
@@ -106,43 +141,58 @@ def selftest():
                 z.writestr(name, data)
         return b.getvalue()
 
-    good = {'uuid': 'x', 'plugin': {'script': 'p.js',
-            'definesPermissions': [{'name': 'Glucose', 'label': 'Read', 'kind': 'read'}]}}
-    files = {'p.js': b'plugin-src'}
-    out, msg = pack(make(good), files.get)
+    out, _ = pack_face(make({'uuid': 'f'}))
     with zipfile.ZipFile(io.BytesIO(out)) as z:
+        assert json.loads(z.read('appinfo.json'))['manifestVersion'] == 2, 'face: manifestVersion set'
+        assert z.read('pebble-js-app.js') == b'js', 'face: other entries kept'
+        assert z.namelist()[0] == 'appinfo.json', 'face: appinfo first'
+    already = make({'uuid': 'f', 'manifestVersion': 2})
+    out2, msg2 = pack_face(already)
+    assert out2 == already and 'unchanged' in msg2, 'face: retires itself'
+
+    good = {'name': 'g', 'author': 'A', 'version': '1.0.0',
+            'pebble': {'displayName': 'G', 'uuid': 'p', 'projectType': 'plugin', 'configPage': 'config.html',
+                       'plugin': {'script': 'plugin.js',
+                                  'definesPermissions': [{'name': 'Glucose', 'label': 'Read', 'kind': 'read'}]}}}
+    files = {'plugin.js': b'src', 'config.html': b'<html>'}
+    out3, _ = pack_plugin_only(good, files.get)
+    with zipfile.ZipFile(io.BytesIO(out3)) as z:
         info = json.loads(z.read('appinfo.json'))
-        assert info['manifestVersion'] == 2, 'manifestVersion set'
-        assert z.read('p.js') == b'plugin-src', 'script added'
-        assert z.read('pebble-js-app.js') == b'js', 'other entries kept'
-        assert z.namelist()[0] == 'appinfo.json', 'appinfo first'
-    already = make(dict(good, manifestVersion=2), [('p.js', b'x')])
-    out2, msg2 = pack(already, files.get)
-    assert out2 == already and 'already plugin-aware' in msg2, 'retires itself'
+        assert info['manifestVersion'] == 2 and info['uuid'] == 'p', 'plugin: appinfo'
+        assert info['shortName'] == 'G' and info['companyName'] == 'A' and info['versionLabel'] == '1.0.0', 'plugin: names'
+        assert z.read('plugin.js') == b'src' and z.read('config.html') == b'<html>', 'plugin: files added'
+        assert 'pebble-js-app.js' not in z.namelist(), 'plugin: no watchapp files'
+    url = json.loads(json.dumps(good))
+    url['pebble']['configPage'] = 'https://example.com/c.html'
+    with zipfile.ZipFile(io.BytesIO(pack_plugin_only(url, files.get)[0])) as z:
+        assert z.namelist() == ['appinfo.json', 'plugin.js'], 'plugin: a URL configPage is not bundled'
     for bad_def, needle in (({'name': 'Glu cose', 'label': 'L', 'kind': 'read'}, 'alphanumeric'),
                             ({'name': 'InvokeAction', 'label': 'L', 'kind': 'read'}, 'reserved'),
                             ({'name': 'G', 'label': ' ', 'kind': 'read'}, 'no label'),
                             ({'name': 'G', 'label': 'L', 'kind': 'bogus'}, 'needs a kind'),
                             ({'name': 'G', 'label': 'L', 'kind': 'dangerous'}, 'needs a kind')):
-        bad = {'uuid': 'x', 'plugin': {'script': 'p.js', 'definesPermissions': [bad_def]}}
+        bad = json.loads(json.dumps(good))
+        bad['pebble']['plugin']['definesPermissions'] = [bad_def]
         try:
-            pack(make(bad), files.get)
+            pack_plugin_only(bad, files.get)
         except PackError as e:
             assert needle in str(e), 'error mentions %s: %s' % (needle, e)
         else:
             raise AssertionError('accepted %r' % bad_def)
+    for broken, needle in ((dict(good, pebble=dict(good['pebble'], uuid='')), 'uuid'),
+                           (dict(good, pebble={'uuid': 'p'}), 'no plugin')):
+        try:
+            pack_plugin_only(broken, files.get)
+        except PackError as e:
+            assert needle in str(e), e
+        else:
+            raise AssertionError('accepted %r' % broken)
     try:
-        pack(make(good), {}.get)
+        pack_plugin_only(good, {'plugin.js': b'x'}.get)
     except PackError as e:
         assert 'does not exist' in str(e)
     else:
-        raise AssertionError('accepted a missing script')
-    try:
-        pack(make({'uuid': 'x'}), files.get)
-    except PackError as e:
-        assert 'no plugin block' in str(e)
-    else:
-        raise AssertionError('accepted a pbw without a plugin block')
+        raise AssertionError('accepted a missing config page')
     print('selftest passed')
 
 
@@ -152,27 +202,38 @@ def main(argv):
         return
     project = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     subprocess.run(['node', os.path.join('scripts', 'build-plugin.js'), '--check'], cwd=project, check=True)
-    pbw_path = os.path.join(project, 'build', os.path.basename(project) + '.pbw')
+    legacy = os.path.join(project, 'build', os.path.basename(project) + '.pbw')
     if '--no-build' not in argv:
         subprocess.run(['pebble', 'clean'], cwd=project, check=True)
         subprocess.run(['pebble', 'build'], cwd=project, check=True)
-    if not os.path.isfile(pbw_path):
-        raise PackError('%s not found: run pebble build' % pbw_path)
+    if not os.path.isfile(legacy):
+        raise PackError('%s not found: run pebble build' % legacy)
 
-    def read_project_file(rel):
-        path = os.path.join(project, rel)
+    with open(legacy, 'rb') as f:
+        face, face_msg = pack_face(f.read())
+    face_path = os.path.join(project, 'build', FACE_OUTPUT)
+    with open(face_path, 'wb') as f:
+        f.write(face)
+
+    plugin_dir = os.path.join(project, PLUGIN_DIR)
+    with open(os.path.join(plugin_dir, 'package.json')) as f:
+        pkg = json.load(f)
+
+    def read_file(rel):
+        path = os.path.join(plugin_dir, rel)
         if not os.path.isfile(path):
             return None
         with open(path, 'rb') as f:
             return f.read()
 
-    with open(pbw_path, 'rb') as f:
-        data, message = pack(f.read(), read_project_file)
-    out_path = os.path.join(project, 'build', OUTPUT_NAME)
-    with open(out_path, 'wb') as f:
-        f.write(data)
-    print('%s; wrote %s (legacy pbw: %s)' % (message, os.path.relpath(out_path, project),
-                                             os.path.relpath(pbw_path, project)))
+    plugin, plugin_msg = pack_plugin_only(pkg, read_file)
+    plugin_path = os.path.join(project, 'build', PLUGIN_OUTPUT)
+    with open(plugin_path, 'wb') as f:
+        f.write(plugin)
+    rel = lambda p: os.path.relpath(p, project)
+    print('%s; wrote %s' % (face_msg, rel(face_path)))
+    print('%s; wrote %s' % (plugin_msg, rel(plugin_path)))
+    print('legacy watchface (cannot read plugins): %s' % rel(legacy))
 
 
 if __name__ == '__main__':

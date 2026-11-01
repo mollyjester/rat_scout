@@ -90,15 +90,17 @@ Every non-trivial function gets a block comment:
 
 ## Plugin Conventions (src/plugin-src/)
 - ES5 plus `Promise`; no `require()` of anything outside the repo (the bundler only resolves relative paths).
-- Never edit `src/plugin/index.js`: change `src/plugin-src/` (or a bundled module) and run `node scripts/build-plugin.js`. Commit the regenerated file together with its sources; `test/plugin.test.js` fails if it is stale.
-- No state in variables: the plugin is started fresh for each request. Use localStorage (shared with PKJS) and document every new key in ARCHITECTURE.md "Shared localStorage keys".
+- Never edit `plugin/plugin.js`: change `src/plugin-src/` (or a bundled module such as `src/pkjs/glucose.js`) and run `node scripts/build-plugin.js`. Commit the regenerated file together with its sources; `test/plugin.test.js` fails if it is stale.
+- No state in variables: the plugin is started fresh for each request. Use the plugin's own localStorage (not shared with the watchface: different uuid) and document every new key in ARCHITECTURE.md "Plugin storage keys".
+- Plugin settings live only in the plugin (`src/plugin-src/settings.js`, page `plugin/config.html`, channel `Pebble.sendMessage('plugin', …)` → `handleConfigMessage`). Secrets go in `Pebble.secureStorage` and never back to the page (send `hasPassword`, not the password). Never add Dexcom fields to the watchface's Clay or Dexcom calls to `src/pkjs/`: the face is "plugin only".
 - Only use the runtime APIs the preview guide lists (quoted in the `src/plugin-src/xhr_shim.js` header: `fetch`, `localStorage`, `console`, `Pebble.*`, ...). Anything else (XHR, timers) goes through the bundle-scope bindings in `scripts/build-plugin.js`.
 - Never read a browser global in plugin code, not even with `typeof`: on Android `setTimeout`, `XMLHttpRequest`, `window`, `self` etc. are getters that throw, and the error is swallowed silently (ARCHITECTURE, "Verification status"). Host globals are probed only in `scripts/build-plugin.js`, inside try/catch.
-- Every property/shape the plugin emits must be declared in `package.json` `plugin.sources[].properties` (the phone drops undeclared shapes); `test/plugin.test.js` enforces this.
+- Every property/shape the plugin emits must be declared in `plugin/package.json` `plugin.sources[].properties` (the phone drops undeclared shapes); `test/plugin.test.js` enforces this.
 - Never log credentials, Dexcom account or session IDs, API keys, or device coordinates: logs are read from live phones (`scripts/device-check.sh`). Log presence instead ("Session ID received").
 - Never try wrong passwords, failing logins or lockout against the real Dexcom service (emulator or phone). Dexcom's lockout thresholds are permanently UNVERIFIED by decision. Use the mocked fetch in `test/helpers/plugin_host.js`; `scripts/plugin-smoke.sh` uses fake credentials and blocks the network.
-- Never publish a plugin pbw to the appstore (preview guide: "Don't ship anything that uses/offers plugins to the app store yet"); sideload only.
-- Design (modes, envelopes, localStorage keys, guard, verification status): `.github/ARCHITECTURE.md`, "Plugin (preview)". Build and packaging commands: README, "Plugin pbw".
+- Keep `Internet` domains per pbw: Dexcom domains only in `plugin/package.json`, weather/astronomy only in `package.json`.
+- Never publish either pbw (`build/rat-scout.pbw`, `build/rat-scout-glucose.pbw`) to the appstore (preview guide: "Don't ship anything that uses/offers plugins to the app store yet"); sideload only.
+- Design (modes, envelopes, localStorage keys, guard, verification status): `.github/ARCHITECTURE.md`, "Plugin (preview)". Build and packaging commands: README, "Plugin pbws".
 
 ## Testing Conventions
 - Test files: `test/*.test.js`, plain Node.js, no frameworks

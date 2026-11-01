@@ -32,7 +32,7 @@ global.XMLHttpRequest = function() { return new FakeXHR(); };
 global.setTimeout = global.setTimeout; // already available
 global.clearTimeout = global.clearTimeout;
 
-var Dexcom = require('../src/pkjs/dexcom');
+var Dexcom = require('../src/plugin-src/dexcom');
 
 var passed = 0;
 var failed = 0;

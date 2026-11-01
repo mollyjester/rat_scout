@@ -1,5 +1,5 @@
 /**
- * Loads the generated plugin bundle (src/plugin/index.js) into a vm context
+ * Loads the generated plugin bundle (plugin/plugin.js) into a vm context
  * shaped like the plugin runtime: fetch, localStorage, console, Pebble, and
  * deliberately no setTimeout and no XMLHttpRequest.
  */
@@ -8,7 +8,8 @@ var fs = require('fs');
 var path = require('path');
 var vm = require('vm');
 
-var BUNDLE = path.join(__dirname, '..', '..', 'src', 'plugin', 'index.js');
+var BUNDLE = path.join(__dirname, '..', '..', 'plugin', 'plugin.js');
+var Settings = require('../../src/plugin-src/settings');
 
 // The Android host's LOCKDOWN_JS (mobileapp libpebble3 js/JsEngine.android.kt) turns these
 // globals into getters that throw, before the plugin script runs. fetch, localStorage and
@@ -69,8 +70,11 @@ function fakeDexcom(opts) {
 /**
  * Load the bundle.
  * @param {Object} opts - {fetch, storage (object of initial values), now (ms), source (bundle text),
- *   lockdown (default true: apply the Android host's throwing-getter lockdown first)}
- * @returns {Object} {context, handler, store, request(req) -> Promise<{data}|{error}>, setNow(ms)}
+ *   settings ({DEX_LOGIN, DEX_PASSWORD, DEX_REGION, BG_UNITS}: written where the plugin keeps
+ *   them, the password in secureStorage), lockdown (default true: apply the Android host's
+ *   throwing-getter lockdown first)}
+ * @returns {Object} {context, handlers, store, secure, refreshed, request(req), config(msg),
+ *   setSettings(s), setNow(ms)}
  */
 function load(opts) {
     opts = opts || {};
@@ -79,6 +83,18 @@ function load(opts) {
     var clock = { t: opts.now || 1700000100000 };
     var handlers = {};
     var logs = [];
+    var secure = {};
+    var refreshed = [];
+    function setSettings(s) {
+        s = s || {};
+        [[Settings.LOGIN_KEY, s.DEX_LOGIN], [Settings.REGION_KEY, s.DEX_REGION], [Settings.UNITS_KEY, s.BG_UNITS]]
+            .forEach(function(kv) {
+                if (kv[1] === undefined) delete store[kv[0]]; else store[kv[0]] = String(kv[1]);
+            });
+        if (s.DEX_PASSWORD === undefined) delete secure[Settings.PASSWORD_KEY];
+        else secure[Settings.PASSWORD_KEY] = String(s.DEX_PASSWORD);
+    }
+    setSettings(opts.settings);
     function FakeDate(v) { return arguments.length ? new Date(v) : new Date(clock.t); }
     FakeDate.now = function() { return clock.t; };
     var context = {
@@ -97,7 +113,14 @@ function load(opts) {
         },
         fetch: opts.fetch || fakeDexcom(),
         Pebble: {
-            registerSourceHandler: function(h) { handlers.source = h; }
+            registerSourceHandler: function(h) { handlers.source = h; },
+            registerConfigHandler: function(h) { handlers.config = h; },
+            refreshSources: function(keys) { refreshed.push(keys); },
+            secureStorage: {
+                getItem: function(k) { return Promise.resolve(Object.prototype.hasOwnProperty.call(secure, k) ? secure[k] : null); },
+                setItem: function(k, v) { secure[k] = String(v); return Promise.resolve(); },
+                removeItem: function(k) { delete secure[k]; return Promise.resolve(); }
+            }
         }
     };
     vm.createContext(context);
@@ -115,10 +138,20 @@ function load(opts) {
         });
     }
 
+    function config(message) {
+        return new Promise(function(resolve) {
+            handlers.config(message, function(reply) { resolve(JSON.parse(JSON.stringify(reply))); });
+        });
+    }
+
     return {
         context: context,
         handlers: handlers,
         store: store,
+        secure: secure,
+        refreshed: refreshed,
+        config: config,
+        setSettings: setSettings,
         logs: logs,
         request: request,
         setNow: function(ms) { clock.t = ms; },

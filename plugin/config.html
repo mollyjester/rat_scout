@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rat Scout Glucose</title>
+<!--
+  Settings page of the Rat Scout Glucose plugin (configPage in plugin/package.json, bundled in
+  the pbw). It talks to the plugin over the settings-page channel: Pebble.sendMessage("plugin",
+  {type: "load" | "save"}), answered by handleConfigMessage in src/plugin-src/main.js.
+  Self-contained on purpose: a settings page may only load from domains the plugin declares.
+  The stored password never comes back to the page, only whether one is set.
+-->
+<style>
+  :root { color-scheme: light dark; --accent: #e8573f; --muted: rgba(128, 128, 128, .8); }
+  body { font: 16px system-ui, -apple-system, sans-serif; margin: 0; padding: 20px; max-width: 520px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  p.hint { font-size: 13px; color: var(--muted); margin: 0 0 20px; }
+  label { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 16px 0 6px; }
+  input, select { box-sizing: border-box; width: 100%; padding: 10px; font-size: 16px; border-radius: 8px;
+    border: 1px solid rgba(128, 128, 128, .5); background: transparent; color: inherit; }
+  button { margin-top: 24px; width: 100%; padding: 12px; font-size: 16px; border: 0; border-radius: 8px;
+    background: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; }
+  #status { margin-top: 12px; font-size: 14px; min-height: 1.4em; }
+</style>
+</head>
+<body>
+<h1>Rat Scout Glucose</h1>
+<p class="hint">Your Dexcom Share account. Watchfaces and apps you allow read the latest reading from this plugin.</p>
+
+<label for="login">Dexcom login</label>
+<input id="login" autocomplete="username" autocapitalize="off" spellcheck="false">
+
+<label for="password">Dexcom password</label>
+<input id="password" type="password" autocomplete="current-password">
+
+<label for="region">Region</label>
+<select id="region">
+  <option value="ous">Outside US</option>
+  <option value="us">US</option>
+  <option value="jp">Japan</option>
+</select>
+
+<label for="units">Units</label>
+<select id="units">
+  <option value="mg/dL">mg/dL</option>
+  <option value="mmol/L">mmol/L</option>
+</select>
+
+<button id="save" disabled>Save</button>
+<div id="status">Waiting for the plugin…</div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var status = $('status');
+  var save = $('save');
+
+  function show(text) { status.textContent = text; }
+
+  function load() {
+    Pebble.sendMessage('plugin', { type: 'load' }).then(function (s) {
+      $('login').value = s.login || '';
+      $('region').value = s.region || 'ous';
+      $('units').value = s.units || 'mg/dL';
+      $('password').value = '';
+      $('password').placeholder = s.hasPassword ? 'Saved (leave empty to keep)' : '';
+      save.disabled = false;
+      show('');
+    }, function (e) { show('Could not load settings: ' + e); });
+  }
+
+  save.onclick = function () {
+    save.disabled = true;
+    show('Saving…');
+    Pebble.sendMessage('plugin', {
+      type: 'save',
+      login: $('login').value,
+      password: $('password').value,
+      region: $('region').value,
+      units: $('units').value
+    }).then(function (r) {
+      if (r && r.ok) { show('Saved.'); load(); } else { show('Not saved: ' + ((r && r.error) || 'unknown error')); save.disabled = false; }
+    }, function (e) { show('Not saved: ' + e); save.disabled = false; });
+  };
+
+  // The plugin is started when the page opens; wait for it before sending.
+  Pebble.addEventListener('ready', function (e) {
+    if (e && e.target === 'plugin') load();
+  });
+})();
+</script>
+</body>
+</html>

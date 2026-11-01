@@ -1,16 +1,18 @@
-// Rat Scout plugin: serves health/glucose from Dexcom Share. ES5 + Promise.
+// Rat Scout Glucose plugin: serves health/glucose from Dexcom Share. ES5 + Promise.
 //
-// Source of truth for the code shipped as src/plugin/index.js, which
-// scripts/build-plugin.js generates from this file and its requires. Never
-// edit src/plugin/index.js by hand.
+// Source of truth for the code shipped as plugin/plugin.js (the plugin-only pbw), which
+// scripts/build-plugin.js generates from this file and its requires. Never edit
+// plugin/plugin.js by hand. Its settings (Dexcom account, units) come from the plugin's own
+// settings page, plugin/config.html (see settings.js).
 //
 // A plugin is started fresh for each request (Pebble plugins preview guide,
 // "localStorage ... A plugin is started fresh for each request, so don't keep
 // state in variables"), so every piece of state lives in localStorage.
 
-var Dexcom = require('../pkjs/dexcom');
+var Dexcom = require('./dexcom');
 var Glucose = require('../pkjs/glucose');
-var DexcomGuard = require('../common/dexcom_guard');
+var DexcomGuard = require('./dexcom_guard');
+var Settings = require('./settings');
 
 var CATEGORY = 'health';
 var ITEM = 'glucose';
@@ -18,7 +20,7 @@ var INSTANCE_ID = 'dexcom';
 
 var CACHE_KEY = 'ratscout.plugin.lastReading';
 var LAST_ATTEMPT_KEY = 'ratscout.plugin.lastAttempt';
-// Same session keys as PKJS (index.js CONFIG.STORAGE_KEYS), so the two share one login.
+// Dexcom session, kept across runs (the plugin is started fresh for each request).
 var ACCOUNT_ID_KEY = 'accountId';
 var SESSION_ID_KEY = 'sessionId';
 
@@ -45,19 +47,6 @@ var TREND_TEXT = {
     NotComputable: 'Not computable',
     RateOutOfRange: 'Rate out of range'
 };
-
-/**
- * Parse Clay settings shared with PKJS.
- * @param {Object} storage - localStorage
- * @returns {Object} Settings, {} if missing or corrupt
- */
-function readSettings(storage) {
-    try {
-        return JSON.parse(storage.getItem('clay-settings')) || {};
-    } catch (e) {
-        return {};
-    }
-}
 
 /**
  * Read the cached reading.
@@ -202,23 +191,35 @@ function fetchFromDexcom(env, settings, useSession) {
  * Answer one source request.
  * @param {Object} request - {category, item, ...}
  * @param {Object} respond - Host respond object (data, error)
- * @param {Object} env - {storage, now, Dexcom}
+ * @param {Object} env - {storage, secure, now, Dexcom}
  * @returns {Promise} Settles after respond is called
  */
 function handleSourceRequest(request, respond, env) {
-    var storage = env.storage;
-    var t = env.now();
-
     if (!request || request.category !== CATEGORY || request.item !== ITEM) {
-        respond.error('INVALID_REQUEST', 'Rat Scout serves health/glucose only');
+        respond.error('INVALID_REQUEST', 'Rat Scout Glucose serves health/glucose only');
         return Promise.resolve();
     }
+    return Settings.load(env.storage, env.secure).then(function(settings) {
+        return answer(respond, env, settings);
+    }).then(null, function(e) {
+        respond.error('UNKNOWN', String(e && e.message ? e.message : e));
+    });
+}
 
-    var settings = readSettings(storage);
-    var units = settings.BG_UNITS || Glucose.DEFAULT_BG_UNITS;
+/**
+ * Answer a health/glucose request with loaded settings.
+ * @param {Object} respond - Host respond object
+ * @param {Object} env - {storage, now, Dexcom}
+ * @param {Object} settings - Settings.load() result
+ * @returns {Promise} Settles after respond is called
+ */
+function answer(respond, env, settings) {
+    var storage = env.storage;
+    var t = env.now();
+    var units = settings.BG_UNITS;
 
     if (!settings.DEX_LOGIN || !settings.DEX_PASSWORD) {
-        console.log('No Dexcom credentials in Rat Scout settings');
+        console.log('No Dexcom account set on the Rat Scout Glucose settings page');
         respond.data(emptyEnvelope(t));
         return Promise.resolve();
     }
@@ -304,14 +305,57 @@ function handleSourceRequest(request, respond, env) {
     });
 }
 
+/**
+ * Answer the settings page (plugin/config.html).
+ * 'load' returns what the page shows (never the password); 'save' stores a submission, drops
+ * the session and throttle so the new account is tried at once, and refreshes subscribers.
+ * @param {Object} message - {type: 'load'|'save', ...}
+ * @param {Function} respond - Reply to the page
+ * @param {Object} env - {storage, secure, refreshSources}
+ * @returns {Promise} Settles after respond is called
+ */
+function handleConfigMessage(message, respond, env) {
+    var type = message && message.type;
+    if (type === 'load') {
+        return Settings.view(env.storage, env.secure).then(respond, function(e) {
+            respond({ ok: false, error: String(e && e.message ? e.message : e) });
+        });
+    }
+    if (type === 'save') {
+        return Settings.save(env.storage, env.secure, message).then(function() {
+            env.storage.removeItem(ACCOUNT_ID_KEY);
+            env.storage.removeItem(SESSION_ID_KEY);
+            env.storage.removeItem(LAST_ATTEMPT_KEY);
+            if (env.refreshSources) env.refreshSources([CATEGORY + '/' + ITEM]);
+            respond({ ok: true });
+        }, function(e) {
+            respond({ ok: false, error: String(e && e.message ? e.message : e) });
+        });
+    }
+    respond({ ok: false, error: 'unknown message type' });
+    return Promise.resolve();
+}
+
+/** @returns {Object} The host environment for handlers */
+function hostEnv() {
+    return {
+        storage: localStorage,
+        secure: Pebble.secureStorage,
+        refreshSources: typeof Pebble.refreshSources === 'function' ? function(keys) { Pebble.refreshSources(keys); } : null,
+        now: function() { return Date.now(); },
+        Dexcom: Dexcom
+    };
+}
+
 if (typeof Pebble !== 'undefined' && Pebble && typeof Pebble.registerSourceHandler === 'function') {
     Pebble.registerSourceHandler(function(request, respond) {
-        return handleSourceRequest(request, respond, {
-            storage: localStorage,
-            now: function() { return Date.now(); },
-            Dexcom: Dexcom
-        });
+        return handleSourceRequest(request, respond, hostEnv());
     });
+    if (typeof Pebble.registerConfigHandler === 'function') {
+        Pebble.registerConfigHandler(function(message, respond) {
+            return handleConfigMessage(message, respond, hostEnv());
+        });
+    }
 }
 
 module.exports = {
@@ -320,5 +364,6 @@ module.exports = {
     READING_FRESH_SEC: READING_FRESH_SEC,
     ATTEMPT_THROTTLE_MS: ATTEMPT_THROTTLE_MS,
     buildInstance: buildInstance,
-    handleSourceRequest: handleSourceRequest
+    handleSourceRequest: handleSourceRequest,
+    handleConfigMessage: handleConfigMessage
 };

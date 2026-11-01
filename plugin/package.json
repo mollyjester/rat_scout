@@ -1,0 +1,83 @@
+{
+    "name": "rat-scout-glucose",
+    "author": "Sergei Likharev",
+    "version": "1.0.0",
+    "private": true,
+    "pebble": {
+        "displayName": "Rat Scout Glucose",
+        "uuid": "01523c90-aa11-4a82-8e00-58cc3e98472c",
+        "sdkVersion": "3",
+        "projectType": "plugin",
+        "configPage": "config.html",
+        "usesPermissions": [
+            {
+                "name": "Internet",
+                "parameters": {
+                    "domains": [
+                        "share2.dexcom.com",
+                        "shareous1.dexcom.com",
+                        "share.dexcom.jp"
+                    ]
+                }
+            }
+        ],
+        "plugin": {
+            "description": "Latest Dexcom Share CGM reading for the account set on this plugin's settings page: glucose in the chosen units and in mg/dL, delta, trend and reading time.",
+            "script": "plugin.js",
+            "definesPermissions": [
+                {
+                    "name": "Glucose",
+                    "label": "Read your glucose readings",
+                    "kind": "read"
+                }
+            ],
+            "sources": [
+                {
+                    "category": "health",
+                    "items": [
+                        "glucose"
+                    ],
+                    "properties": {
+                        "name": [
+                            "shortText"
+                        ],
+                        "status": [
+                            "shortText",
+                            "longText"
+                        ],
+                        "glucose": [
+                            "numericValue",
+                            "shortText",
+                            "longText"
+                        ],
+                        "delta": [
+                            "numericValue",
+                            "shortText"
+                        ],
+                        "glucose_mgdl": [
+                            "numericValue"
+                        ],
+                        "delta_mgdl": [
+                            "numericValue"
+                        ],
+                        "trend": [
+                            "shortText",
+                            "longText"
+                        ],
+                        "trend_code": [
+                            "longText"
+                        ],
+                        "reading_time": [
+                            "timestamp"
+                        ]
+                    },
+                    "callerPermissions": [
+                        "Glucose"
+                    ],
+                    "supportsMultiple": false,
+                    "suggestedRefreshIntervalSec": 60
+                }
+            ]
+        }
+    }
+}

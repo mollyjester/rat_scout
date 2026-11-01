@@ -1,5 +1,6 @@
 /**
- * Tests for src/pkjs/glucose_plugin.js (glucose source selection).
+ * Tests for src/pkjs/glucose_plugin.js (the watchface's glucose source: the Rat Scout Glucose
+ * plugin only).
  *
  * Run: node test/glucose_plugin.test.js
  */
@@ -8,8 +9,6 @@ var fs = require('fs');
 var path = require('path');
 var GP = require('../src/pkjs/glucose_plugin');
 var Glucose = require('../src/pkjs/glucose');
-var DexcomGuard = require('../src/common/dexcom_guard');
-var pkg = require('../package.json');
 
 var passed = 0;
 var failed = 0;
@@ -25,7 +24,8 @@ function assert(condition, message) {
 }
 
 var MSG = 1;
-var UUID = 'f41022a2-b149-42ac-a98d-2afbf84ca841';
+
+var UUID = require('../plugin/package.json').pebble.uuid;
 var LISTED = [{ uuid: UUID, name: 'Rat Scout', sources: [{ category: 'health', items: ['glucose'] }] }];
 
 /**
@@ -38,7 +38,6 @@ function harness(opts) {
     var h = {
         t: 1700000000000,
         sent: [],
-        direct: 0,
         subs: [],
         timers: [],
         settings: opts.settings || { BG_UNITS: 'mg/dL', BG_SHOW_DELTA: true }
@@ -57,17 +56,12 @@ function harness(opts) {
         };
     }
     h.pebble = pebble;
-    h.storage = { m: {}, getItem: function(k) { return this.m[k] === undefined ? null : this.m[k]; },
-        setItem: function(k, v) { this.m[k] = String(v); }, removeItem: function(k) { delete this.m[k]; } };
     h.gp = GP.create({
         Pebble: pebble,
         Glucose: Glucose,
-        DexcomGuard: DexcomGuard,
-        storage: h.storage,
         settings: function() { return h.settings; },
         msgType: MSG,
         send: function(d) { h.sent.push(d); },
-        fetchDirect: function() { h.direct++; },
         now: function() { return h.t; },
         setTimeout: function(fn, ms) { h.timers.push({ fn: fn, at: h.t + ms, done: false }); return h.timers.length - 1; },
         clearTimeout: function(id) { if (h.timers[id]) h.timers[id].done = true; }
@@ -107,23 +101,22 @@ console.log('detection');
 (function() {
     var cases = [
         ['no plugin API', { noApi: true }],
-        ['empty plugin list', { plugins: [] }],
+        ['empty plugin list (not installed, or preview off)', { plugins: [] }],
         ['enumeratePlugins throws', { enumerateThrows: true }],
-        ['our uuid without the source', { plugins: [{ uuid: UUID, sources: [{ category: 'health', items: ['steps'] }] }] }],
+        ['plugin uuid without the source', { plugins: [{ uuid: UUID, sources: [{ category: 'health', items: ['steps'] }] }] }],
         ['another plugin serving health/glucose', { plugins: [{ uuid: 'other', sources: [{ category: 'health', items: ['glucose'] }] }] }]
     ];
     cases.forEach(function(c) {
         var h = harness(c[1]);
         h.gp.start();
-        assert(h.gp.mode() === 'direct' && h.gp.shouldFetchDirect() && h.subs.length === 0, c[0] + ' → direct, no subscription');
+        assert(h.gp.mode() === 'unavailable' && h.subs.length === 0, c[0] + ' → unavailable, no subscription');
+        assert(h.sent.length === 1 && h.sent[0].BG === '---' && h.sent[0].TIMESTAMP === 0, c[0] + ' → "---" sent');
     });
     var h = harness();
     h.gp.start();
-    assert(h.gp.mode() === 'pending', 'available → pending');
-    assert(h.sub().cfg.plugin === UUID, 'subscribes with plugin: OWN_UUID');
+    assert(h.gp.mode() === 'pending' && h.sent.length === 0, 'available → pending, nothing sent yet');
+    assert(h.sub().cfg.plugin === UUID, 'subscribes with plugin: PLUGIN_UUID');
     assert(h.sub().cfg.category === 'health' && h.sub().cfg.item === 'glucose', 'subscribes to health/glucose');
-    assert(!h.gp.shouldFetchDirect(), 'no direct fetch while pending');
-    assert(h.gp.guardFor() === undefined, 'no guard while pending');
 })();
 
 // 2. Lossless output
@@ -152,163 +145,116 @@ console.log('\nlossless output');
     assert(busy === null, 'busy instance → send nothing');
 })();
 
-// 3. Plugin gate
-console.log('\nplugin gate');
+// 3. Gate
+console.log('\ngate');
 (function() {
     var h = harness();
     h.gp.start();
     h.data(reading(120, 5));
     h.data(reading(120, 5));
-    assert(h.sent.length === 1, 'same envelope twice sends once');
-    assert(h.gp.mode() === 'plugin', 'mode plugin');
+    assert(h.sent.length === 1 && h.gp.mode() === 'plugin', 'same envelope twice sends once; mode plugin');
     h.data(reading(125, 5, 1700000300));
     assert(h.sent.length === 2, 'new reading is sent');
     h.data({ instances: [] });
     h.data({ instances: [] });
     assert(h.sent.length === 3 && h.sent[2].BG === '---', 'empty instances send "---" once');
+    h.data({ instances: [{ instanceId: 'dexcom', properties: { status: { shortText: { text: 'busy' } } } }] });
+    assert(h.sent.length === 3, 'busy envelope sends nothing (display keeps its value)');
 
-    var f = harness();
-    f.gp.start();
-    f.error('PERMISSION_DENIED');
-    f.gp.recordingSend(function(d) { f.sent.push(d); })(directDict(130, 2, 1700000600, f.settings), 'BG');
-    f.data(reading(130, 2, 1700000600));
-    assert(f.sent.length === 1, 'after fallback, a plugin envelope equal to the last direct send is skipped');
-    assert(f.gp.mode() === 'plugin', 'and the mode returns to plugin');
-    f.data({ instances: [{ instanceId: 'dexcom', properties: { status: { shortText: { text: 'busy' } } } }] });
-    assert(f.sent.length === 1, 'busy envelope sends nothing (display keeps its value)');
+    var u = harness({ plugins: [] });
+    u.gp.start();
+    u.gp.start();
+    assert(u.sent.length === 1, 'repeated "---" while unavailable is sent once');
 })();
 
-// 4. The direct path is never suppressed
-console.log('\ndirect path');
-(function() {
-    var h = harness({ plugins: [] });
-    h.gp.start();
-    var out = [];
-    var send = h.gp.recordingSend(function(d) { out.push(d); });
-    var d = directDict(120, 5, 1700000000, h.settings);
-    send(d, 'BG');
-    send(d, 'BG');
-    assert(out.length === 2, 'same reading twice through recordingSend sends twice (catch-up flow)');
-    h.gp.onSettingsChanged();
-    send(d, 'BG');
-    assert(out.length === 3, 'after settings change in direct mode the re-send goes out');
-    send({ MSG_TYPE: 0, BG_UNITS: 'mg/dL' }, 'Settings');
-    assert(out.length === 4, 'non-glucose messages pass through');
-})();
-
-// 5. Errors
+// 4. Errors
 console.log('\nerrors');
 (function() {
-    var h = harness();
-    h.gp.start();
-    h.error('PERMISSION_DENIED');
-    assert(h.gp.mode() === 'fallback' && h.direct === 1, 'PERMISSION_DENIED → fallback + one direct fetch');
-    assert(!h.sub().unsubscribed, 'subscription kept');
-    h.error('PERMISSION_DENIED');
-    assert(h.direct === 1, 'repeated error in fallback does not fetch again');
-    h.data(reading(120, 5));
-    assert(h.gp.mode() === 'plugin', 'good data → plugin');
-
-    var u = harness();
-    u.gp.start();
-    u.data(reading(120, 5));
-    u.error('PLUGIN_UNAVAILABLE');
-    assert(u.gp.mode() === 'fallback', 'PLUGIN_UNAVAILABLE → fallback');
+    ['PERMISSION_DENIED', 'PLUGIN_UNAVAILABLE'].forEach(function(code) {
+        var h = harness();
+        h.gp.start();
+        h.data(reading(120, 5));
+        h.error(code);
+        assert(h.gp.mode() === 'unavailable' && h.sent[h.sent.length - 1].BG === '---', code + ' → unavailable, "---"');
+        assert(!h.sub().unsubscribed, code + ' keeps the subscription');
+        h.data(reading(125, 5, 1700000300));
+        assert(h.gp.mode() === 'plugin' && h.sent[h.sent.length - 1].BG === '125', 'a later envelope returns to plugin');
+    });
 
     var t = harness();
     t.gp.start();
     t.data(reading(120, 5));
     t.error('TIMEOUT');
-    assert(t.gp.mode() === 'plugin', 'one TIMEOUT stays plugin');
+    assert(t.gp.mode() === 'plugin' && t.sent.length === 1, 'one TIMEOUT in plugin mode keeps the reading on screen');
     t.error('TIMEOUT');
-    assert(t.gp.mode() === 'fallback' && t.direct === 1, 'second TIMEOUT → fallback');
+    assert(t.gp.mode() === 'unavailable' && t.sent[1].BG === '---', 'second consecutive error → unavailable');
 
     var p = harness();
     p.gp.start();
     p.error('TIMEOUT');
-    assert(p.gp.mode() === 'fallback', 'TIMEOUT while pending → fallback');
+    assert(p.gp.mode() === 'unavailable', 'any error while pending → unavailable');
 
     var i = harness();
     i.gp.start();
     i.data(reading(120, 5));
     i.error('INVALID_REQUEST');
-    assert(i.sub().unsubscribed && i.gp.mode() === 'direct', 'INVALID_REQUEST → unsubscribed, direct');
-    assert(i.direct === 1, 'and fetches directly');
+    assert(i.sub().unsubscribed && i.gp.mode() === 'unavailable', 'INVALID_REQUEST → unsubscribed, unavailable');
 
     var g = harness();
     g.gp.start();
     g.advance(GP.PLUGIN_GRACE_MS - 1);
-    assert(g.gp.mode() === 'pending', 'still pending just before grace expiry');
+    assert(g.gp.mode() === 'pending', 'still pending just before the grace period ends');
     g.advance(1);
-    assert(g.gp.mode() === 'fallback' && g.direct === 1, 'grace expiry → fallback + a direct fetch');
-
-    var q = harness();
-    q.gp.start();
-    q.data(reading(120, 5));
-    q.advance(GP.PLUGIN_GRACE_MS * 2);
-    assert(q.gp.mode() === 'plugin' && q.direct === 0, 'grace timer cancelled by data');
+    assert(g.gp.mode() === 'unavailable' && g.sent[0].BG === '---', 'grace expiry → unavailable, "---"');
+    g.data(reading(120, 5));
+    assert(g.gp.mode() === 'plugin', 'a late envelope still returns to plugin');
 })();
 
-// 6. Watchdog
-console.log('\nre-check in direct mode');
+// 5. Re-check while unavailable
+console.log('\nre-check');
 (function() {
-    // The plugin preview turned on while the face runs: the plugin appears after start().
+    // The plugin installed, or the preview turned on, while the face runs.
     var opts = { plugins: [] };
     var h = harness(opts);
     h.gp.start();
-    assert(h.gp.mode() === 'direct', 'starts direct');
-    assert(h.gp.recheck() === false && h.subs.length === 0, 'still unavailable → stays direct, no subscription');
+    assert(h.gp.recheck() === false && h.subs.length === 0 && h.sent.length === 1, 'still missing → no subscription, no second "---"');
     opts.plugins = LISTED;
-    assert(h.gp.recheck() === true, 'plugin appeared → recheck subscribes');
-    assert(h.gp.mode() === 'pending' && h.sub().cfg.plugin === UUID, '→ pending, subscribed to our plugin');
-    assert(!h.gp.shouldFetchDirect(), 'this cycle does not fetch directly');
+    assert(h.gp.recheck() === true && h.gp.mode() === 'pending' && h.sub().cfg.plugin === UUID, 'plugin appeared → subscribes');
     assert(h.gp.recheck() === false && h.subs.length === 1, 'recheck while pending does nothing');
     h.data(reading(120, 5));
-    assert(h.gp.mode() === 'plugin' && h.sent.length === 1, 'first envelope → plugin mode, sent');
-    assert(h.gp.recheck() === false && h.subs.length === 1, 'recheck in plugin mode does nothing');
+    assert(h.gp.mode() === 'plugin' && h.sent[h.sent.length - 1].BG === '120', 'first envelope → plugin, sent');
 
     var f = harness();
     f.gp.start();
     f.error('PERMISSION_DENIED');
-    assert(f.gp.mode() === 'fallback' && f.gp.recheck() === false && f.subs.length === 1, 'recheck in fallback does nothing (subscription kept)');
+    assert(f.gp.recheck() === false && f.subs.length === 1, 'unavailable with a live subscription: recheck does nothing');
 
     var i = harness();
     i.gp.start();
     i.error('INVALID_REQUEST');
-    assert(i.gp.mode() === 'direct' && i.gp.recheck() === false && i.subs.length === 1, 'INVALID_REQUEST pins direct: no re-subscribe');
-
-    var n = harness({ noApi: true });
-    n.gp.start();
-    assert(n.gp.recheck() === false && n.gp.mode() === 'direct', 'no plugin API → recheck is a no-op');
+    assert(i.gp.recheck() === false && i.subs.length === 1, 'INVALID_REQUEST pins: no re-subscribe');
 })();
 
+// 6. Watchdog
 console.log('\nwatchdog');
 (function() {
     var h = harness();
     h.gp.start();
     h.data(reading(120, 5));
-    var t0 = h.t;
-    h.gp.checkStall(t0 + 10 * 60000);
-    assert(h.gp.mode() === 'plugin', 'at 10 min nothing changes');
-    h.gp.checkStall(t0 + GP.STALL_MS + 1);
-    assert(h.gp.mode() === 'fallback', 'at 11 min + 1 ms → fallback');
-    assert(h.gp.shouldFetchDirect(), 'shouldFetchDirect is true');
-    assert(h.direct === 0, 'the watchdog leaves the fetch to fetchAllData');
-    assert(!h.sub().unsubscribed, 'unsubscribe not called');
+    h.gp.checkStall(h.t + 10 * 60 * 1000);
+    assert(h.gp.mode() === 'plugin', 'no envelope for 10 min: still plugin');
+    h.gp.checkStall(h.t + GP.STALL_MS + 1);
+    assert(h.gp.mode() === 'unavailable' && h.sent[h.sent.length - 1].BG === '---', 'more than 11 min: unavailable, "---"');
+    assert(!h.sub().unsubscribed, 'subscription kept');
     h.data(reading(125, 5, 1700000300));
-    assert(h.gp.mode() === 'plugin', 'a later onData returns to plugin');
-
-    var d = harness({ plugins: [] });
-    d.gp.start();
-    d.gp.checkStall(d.t + GP.STALL_MS * 3);
-    assert(d.gp.mode() === 'direct', 'never fires in direct mode');
+    assert(h.gp.mode() === 'plugin', 'a later envelope returns to plugin');
     var p = harness();
     p.gp.start();
-    p.gp.checkStall(p.t + GP.STALL_MS * 3);
-    assert(p.gp.mode() === 'pending', 'never fires in pending mode');
+    p.gp.checkStall(p.t + GP.STALL_MS + 1);
+    assert(p.gp.mode() === 'pending', 'watchdog does not act while pending');
 })();
 
-// 7. onSettingsChanged
+// 7. Settings saved
 console.log('\nonSettingsChanged');
 (function() {
     var h = harness();
@@ -317,36 +263,16 @@ console.log('\nonSettingsChanged');
     var first = h.sub();
     h.gp.onSettingsChanged();
     assert(first.unsubscribed && h.subs.length === 2, 'resubscribes');
-    h.settings = { BG_UNITS: 'mmol/L' };
     h.data(reading(120, 5));
-    assert(h.sent.length === 2 && h.sent[1].BG === '6.7', 'next envelope is sent even though the reading is unchanged');
-    h.gp.onSettingsChanged();
-    h.data(reading(120, 5));
-    assert(h.sent.length === 3, 'gate cleared even with identical output');
+    assert(h.sent.length === 2, 'gate cleared: the same reading is sent again (new units/delta apply)');
 })();
 
-// 8. Guard only in fallback
-console.log('\nguard');
-(function() {
-    var h = harness();
-    h.gp.start();
-    assert(h.gp.guardFor() === undefined, 'pending: no guard');
-    h.data(reading(120, 5));
-    assert(h.gp.guardFor() === undefined, 'plugin: no guard');
-    h.error('PERMISSION_DENIED');
-    var g = h.gp.guardFor();
-    assert(g && g.owner === 'pkjs' && typeof g.begin === 'function', 'fallback: pkjs guard');
-    var d = harness({ noApi: true });
-    d.gp.start();
-    assert(d.gp.guardFor() === undefined, 'direct: no guard');
-})();
-
-// 9. Constants and module hygiene
+// 8. Hygiene
 console.log('\nhygiene');
 (function() {
-    assert(GP.OWN_UUID === pkg.pebble.uuid, 'OWN_UUID matches package.json');
     var src = fs.readFileSync(path.join(__dirname, '..', 'src', 'pkjs', 'glucose_plugin.js'), 'utf8');
-    assert(src.indexOf('sendAppMessage') === -1, 'no Pebble.sendAppMessage in the module');
+    assert(src.indexOf('sendAppMessage') === -1, 'no direct Pebble.sendAppMessage (uses the send queue)');
+    assert(!/dexcom\.js|Dexcom\(/.test(src), 'no Dexcom access in the watchface');
 })();
 
 console.log('\nResults: ' + passed + ' passed, ' + failed + ' failed');

@@ -15,14 +15,15 @@
 #   callback URL               deliver the http://localhost:60000/?... address the
 #                              browser could not open (when pebble-tool runs in a
 #                              container the browser can't reach).
-#   install legacy|plugin      install build/<dir>.pbw or build/rat-scout-plugin.pbw
-#                              (built here) and capture logs.
+#   install face|glucose       install the watchface (build/rat-scout.pbw) or the Rat Scout
+#                              Glucose plugin (build/rat-scout-glucose.pbw), both built here,
+#                              and capture logs. Install the plugin before the face.
 #   logs                       capture logs without installing.
 #   screenshot                 save a watch screenshot.
 #   analyze LOG                summarise a captured log.
 #   steps                      print the checklist (operator action + command per step).
 #
-# Options for install/logs: --seconds N (default 120), --expect direct|pending|plugin|fallback,
+# Options for install/logs: --seconds N (default 120), --expect unavailable|pending|plugin,
 #   --name NAME (log file name). All: --out DIR (default .device-check, gitignored; not under build/, which pack-plugin.py cleans).
 #
 # Logs are redacted before they are written: UUIDs other than the app's and email
@@ -107,7 +108,6 @@ stats = [
     ('Plugin envelopes', r'Glucose plugin data: '),
     ('Plugin sends', r'Glucose gate: plugin send'),
     ('Duplicates skipped', r'Glucose gate: skipped duplicate'),
-    ('Direct sends', r'Glucose gate: direct send'),
     ('"---" sent', r'No glucose data( \(plugin\))? sent to Pebble successfully'),
     ('Full logins', r'Getting account ID'),
     ('Session logins ok', r'Session ID received'),
@@ -126,14 +126,14 @@ for label, pat in [('Permission', r'(?i)permission|NotAllowedError'), ('Crash', 
         for l in hits[:5]: print('    ' + l)
 if count(r'(App|Worker) fault'): fails.append('watch app crashed')
 nodata = count(r'No glucose data( \(plugin\))? sent to Pebble successfully')
-if nodata and nodata == count(r'Glucose gate: (plugin|direct) send'):
+if nodata and nodata == count(r'Glucose gate: plugin send'):
     print('WARN every glucose send was "---" (no reading from Dexcom, or a failure: check the log)')
 
-# The gate must never let the plugin path resend the last reading. Direct resends are expected.
-sends = [(m.group(1), m.group(2)) for l in lines for m in [re.search(r'Glucose gate: (plugin|direct) send ts=(\S+)', l)] if m]
-for (s1, t1), (s2, t2) in zip(sends, sends[1:]):
-    if s2 == 'plugin' and t2 == t1 and t2 != '0':
-        fails.append('plugin path resent ts=%s' % t2)
+# The gate must never resend the last reading.
+sends = [m.group(1) for l in lines for m in [re.search(r'Glucose gate: plugin send ts=(\S+)', l)] if m]
+for t1, t2 in zip(sends, sends[1:]):
+    if t2 == t1 and t2 != '0':
+        fails.append('resent ts=%s' % t2)
 if span >= 600:
     per5 = count(r'Fetching glucose readings') * 300.0 / span
     print('Reading fetches per 5 min: %.1f' % per5)
@@ -157,9 +157,9 @@ case "$CMD" in
     install)
         which="${ARGS[0]:-}"
         case "$which" in
-            plugin) python3 -I scripts/pack-plugin.py >/dev/null || { echo "pack-plugin failed" >&2; exit 1; }; pbw=build/rat-scout-plugin.pbw ;;
-            legacy) pebble build >/dev/null || { echo "pebble build failed" >&2; exit 1; }; pbw="build/$(basename "$PROJECT_ROOT").pbw" ;;
-            *) echo "install legacy|plugin" >&2; exit 2 ;;
+            face) python3 -I scripts/pack-plugin.py >/dev/null || { echo "pack-plugin failed" >&2; exit 1; }; pbw=build/rat-scout.pbw ;;
+            glucose) python3 -I scripts/pack-plugin.py >/dev/null || { echo "pack-plugin failed" >&2; exit 1; }; pbw=build/rat-scout-glucose.pbw ;;
+            *) echo "install face|glucose" >&2; exit 2 ;;
         esac
         # The pbw goes before the transport: `--phone` takes an optional value.
         capture "install-$which" install "$PROJECT_ROOT/$pbw" --logs
@@ -177,19 +177,20 @@ case "$CMD" in
 On-device checklist (Pebble app 1.16.x). "Operator" = done on the phone; "Run" = this script.
 Start a session first: login, open the printed URL, paste the failed localhost:60000 address to `callback`.
 
-1. Baseline. Operator: plugin preview OFF.          Run: install legacy --expect direct
-2. Plugin pbw, preview off. Operator: none.          Run: install plugin --expect direct
-3. Preview ON. Operator: Settings -> Plugins -> Plugins / permissions preview; restart the face;
-   approve the prompts (Dexcom, OWM, ipgeolocation domains, Location).
-                                                     Run: logs --seconds 180 --expect plugin
-4. Operator: check the Plugins tab lists Rat Scout and "Read your glucose readings (via Rat Scout)";
-   optionally show health/glucose in the Dashboard demo. Run: screenshot
-5. Operator: deny the Dexcom domain for Rat Scout.   Run: logs --seconds 180   (expect "---", no login storm)
-   Operator: allow it again.                         Run: logs --seconds 180 --expect plugin
-6. Operator: turn the preview OFF while the face runs. Run: logs --seconds 1080 (fallback within 11-16 min)
-7. Operator: change units in Clay (and the delta toggle). Run: logs --seconds 120; screenshot
-8. Wrong password: not on device. Covered by mocked unit tests only (never against real Dexcom).
-9. Long run, preview ON.                             Run: logs --seconds 1800 --expect plugin
+1. Plugin. Operator: plugin preview ON.              Run: install glucose
+   Operator: Apps -> Plugins -> Rat Scout Glucose -> Settings: enter the Dexcom account, Save.
+   Check its page lists only the three Dexcom domains.
+2. Watchface.                                         Run: install face --expect plugin --seconds 180
+   Operator: approve "Read your glucose readings (via Rat Scout Glucose)" if asked.
+   Check the face's page lists weather, location and that glucose permission, no Dexcom domains.
+3. Preview OFF while the face runs.                   Run: logs --seconds 900 --expect unavailable
+   ("---" after a PLUGIN_UNAVAILABLE error, or at the latest when the 11 min stall watchdog fires)
+   Preview ON again.                                  Run: logs --seconds 360 --expect plugin (re-check)
+4. Operator: change units/delta in Rat Scout's Clay settings. Run: logs --seconds 120; screenshot
+5. Operator: switch units on the plugin's settings page. Run: logs --seconds 120 (the face's display
+   units come from Clay; the plugin's units only change its own glucose/delta shapes)
+6. Wrong password: not on device. Covered by mocked unit tests only (never against real Dexcom).
+7. Long run, preview ON.                             Run: logs --seconds 1800 --expect plugin
    (about 6 reading fetches, no plugin resends, no crash)
 EOF
         ;;
