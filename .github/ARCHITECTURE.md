@@ -179,6 +179,7 @@ Log lines the checks rely on (PKJS): `Glucose source: mode=<mode>`, `Glucose plu
 | How Dexcom reports a wrong password | Secondary source: pydexcom's recorded Dexcom traffic (`tests/cassettes`, 2025-04-19) shows HTTP 500 `{"Code":"AccountPasswordInvalid"}` at both login steps; pydexcom also maps `SSO_InternalError` "Cannot Authenticate by AccountName/AccountId" and the lockout code `SSO_AuthenticateMaxAttemptsExceeded` (`dexcom.py` `_handle_error_code`). Never tried by us |
 | Lockout/rate-limit thresholds and duration; whether a new login invalidates older sessions | UNVERIFIED, permanently: never tested against the real service |
 | Atomicity of localStorage between plugin and PKJS | UNVERIFIED; the guard is best-effort |
+| Re-check: preview turned on while the face runs in `direct` | Phone-verified: on the next watch request `direct` → `pending` → `plugin` within 1 s, no face switch; the plugin reused the session the direct path had stored (no login), and the gate dropped its "---" because the direct path had already sent it |
 | Plugin logs over the developer connection | Phone-verified: `plugin>` lines arrive through CloudPebble (mobileapp `plugin/PluginLogs.kt`) |
 | The Dexcom session kept while no reading exists | Phone-verified on both paths: one login, then reading requests only (plugin: next poll after 60 s; direct, preview off: the watch's next request about 3 min later). The session used to be dropped on every failure, which meant a full login per poll |
 
