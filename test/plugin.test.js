@@ -62,7 +62,7 @@ test('happy path (mg/dL): every shape, glucose_mgdl is the raw value', function(
         assert(p.glucose.shortText.text === '120', 'glucose shortText is "120"');
         assert(p.glucose.numericValue.value === 120 && p.glucose.numericValue.unit === 'mg/dL', 'glucose numericValue in mg/dL');
         assert(p.glucose.numericValue.min === 40 && p.glucose.numericValue.max === 400, 'mg/dL range 40-400');
-        assert(p.glucose.longText.text === '120 mg/dL →', 'glucose longText');
+        assert(p.glucose.longText.text === '120 mg/dL', 'glucose longText is the reading only (no trend)');
         assert(p.delta.shortText.text === '+5' && p.delta.numericValue.value === 5, 'delta +5');
         assert(p.delta_mgdl.numericValue.value === 5, 'delta_mgdl 5');
         assert(p.trend.shortText.text === '→' && p.trend.longText.text === 'Steady', 'trend arrow + text');
@@ -99,7 +99,7 @@ test('trend arrows follow pydexcom (None empty, RateOutOfRange "-")', function()
     }
     return run('None').then(function(p) {
         assert(p.trend.shortText.text === '', 'None: empty arrow');
-        assert(p.glucose.longText.text === '120 mg/dL', 'None: long text has no arrow');
+        assert(p.glucose.longText.text === '120 mg/dL', 'None: long text is the reading');
         return run('RateOutOfRange');
     }).then(function(p) {
         assert(p.trend.shortText.text === '-', 'RateOutOfRange: "-"');

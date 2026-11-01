@@ -100,7 +100,8 @@ function buildInstance(reading, units) {
         glucose: {
             numericValue: { value: parseFloat(text), unit: units, min: range.min, max: range.max },
             shortText: { text: text },
-            longText: { text: arrow ? text + ' ' + units + ' ' + arrow : text + ' ' + units }
+            // Every shape of a property is the same reading (preview guide, "Shapes"): no trend here.
+            longText: { text: text + ' ' + units }
         },
         glucose_mgdl: { numericValue: { value: reading.value, unit: 'mg/dL' } },
         trend: {

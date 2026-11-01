@@ -100,7 +100,7 @@ The pbw also carries a phone-side plugin (Pebble plugins preview, mobile app 1.1
 |---|---|---|
 | `name` | shortText | "Dexcom" |
 | `status` | shortText, longText | shortText `ok` (longText "Latest reading") on every reading instance; shortText `busy` (longText "Signing in to Dexcom") on an instance that has only `name` and `status`, sent when Dexcom was not called (login lock held, or throttled) and no reading for these credentials is cached |
-| `glucose` | numericValue, shortText, longText | User's units (`clay-settings` `BG_UNITS`, default mg/dL), formatted by glucose.js `formatBGValue`. numericValue range: mg/dL min 40, max 400; mmol/L min 2.2, max 22.2. Long: value, units, arrow ("120 mg/dL →"; no arrow when the trend is `None`) |
+| `glucose` | numericValue, shortText, longText | User's units (`clay-settings` `BG_UNITS`, default mg/dL), formatted by glucose.js `formatBGValue`. numericValue range: mg/dL min 40, max 400; mmol/L min 2.2, max 22.2. Long: value and units ("120 mg/dL"); every shape is the same reading, so the trend stays in `trend` (preview guide, "Shapes") |
 | `delta` | numericValue, shortText | User's units, glucose.js `formatBGDelta` ("+5"). Omitted when the reading has no numeric delta (single reading) |
 | `glucose_mgdl` | numericValue | Raw Dexcom mg/dL (`unit: "mg/dL"`), no min/max: the lossless value Rat Scout's own PKJS reads |
 | `delta_mgdl` | numericValue | Raw mg/dL delta (`unit: "mg/dL"`). Omitted together with `delta` |
@@ -147,9 +147,9 @@ Errors (`onError(err)`, by `err.code` only, missing code = `UNKNOWN`; ignored in
 - All watch messages still go through `sendToPebble()`.
 
 ### Plugin pbw
-- `python3 -I scripts/pack-plugin.py` → `build/rat-scout-plugin.pbw`: checks the bundle (`build-plugin.js --check`), runs `pebble clean` + `pebble build` (skipped with `--no-build`), then sets `manifestVersion: 2` and adds `plugin.script` (`src/plugin/index.js`) at its project-relative path, as PebbleOS PR #2483 and pebble-plugins' `pack-plugin-pbw.py` do. `build/<dir>.pbw` stays the legacy pbw.
+- `python3 -I scripts/pack-plugin.py` → `build/rat-scout-plugin.pbw`: checks the bundle (`build-plugin.js --check`), runs `pebble clean` + `pebble build` (skipped with `--no-build`), then sets `manifestVersion: 2` and adds `plugin.script` (`src/plugin/index.js`) at its project-relative path, as PebbleOS PR #2483 and pebble-apps' (formerly pebble-plugins) `pack-plugin-pbw.py` do. `build/<dir>.pbw` stays the legacy pbw.
 - Validation mirrors PR #2483 and pypkjs 3.0.3 `plugins/manifest.py`: permission name alphanumeric starting with a letter and not `InvokeAction`, a label, `kind` in `read`/`write`/`exfiltrating`. The preview guide also lists `dangerous`; neither validator accepts it, so we use `read`.
-- Upstream `pack-plugin-pbw.py` is not used: it opens `build/<package name>.pbw` (`build/Rat Scout.pbw`), while `pebble build` names the pbw after the directory; and the pebble-plugins repo has no LICENSE.
+- Upstream `pack-plugin-pbw.py` is not used: it opens `build/<package name>.pbw` (`build/Rat Scout.pbw`), while `pebble build` names the pbw after the directory; and the pebble-apps repo (formerly pebble-plugins) still has no LICENSE (checked 2026-11-01).
 - No published SDK contains PR #2483 (merged 2026-10-19): `sdk.repebble.com/v1/files/sdk-core` lists up to 4.33.1, and PebbleOS releases ship only firmware and QEMU images. When one appears, the packer detects a plugin-aware pbw and copies it unchanged.
 
 ### Verification status
