@@ -1,7 +1,7 @@
 {
     "name": "rat-scout-glucose",
     "author": "Sergei Likharev",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "private": true,
     "pebble": {
         "displayName": "Rat Scout Glucose",
