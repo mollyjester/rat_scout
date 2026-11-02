@@ -94,7 +94,9 @@ capture() {  # capture <name> <pebble args...>; sets LOG
     [[ "$LOG" == /* ]] || LOG="$(pwd)/$LOG"
     local start; start=$(date +%s)
     local tmp; tmp="$(mktemp -d)"
-    (cd "$tmp" && timeout "$SECS" pebble "$@" "${TRANSPORT[@]}") 2>&1 | redact > "$LOG"
+    # Unbuffered: pebble-tool is Python, and lines still in its buffer are lost when timeout
+    # kills it (an install that waited for the phone left an empty log).
+    (cd "$tmp" && PYTHONUNBUFFERED=1 timeout "$SECS" pebble "$@" "${TRANSPORT[@]}") 2>&1 | redact > "$LOG"
     local rc=${PIPESTATUS[0]}
     rmdir "$tmp" 2>/dev/null || rm -rf "$tmp"
     local took=$(( $(date +%s) - start ))
@@ -103,7 +105,10 @@ capture() {  # capture <name> <pebble args...>; sets LOG
     # itself: the phone's developer connection dropped ("Disconnected."), or it failed at once
     # (not logged in, wrong address). Such a capture must not pass as a full run.
     SHORT=0
-    if [ "$rc" -ne 124 ]; then
+    if ! grep -q '^Connected\.' "$LOG"; then
+        SHORT=1
+        echo "FAIL never connected to the phone in ${SECS}s (developer connection off, or the Pebble app not running?)"
+    elif [ "$rc" -ne 124 ]; then
         SHORT=1
         echo "FAIL capture ended after ${took}s of ${SECS}s ($(grep -q '^Disconnected\.' "$LOG" && echo 'the phone disconnected' || echo "pebble exited with status $rc"))"
     fi
