@@ -129,11 +129,19 @@ nodata = count(r'No glucose data( \(plugin\))? sent to Pebble successfully')
 if nodata and nodata == count(r'Glucose gate: plugin send'):
     print('WARN every glucose send was "---" (no reading from Dexcom, or a failure: check the log)')
 
-# The gate must never resend the last reading.
-sends = [m.group(1) for l in lines for m in [re.search(r'Glucose gate: plugin send ts=(\S+)', l)] if m]
-for t1, t2 in zip(sends, sends[1:]):
-    if t2 == t1 and t2 != '0':
-        fails.append('resent ts=%s' % t2)
+# The gate must never resend the last reading, except right after the settings page closed
+# (onSettingsChanged clears the gate on purpose so new units/delta apply).
+last = None
+for l in lines:
+    if 'Settings form closed' in l:
+        last = None
+        continue
+    m = re.search(r'Glucose gate: plugin send ts=(\S+)', l)
+    if not m:
+        continue
+    if m.group(1) == last and last != '0':
+        fails.append('resent ts=%s' % last)
+    last = m.group(1)
 if span >= 600:
     per5 = count(r'Fetching glucose readings') * 300.0 / span
     print('Reading fetches per 5 min: %.1f' % per5)

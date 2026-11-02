@@ -150,7 +150,7 @@ iOS's JavaScriptCore. iOS itself wasn't tested.
 - **`console.log` shows in `pebble logs`** as `plugin>` lines. The phone streams them to the developer connection (`plugin/PluginLogs.kt`), and they also arrived through CloudPebble.
 - **Return data, not errors, for "no data".** Keep `respond.error` for real faults; an empty `instances: []` keeps the caller's subscription healthy.
 - **Keep sessions across runs.** Store login tokens in `localStorage` and drop them only on a login or session failure. Rat Scout first cleared them on *any* failure, so every 60 s poll became a full login while Dexcom had no reading.
-- **Polling cadence:** while something is subscribed the host calls your handler about every `suggestedRefreshIntervalSec` ("may change"). On the phone we saw anywhere from 60 s to over 2 minutes. Use your own throttle and cache for an upstream API you must not hammer.
+- **Polling cadence:** while something is subscribed the host calls your handler about every `suggestedRefreshIntervalSec` ("may change"). On the phone (60 s requested) we saw 60 s most of the time, but also gaps of about 6 minutes that skipped a 5-minute Dexcom reading. Don't promise subscribers fresher data than that, and use your own throttle and cache for an upstream API you must not hammer.
 
 ### 5.3 A settings page for the plugin
 
