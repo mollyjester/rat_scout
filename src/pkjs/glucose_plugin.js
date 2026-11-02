@@ -21,6 +21,10 @@ var PLUGIN_GRACE_MS = 30000;
 var STALL_MS = 11 * 60 * 1000;
 var MAX_SOFT_ERRORS = 2;
 var NO_DATA_TYPE = 'No glucose data';
+// The phone closes every subscription to a plugin it retires (plugin updated or removed, or the
+// plugin preview turned off) with this message and code UNKNOWN (mobileapp libpebble3
+// plugin/JsPlugin.kt observe(): "$name was updated or removed; subscribe again").
+var SUBSCRIPTION_CLOSED = /subscribe again/;
 
 /**
  * Whether the phone app lists the Rat Scout Glucose plugin serving health/glucose.
@@ -159,6 +163,15 @@ function create(deps) {
             unsubscribe();
             state.pinned = true;
             toUnavailable(code);
+            return;
+        }
+        if (err && SUBSCRIPTION_CLOSED.test(String(err.message || ''))) {
+            // The subscription is over: detect again. Still listed (updated or reinstalled) →
+            // subscribe at once; not listed (removed, preview off) → "---" now, and the
+            // re-check on each watch ping picks it up again later.
+            unsubscribe();
+            clearGrace();
+            tryStart(false);
             return;
         }
         if (state.mode === 'unavailable') return;

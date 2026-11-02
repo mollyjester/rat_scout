@@ -196,6 +196,7 @@ What we saw on Pebble app 1.16.0.5:
 | Plugin script failed to load or register | `PLUGIN_UNAVAILABLE` "no source handler registered", repeated every refresh |
 | Permission not yet approved (a new app, or a new provider uuid) | `PERMISSION_DENIED` "… is waiting for approval of `<uuid>`:`<permission>`", then data once the user approves |
 | Provider pbw not installed | Not listed: Rat Scout shows "---" and re-checks |
+| Plugin retired while subscribed (plugin updated or reinstalled, or the preview turned off) | `onError` with code `UNKNOWN`, message "`<name>` was updated or removed; subscribe again", and **the subscription is closed** (mobileapp `plugin/JsPlugin.kt` `observe()`). Detect again and resubscribe; no further data comes on the old one |
 
 - **Log `err.message` as well as `err.code`.** The message is what tells "no plugin" apart from "no handler".
 - **An error doesn't end a subscription** (guide), so keep it alive. Rat Scout's modes are `unavailable` (shows "---") / `pending` / `plugin`, with a 30 s grace period, one tolerated soft error, an 11-minute stall watchdog, and a re-check on every watch ping so it picks the plugin up when it's installed or the preview is turned on (`src/pkjs/glucose_plugin.js`).
@@ -261,6 +262,7 @@ Rat Scout's plugin builds into `plugin/plugin.js` with `node scripts/build-plugi
 | The plugin's page listed the face's weather domains and location | Permissions are per pbw: one pbw shows the union | Ship the plugin as its own plugin-only pbw (§3) |
 | After the split the plugin had no credentials | Different uuid, so no shared `localStorage` with the face's Clay settings | A plugin settings page; password in `secureStorage` (§5.3) |
 | The old Dexcom password stayed in the face's storage | Clay keeps every key it ever stored, even after the field is removed | Purge obsolete keys on `ready` (`src/pkjs/legacy_cleanup.js`) |
+| The face kept a stale reading for 11 min after the preview was turned off | The phone closed the subscription with `UNKNOWN` "… subscribe again", which the face counted as a soft error | Treat that message as "subscription closed": detect again at once (§6) |
 | A start-up log line never appeared | `pebble install --logs` attaches after `ready` | Don't rely on lines logged at `ready` (§8) |
 
 ## 10. References

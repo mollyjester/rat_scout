@@ -210,6 +210,41 @@ console.log('\nerrors');
     assert(g.gp.mode() === 'plugin', 'a late envelope still returns to plugin');
 })();
 
+// 4b. The phone closed the subscription (plugin retired)
+console.log('\nsubscription closed by the phone');
+(function() {
+    var CLOSED = { code: 'UNKNOWN', message: 'Rat Scout Glucose was updated or removed; subscribe again' };
+    // Plugin updated or reinstalled: still listed → subscribe again at once.
+    var u = harness();
+    u.gp.start();
+    u.data(reading(120, 5));
+    var first = u.sub();
+    first.cfg.onError(CLOSED);
+    assert(first.unsubscribed && u.subs.length === 2 && u.sub().cfg.plugin === UUID, 'still listed → old subscription dropped, subscribed again');
+    assert(u.gp.mode() === 'pending' && u.sent.length === 1, 'pending, the last reading stays on screen');
+    u.data(reading(125, 5, 1700000300));
+    assert(u.gp.mode() === 'plugin' && u.sent.length === 2, 'new subscription delivers');
+
+    // Preview turned off (or plugin removed): no longer listed → "---" now, re-check later.
+    var opts = {};
+    var p = harness(opts);
+    p.gp.start();
+    p.data(reading(120, 5));
+    opts.plugins = [];
+    p.sub().cfg.onError(CLOSED);
+    assert(p.gp.mode() === 'unavailable' && p.sent[p.sent.length - 1].BG === '---', 'not listed → unavailable, "---" at once (not after the 11 min watchdog)');
+    assert(p.subs.length === 1 && p.subs[0].unsubscribed, 'no new subscription');
+    opts.plugins = LISTED;
+    assert(p.gp.recheck() === true && p.gp.mode() === 'pending', 'preview back on → the re-check subscribes again');
+
+    // An ordinary UNKNOWN is still a soft error.
+    var s = harness();
+    s.gp.start();
+    s.data(reading(120, 5));
+    s.sub().cfg.onError({ code: 'UNKNOWN', message: 'boom' });
+    assert(s.gp.mode() === 'plugin' && s.subs.length === 1, 'other UNKNOWN errors: one is tolerated');
+})();
+
 // 5. Re-check while unavailable
 console.log('\nre-check');
 (function() {

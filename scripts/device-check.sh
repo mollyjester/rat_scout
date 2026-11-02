@@ -139,6 +139,9 @@ if span >= 600:
     print('Reading fetches per 5 min: %.1f' % per5)
 if expect:
     final = modes[-1] if modes else None
+    # Already in plugin mode before the capture: no mode line, but plugin envelopes arrive.
+    if final is None and count(r'Glucose plugin data: ') > 0:
+        final = 'plugin'
     if final != expect: fails.append('final mode %s, expected %s' % (final, expect))
 if fails:
     for f in fails: print('FAIL ' + f)
