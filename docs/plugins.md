@@ -279,7 +279,7 @@ Rat Scout's plugin builds into `plugin/plugin.js` with `node scripts/build-plugi
 | The old Dexcom password stayed in the face's storage | Clay keeps every key it ever stored, even after the field is removed | Purge obsolete keys on `ready` (`src/pkjs/legacy_cleanup.js`) |
 | The face kept a stale reading for 11 min after the preview was turned off | The phone closed the subscription with `UNKNOWN` "… subscribe again", which the face counted as a soft error | Treat that message as "subscription closed": detect again at once (§6) |
 | A start-up log line never appeared | `pebble install --logs` attaches after `ready` | Don't rely on lines logged at `ready` (§8) |
-| Readings reached the watch 1–5 min late, one skipped, although the plugin asked for 60 s polls | The host's poll timeout counts only awake time (§6.1); a sleeping phone polled about every 6 min | When a reading is late, a watch ping makes PKJS resubscribe (at most once per 55 s), and the host reads at once. Keep the plugin's cache and throttle so this can't raise upstream load |
+| Readings reached the watch 1–5 min late, one skipped, although the plugin asked for 60 s polls | The host's poll timeout counts only awake time (§6.1); a sleeping phone polled about every 6 min | The watch pings PKJS every minute while a reading is late (up to 10 min after it); PKJS resubscribes (at most once per 55 s), and the host reads at once. Keep the plugin's cache and throttle so this can't raise upstream load |
 
 ## 10. References
 

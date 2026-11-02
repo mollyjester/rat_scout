@@ -83,6 +83,9 @@ extern const int STATUS_BLACK_X;
 #define FETCH_INTERVAL_SECONDS 300
 #define FETCH_INTERVAL_JITTER    5
 #define FALLBACK_FETCH_MINUTES   5
+// Ping JS every minute until this long after the last reading (two reading intervals), then
+// fall back to FALLBACK_FETCH_MINUTES: each overdue ping lets JS resubscribe to the plugin.
+#define OVERDUE_PING_WINDOW_SECONDS 600
 #define STEPS_UPDATE_INTERVAL    5
 #define APPMESSAGE_INBOX      1024
 #define APPMESSAGE_OUTBOX      512

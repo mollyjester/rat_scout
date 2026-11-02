@@ -287,11 +287,20 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
         update_steps();
     }
     
-    // Handle data fetching
+    // Handle data fetching. A reading is due at s_next_fetch_time (messaging.c); while it is
+    // overdue, ping every minute up to OVERDUE_PING_WINDOW_SECONDS after the last reading, since
+    // each ping lets JS make the phone run the glucose plugin now (glucose_plugin.js
+    // refreshIfOverdue). After that, the 5-minute fallback (e.g. a sensor gap).
     bool should_fetch = false;
     if (s_next_fetch_time > 0 && current_time >= s_next_fetch_time) {
         should_fetch = true;
-        s_next_fetch_time = 0;
+        if (s_last_reading_timestamp > 0 &&
+            current_time < s_last_reading_timestamp + OVERDUE_PING_WINDOW_SECONDS) {
+            // Any time before the next minute tick: that tick pings again.
+            s_next_fetch_time = current_time + 1;
+        } else {
+            s_next_fetch_time = 0;
+        }
     } else if (s_next_fetch_time == 0 && tick_time->tm_min % FALLBACK_FETCH_MINUTES == 0) {
         should_fetch = true;
     }
