@@ -234,6 +234,7 @@ Rat Scout's plugin builds into `plugin/plugin.js` with `node scripts/build-plugi
 ### Unit tests (fast, run on every change)
 - Load the bundle in a Node `vm` context with mock `fetch`, `localStorage` and `Pebble`, **after applying the lockdown getters** (§5.1). See `test/helpers/plugin_host.js` and `test/plugin.test.js`.
 - Assert that every emitted shape is declared, and that the committed bundle matches a fresh build.
+- **Make a missing answer fail the run.** An async Node runner whose test never settles (a handler path that never calls `respond`) exits 0 without printing results, so `node test.js || exit 1` passes. Rat Scout's runner (`test/helpers/plugin_host.js` `suite`) fails on `beforeExit`, naming the test, and also fails when a request is answered twice.
 
 ### Emulator (pebble-tool 5.1.2 / pypkjs 3.0.3)
 - **What works:**

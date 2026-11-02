@@ -11,6 +11,9 @@ var vm = require('vm');
 var BUNDLE = path.join(__dirname, '..', '..', 'plugin', 'plugin.js');
 var Settings = require('../../src/plugin-src/settings');
 
+// Requests the plugin answered more than once, across every load() in this process.
+var lateResponds = [];
+
 // The Android host's LOCKDOWN_JS (mobileapp libpebble3 js/JsEngine.android.kt) turns these
 // globals into getters that throw, before the plugin script runs. fetch, localStorage and
 // navigator are left out here because the host installs its own afterwards; this context
@@ -129,12 +132,22 @@ function load(opts) {
 
     function request(req) {
         return new Promise(function(resolve) {
+            var answered = false;
+            // The host takes one answer per request; a second one is a plugin bug.
+            function once(v) {
+                if (answered) {
+                    lateResponds.push(JSON.stringify(req));
+                    return;
+                }
+                answered = true;
+                resolve(v);
+            }
             var respond = {
-                data: function(env) { resolve({ data: JSON.parse(JSON.stringify(env)) }); },
-                error: function(code, message) { resolve({ error: code, message: message }); }
+                data: function(env) { once({ data: JSON.parse(JSON.stringify(env)) }); },
+                error: function(code, message) { once({ error: code, message: message }); }
             };
             var p = handlers.source(req, respond);
-            if (p && typeof p.then === 'function') p.then(null, function(e) { resolve({ threw: e }); });
+            if (p && typeof p.then === 'function') p.then(null, function(e) { once({ threw: e }); });
         });
     }
 
@@ -183,13 +196,24 @@ function suite(title) {
         run: function() {
             console.log(title + '\n');
             var i = 0;
+            var current = null;
+            // A test whose promise never settles (e.g. a handler path that never calls respond)
+            // leaves nothing to run: Node would exit 0 without printing Results.
+            process.on('beforeExit', function() {
+                assert(false, 'test never finished: ' + (current || '?'));
+                console.log('\nResults: ' + passed + ' passed, ' + failed + ' failed');
+                process.exit(1);
+            });
             function next() {
                 if (i >= tests.length) {
+                    assert(lateResponds.length === 0, 'no request answered twice' +
+                        (lateResponds.length ? ': ' + lateResponds.join(', ') : ''));
                     console.log('\nResults: ' + passed + ' passed, ' + failed + ' failed');
                     process.exit(failed > 0 ? 1 : 0);
                     return;
                 }
                 var t = tests[i++];
+                current = t.name;
                 console.log(t.name);
                 Promise.resolve().then(t.fn).then(next, function(e) {
                     assert(false, t.name + ' threw: ' + (e && e.stack ? e.stack : e));

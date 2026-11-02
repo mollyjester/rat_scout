@@ -482,6 +482,22 @@ test('settings page: a saved account is used by the next request', function() {
     });
 });
 
+test('test runner: a test that never settles fails the suite', function() {
+    var cp = require('child_process');
+    var helper = JSON.stringify(path.join(__dirname, 'helpers', 'plugin_host.js'));
+    var r = cp.spawnSync(process.execPath, ['-e',
+        'var s = require(' + helper + ').suite("hang"); s.test("hangs", function() { return new Promise(function() {}); }); s.run();'],
+        { encoding: 'utf8' });
+    assert(r.status === 1, 'exit status 1 (got ' + r.status + ')');
+    assert(/never finished: hangs/.test(r.stderr), 'names the test that never finished');
+    var d = cp.spawnSync(process.execPath, ['-e',
+        'var h = require(' + helper + '); var s = h.suite("twice"); s.test("double", function() {' +
+        ' var p = h.load({ source: "Pebble.registerSourceHandler(function(q, r) { r.data({ instances: [] }); r.error(\'UNKNOWN\'); });" });' +
+        ' return p.request({ category: "health", item: "glucose" }); }); s.run();'],
+        { encoding: 'utf8' });
+    assert(d.status === 1 && /answered twice/.test(d.stderr), 'a second respond fails the suite');
+});
+
 test('committed bundle equals build() output', function() {
     assert(fs.readFileSync(builder.OUT, 'utf8') === builder.build(), 'plugin/plugin.js is up to date');
 });
