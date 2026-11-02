@@ -196,7 +196,7 @@ What we saw on Pebble app 1.16.0.5:
 | Plugin script failed to load or register | `PLUGIN_UNAVAILABLE` "no source handler registered", repeated every refresh |
 | Permission not yet approved (a new app, or a new provider uuid) | `PERMISSION_DENIED` "… is waiting for approval of `<uuid>`:`<permission>`", then data once the user approves |
 | Provider pbw not installed | Not listed: Rat Scout shows "---" and re-checks |
-| Plugin retired while subscribed (plugin updated or reinstalled, or the preview turned off) | `onError` with code `UNKNOWN`, message "`<name>` was updated or removed; subscribe again", and **the subscription is closed** (mobileapp `plugin/JsPlugin.kt` `observe()`). Detect again and resubscribe; no further data comes on the old one |
+| Plugin retired while subscribed (plugin updated or reinstalled, or the preview turned off) | `onError` with code `UNKNOWN`, message "`<name>` was updated or removed; subscribe again", and **the subscription is closed** (mobileapp `plugin/JsPlugin.kt` `observe()`). Detect again and resubscribe; no further data comes on the old one. The phone checks at its next poll, so this arrives up to `suggestedRefreshIntervalSec` after the change (about 40 s here) |
 
 - **Log `err.message` as well as `err.code`.** The message is what tells "no plugin" apart from "no handler".
 - **An error doesn't end a subscription** (guide), so keep it alive. Rat Scout's modes are `unavailable` (shows "---") / `pending` / `plugin`, with a 30 s grace period, one tolerated soft error, an 11-minute stall watchdog, and a re-check on every watch ping so it picks the plugin up when it's installed or the preview is turned on (`src/pkjs/glucose_plugin.js`).
