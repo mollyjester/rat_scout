@@ -18,7 +18,8 @@ Rat Scout displays real-time Dexcom Share blood glucose readings on your Pebble 
 - **Threshold vibration alerts**: distinct vibration patterns for high and low BG
   - High: short-long pattern
   - Low: long-short pattern
-  - One-shot: vibrates only on zone transition, not repeatedly
+  - One-shot: vibrates only on zone transition, not repeatedly. The zone is remembered across face restarts, so reopening the face while BG is still high or low doesn't alert again; after an hour without readings, a high or low alerts again
+  - No alert for a reading 20 minutes or older (e.g. the last one, delivered after the phone was out of range): the watch shows "---" for it anyway
   - **Night thresholds**: optional separate thresholds during a configurable night window; the watch switches to them at the window's start and end (checked on every watch request, at least every 5 minutes)
 - **Threshold sound alerts**: short melody when entering the low or high BG zone (Emery and Flint speaker)
   - Low: descending B minor arpeggio (F#4–D4–B3), played twice, triangle wave
@@ -42,20 +43,21 @@ Rat Scout displays real-time Dexcom Share blood glucose readings on your Pebble 
 - **Date**: day.month format
 - **Week number**: ISO week with "W" prefix
 - **Weekday**: 3-letter abbreviation in status bar
+- Date, week and weekday follow a clock or time-zone change within a minute (not only at midnight)
 
 ### Status Bar
 - **Hourly vibration indicator**: shows when hourly chime is enabled
 - **Umbrella indicator**: highlights when rain is expected
 - **Garbage collection**: underscores the next bag type (Organic / Grey / Black) based on weekly schedule, rolls over at 9 AM
 ### Quick View Alerts
-- **Transient overlay banner**: appears at the bottom of the watchface after a BG threshold or hourly vibration fires
+- **Transient overlay banner**: appears at the bottom of the watchface after a BG threshold alert, or on the hour when the hourly vibration or hourly sound is on
 - **Icon-coded**: distinct icons for high/low BG alerts vs. hourly chime
 - **Configurable duration**: Short (3 s), Normal (10 s), or Long (20 s)
 - **Auto-dismiss**: overlay disappears after the chosen duration without interaction
 - **Enable/disable**: can be toggled independently of vibration alerts
 ### Other
 - **Battery indicator**: visual bar with charging animation
-- **Step count**: daily steps from Pebble Health (on supported platforms)
+- **Step count**: daily steps from Pebble Health (on supported platforms), shown at launch and updated every 5 minutes
 - **Persistent state**: data persists across app restarts
 - **Platforms**: Emery (Pebble Time 2) and Flint (Pebble 2 Duo)
 
@@ -104,7 +106,7 @@ Open Rat Scout settings from the Pebble app on your phone. It has no Dexcom fiel
 | Setting | Description |
 |---------|-------------|
 | BG Units | mg/dL or mmol/L |
-| Show BG Delta | Toggle glucose rate of change |
+| Show BG Delta | Toggle glucose rate of change (applies at once, without waiting for the next reading) |
 | Show Time Delta | Toggle time since last reading |
 | Date Format | dd.mm or mm.dd |
 

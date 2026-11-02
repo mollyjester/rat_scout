@@ -141,8 +141,11 @@ void update_time(struct tm *tick_time, bool force_date) {
              clock_is_24h_style() ? "%H:%M" : "%I:%M", tick_time);
     text_layer_set_text(s_time_layer, time_buffer);
     
-    // Date and week only change at midnight; skip the rest of the time
-    if (force_date || (tick_time->tm_hour == 0 && tick_time->tm_min == 0)) {
+    // Date and week change with the calendar day: at midnight, or when the clock or the time
+    // zone was changed (checked every minute; no system event is used for it).
+    static int s_date_yday = -1;
+    if (force_date || tick_time->tm_yday != s_date_yday) {
+        s_date_yday = tick_time->tm_yday;
         strftime(s_date_buffer, sizeof(s_date_buffer),
                  s_date_format_mmdd ? "%m.%d" : "%d.%m", tick_time);
         text_layer_set_text(s_date_layer, s_date_buffer);
@@ -241,8 +244,11 @@ void update_moon_icon(int phase) {
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     update_time(tick_time, false);
     
-    // Update weekday abbreviation at midnight
-    if (tick_time->tm_hour == 0 && tick_time->tm_min == 0) {
+    // Update the weekday abbreviation when the calendar day changes (midnight, clock or
+    // time zone change)
+    static int s_weekday_yday = -1;
+    if (tick_time->tm_yday != s_weekday_yday) {
+        s_weekday_yday = tick_time->tm_yday;
         update_weekday(tick_time);
     }
     
@@ -271,7 +277,8 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
             vibes_cancel();
             vibes_double_pulse();
         }
-        if (s_overlay_enabled && s_hourly_vibration) {
+        // Shown with the hourly vibration or sound, whichever is on (as BG alerts, glucose.c).
+        if (s_overlay_enabled && (s_hourly_vibration || s_hourly_sound)) {
             static char hourly_time_buf[6];
             strftime(hourly_time_buf, sizeof(hourly_time_buf),
                      clock_is_24h_style() ? "%H:%M" : "%I:%M", tick_time);
@@ -354,6 +361,7 @@ static void main_window_load(Window *window) {
     if (persist_exists(PERSIST_KEY_TIMESTAMP)) {
         s_last_reading_timestamp = persist_read_int(PERSIST_KEY_TIMESTAMP);
     }
+    glucose_restore_zone();
     update_delta_display(0);
     layer_add_child(window_layer, text_layer_get_layer(s_glucose_delta_layer));
     
@@ -509,7 +517,7 @@ static void main_window_load(Window *window) {
     }
     if (persist_exists(PERSIST_KEY_OVERLAY_DURATION)) {
         int dur = persist_read_int(PERSIST_KEY_OVERLAY_DURATION);
-        if (dur >= 1 && dur <= 15) {
+        if (dur >= OVERLAY_DURATION_MIN_S && dur <= OVERLAY_DURATION_MAX_S) {
             s_overlay_duration_s = dur;
         }
     }
@@ -525,12 +533,16 @@ static void main_window_load(Window *window) {
         s_hourly_sound = persist_read_bool(PERSIST_KEY_HOURLY_SOUND);
     }
 
-    // Initialize overlay layer last so it renders on top of all other layers
-    overlay_init(window_layer);
+    // Initialize overlay layer last so it renders on top of all other layers. It draws with
+    // the 20 px font the face already loaded (the overlay doesn't own it).
+    overlay_init(window_layer, s_extra_info_font);
 }
 
 static void main_window_unload(Window *window)
 {
+    // Overlay first: it was added last, and it draws with s_extra_info_font, unloaded below
+    overlay_deinit();
+
     // Destroy text layers
     text_layer_destroy(s_time_layer);
     text_layer_destroy(s_glucose_layer);
@@ -568,9 +580,6 @@ static void main_window_unload(Window *window)
     destroy_icon_layer(s_grey_icon_layer, s_grey_icon_bitmap);
     destroy_icon_layer(s_black_icon_layer, s_black_icon_bitmap);
 
-    // Destroy overlay layer (must be before other layers since it was added last)
-    overlay_deinit();
-
     // Destroy draw layers
     layer_destroy(s_battery_layer);
     layer_destroy(s_status_bar_layer);
@@ -596,8 +605,9 @@ static void init(void) {
     tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
     battery_state_service_subscribe(battery_state_handler);
     
-    // Initialize time (force date/week update) and battery
+    // Initialize time (force date/week update), steps and battery
     update_time(NULL, true);
+    update_steps();
     BatteryChargeState initial_state = battery_state_service_peek();
     battery_state_handler(initial_state);
 

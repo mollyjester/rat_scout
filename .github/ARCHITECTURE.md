@@ -275,6 +275,7 @@ Watchface: `clay-settings` (Clay; no Dexcom fields) and the weather/astronomy ca
 ## Persist Key Ranges
 - 100–112: Data cache (BG reading, delta, sun/moon times, weather, moon phase, vibe/umbrella flags, garbage bag, timestamp)
 - 113–117: Settings (overlay enable/duration, BG low/high sound, hourly sound)
+- 118: BG alert state (zone)
 - Key 100: PERSIST_KEY_BG
 - Key 112: PERSIST_KEY_TIMESTAMP
 - Key 113: PERSIST_KEY_OVERLAY_ENABLE
@@ -282,6 +283,7 @@ Watchface: `clay-settings` (Clay; no Dexcom fields) and the weather/astronomy ca
 - Key 115: PERSIST_KEY_BG_LOW_SOUND
 - Key 116: PERSIST_KEY_BG_HIGH_SOUND
 - Key 117: PERSIST_KEY_HOURLY_SOUND
+- Key 118: PERSIST_KEY_BG_ZONE (normal/high/low; deleted when normal, and when readings older than 60 min are wiped)
 
 ## Data Flow
 ```
@@ -317,7 +319,7 @@ Watch C:
 ## Sound Alerts — sounds.c
 - Speaker API: `speaker_play_tracks(SpeakerTrack[], num_tracks, volume)`
 - Audible only on platforms with a built-in speaker (Emery, Flint). On aplite/basalt/diorite the SDK calls are silent no-ops, so toggles are harmless.
-- `speaker_stop()` is called before each `speaker_play_tracks()` to ensure `prv_sound_finish_cb` fires synchronously before new playback begins. `speaker_play_tracks()` is also self-preempting in PebbleOS, so no idle-status guard is needed.
+- `speaker_stop()` is called before each `speaker_play_tracks()` (project rule; `prv_sound_finish_cb` does nothing, so nothing depends on when it runs). `speaker_play_tracks()` is also self-preempting in PebbleOS, so no idle-status guard is needed.
 - All alert tracks wrap their notes in a leading **and** trailing `SILENCE_BUF` (350 ms, midi=0, triangle) to absorb DA7212 cold-start ramp-up on flint/emery.
 - High BG alert (ascending B minor arpeggio): single track, `SpeakerWaveformTriangle`
   - B3(125ms)–D4(125ms)–F#4(125ms) | 250ms pause | B3(125ms)–D4(125ms)–F#4(250ms)

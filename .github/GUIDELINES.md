@@ -120,4 +120,4 @@ Every non-trivial function gets a block comment:
 ## Persist Key Assignment
 - Check rat_scout.h before adding new keys to avoid collisions
 - Document new keys in rat_scout.h with inline comment stating their purpose
-- Current max used: 117 (PERSIST_KEY_HOURLY_SOUND)
+- Current max used: 118 (PERSIST_KEY_BG_ZONE)

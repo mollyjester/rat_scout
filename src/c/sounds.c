@@ -119,8 +119,8 @@ void sounds_deinit(void) {
  * (speaker_service.c: if state != Idle, prv_stop_internal is
  * called with SpeakerFinishReasonPreempted before the new playback starts),
  * so no explicit idle-check is required here. speaker_stop() is still
- * called explicitly to ensure prv_sound_finish_cb runs synchronously
- * before the new tracks are queued.
+ * called first, as the project rule requires (CLAUDE.md); prv_sound_finish_cb
+ * does nothing, so nothing depends on when it runs.
  * Volume is set once in sounds_init(); the per-playback volume argument
  * (100) is passed through to speaker_play_tracks for completeness.
  * @param tracks - Array of SpeakerTrack
