@@ -263,7 +263,8 @@ Rat Scout's plugin builds into `plugin/plugin.js` with `node scripts/build-plugi
    - **Apps → Plugins** lists your plugin. Its page shows permissions with "used … ago" and the sources it serves.
    - **"PLUGIN CODE → View Source"** shows the script the app actually loads. "Couldn't load `<path>`" means the cached pbw doesn't contain the manifest's `script` path.
 6. **`scripts/device-check.sh`** wraps all of this: install, capture redacted logs, screenshots, and a log summary that fails on crashes, resends or an unexpected mode. Run `scripts/device-check.sh steps` for the checklist.
-7. **Never log secrets:** logs from a real phone end up in terminals and transcripts. Rat Scout logs "Session ID received", not the ID.
+7. **The developer connection can drop mid-capture.** pebble prints `Disconnected.` and exits; on 2026-11-02 it dropped once after about 8 minutes (cause UNVERIFIED; possibly an idle timeout). Re-enable it in the Pebble app and capture again; `scripts/device-check.sh` fails a capture that ends early.
+8. **Never log secrets:** logs from a real phone end up in terminals and transcripts. Rat Scout logs "Session ID received", not the ID.
 
 ## 9. Pitfalls we hit (in order)
 

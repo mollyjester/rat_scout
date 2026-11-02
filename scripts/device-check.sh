@@ -80,8 +80,23 @@ capture() {  # capture <name> <pebble args...>; sets LOG
     # loading build/pebble-js-app.js.map (util/logs.py PebbleLogPrinter.__init__), and a
     # PKJS log arriving meanwhile crashes it. With no sourcemap the window is tiny.
     local here; here="$(pwd)"; LOG="$here/$LOG"
+    local start; start=$(date +%s)
     (cd "$(mktemp -d)" && timeout "$SECS" pebble "$@" "${TRANSPORT[@]}") 2>&1 | redact > "$LOG"
-    echo "==> Captured $(wc -l < "$LOG") lines"
+    local took=$(( $(date +%s) - start ))
+    echo "==> Captured $(wc -l < "$LOG") lines in ${took}s"
+    # pebble exits by itself when the phone's developer connection drops ("Disconnected.");
+    # timeout ends a full capture. A short one must not pass as a full run.
+    SHORT=0
+    if [ "$took" -lt $(( SECS - 30 )) ]; then
+        SHORT=1
+        echo "FAIL capture ended after ${took}s of ${SECS}s ($(grep -q '^Disconnected\.' "$LOG" && echo 'the phone disconnected' || echo 'pebble exited'))"
+    fi
+}
+
+finish() {  # finish <analyze status>: fail a short capture even if its log looks fine
+    [ "$1" -ne 0 ] && exit "$1"
+    [ "${SHORT:-0}" -eq 1 ] && exit 1
+    exit 0
 }
 
 analyze() {  # analyze <log> [expect]
@@ -126,6 +141,8 @@ for label, pat in [('Permission', r'(?i)permission|NotAllowedError'), ('Crash', 
         print('%s lines (%d):' % (label, len(hits)))
         for l in hits[:5]: print('    ' + l)
 if count(r'(App|Worker) fault'): fails.append('watch app crashed')
+if count(r'^Disconnected\.'):
+    print('WARN the phone disconnected during the capture (log ends early?)')
 nodata = count(r'No glucose data( \(plugin\))? sent to Pebble successfully')
 if nodata and nodata == count(r'Glucose gate: plugin send'):
     print('WARN every glucose send was "---" (no reading from Dexcom, or a failure: check the log)')
@@ -194,10 +211,10 @@ case "$CMD" in
         esac
         # The pbw goes before the transport: `--phone` takes an optional value.
         capture "install-$which" install "$PROJECT_ROOT/$pbw" --logs
-        analyze "$LOG" "$EXPECT" ;;
+        analyze "$LOG" "$EXPECT"; finish $? ;;
     logs)
         capture logs logs
-        analyze "$LOG" "$EXPECT" ;;
+        analyze "$LOG" "$EXPECT"; finish $? ;;
     screenshot)
         f="$OUT/${NAME:-screenshot}-$(date +%Y%m%d-%H%M%S).png"
         pebble screenshot --no-open "$f" "${TRANSPORT[@]}" && echo "$f" ;;
