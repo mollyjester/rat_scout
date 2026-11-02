@@ -391,6 +391,53 @@ test('bundle registers under the Android lockdown (throwing setTimeout/XMLHttpRe
     assert(typeof h.handlers.source === 'function', 'real bundle registers its source handler');
 });
 
+test('frequent requests (face resubscribes on overdue pings): at most one Dexcom call per 55 s', function() {
+    // The face resubscribes on watch pings while a reading is late, on top of the host's own
+    // polls; each one runs the plugin. Dexcom has reading A until 340 s after it, then B
+    // (300 s after A). Requests every 30 s from +50 s to +700 s.
+    var T0 = 1700000000;
+    var A = [{ WT: 'Date(' + (T0 * 1000) + ')', ST: '', DT: '', Value: 120, Trend: 'Flat' },
+        { WT: 'Date(' + ((T0 - 300) * 1000) + ')', ST: '', DT: '', Value: 115, Trend: 'Flat' }];
+    var B = [{ WT: 'Date(' + ((T0 + 300) * 1000) + ')', ST: '', DT: '', Value: 125, Trend: 'Flat' }].concat(A.slice(0, 1));
+    var clock = (T0 + 50) * 1000;
+    var fa = host.fakeDexcom({ readings: A });
+    var fb = host.fakeDexcom({ readings: B });
+    var calls = [];
+    function fetch(url, o) {
+        var f = clock < (T0 + 340) * 1000 ? fa : fb;
+        var r = f(url, o);
+        calls.push({ t: clock, ep: f.calls[f.calls.length - 1].ep });
+        return r;
+    }
+    var h = host.load({ fetch: fetch, now: clock, settings: settings(), storage: { accountId: 'a0', sessionId: 's0' } });
+    var seen = [];
+    var chain = Promise.resolve();
+    for (var t = T0 + 50; t <= T0 + 700; t += 30) {
+        (function(at) {
+            chain = chain.then(function() {
+                clock = at * 1000;
+                h.setNow(clock);
+                return h.request(REQ);
+            }).then(function(r) {
+                seen.push({ t: at, ts: r.data.instances.length ? props(r).reading_time.timestamp.value : 0 });
+            });
+        })(t);
+    }
+    return chain.then(function() {
+        var reads = calls.filter(function(c) { return c.ep === 'readings'; });
+        assert(calls.every(function(c) { return c.ep === 'readings'; }), 'no logins: the session is reused');
+        var minGap = Infinity;
+        for (var i = 1; i < reads.length; i++) minGap = Math.min(minGap, reads[i].t - reads[i - 1].t);
+        assert(minGap >= 55000, 'reading requests at least 55 s apart (closest ' + (minGap / 1000) + ' s)');
+        assert(!reads.some(function(c) { return c.t > (T0 + 50) * 1000 && c.t < (T0 + 310) * 1000; }), 'no Dexcom call while A is fresh');
+        assert(!reads.some(function(c) { return c.t > (T0 + 380) * 1000 && c.t < (T0 + 610) * 1000; }), 'no Dexcom call while B is fresh');
+        var firstB = seen.filter(function(x) { return x.ts === T0 + 300; })[0];
+        assert(firstB && firstB.t === T0 + 380, 'B served at the first unthrottled request after it appeared (+380 s)');
+        var forB = reads.filter(function(c) { return c.t >= (T0 + 310) * 1000 && c.t <= (T0 + 380) * 1000; }).length;
+        assert(forB === 2, 'two reading requests for B when Dexcom has it late (one too early, one that finds it)');
+    });
+});
+
 test('settings page: load never returns the password', function() {
     var h = host.load({ settings: settings({ BG_UNITS: 'mmol/L' }) });
     return h.config({ type: 'load' }).then(function(r) {

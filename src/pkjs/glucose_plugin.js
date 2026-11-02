@@ -25,6 +25,11 @@ var NO_DATA_TYPE = 'No glucose data';
 // plugin preview turned off) with this message and code UNKNOWN (mobileapp libpebble3
 // plugin/JsPlugin.kt observe(): "$name was updated or removed; subscribe again").
 var SUBSCRIPTION_CLOSED = /subscribe again/;
+// A reading is due 300 s after the last one; the watch pings PKJS from +305 s (messaging.c).
+var READING_DUE_SEC = 305;
+// The plugin calls Dexcom at most once per 55 s (src/plugin-src/main.js ATTEMPT_THROTTLE_MS), so
+// resubscribing sooner after an envelope or a resubscribe could only be answered from its cache.
+var RESUBSCRIBE_MIN_MS = 55000;
 
 /**
  * Whether the phone app lists the Rat Scout Glucose plugin serving health/glucose.
@@ -87,6 +92,21 @@ function envelopeToDictionary(envelope, settings, Glucose, msgType) {
 }
 
 /**
+ * Reading time of an envelope's reading.
+ * @param {Object} envelope - {instances: [...]}
+ * @returns {number} Epoch seconds, or 0 if it has no reading
+ */
+function readingTime(envelope) {
+    var instances = (envelope && envelope.instances) || [];
+    for (var i = 0; i < instances.length; i++) {
+        var p = (instances[i] && instances[i].properties) || {};
+        var ts = p.reading_time && p.reading_time.timestamp;
+        if (ts && typeof ts.value === 'number' && p.glucose_mgdl) return ts.value;
+    }
+    return 0;
+}
+
+/**
  * Create the source.
  * @param {Object} deps - {Pebble, Glucose, settings(), msgType, send(dict, type), now(),
  *                        setTimeout, clearTimeout}
@@ -102,6 +122,11 @@ function create(deps) {
         graceTimer: null,
         lastPluginOkMs: 0,
         errorCount: 0,
+        // Reading time (epoch s) of the last envelope with a reading; 0 = none yet.
+        lastReadingTs: 0,
+        lastResubscribeMs: 0,
+        // Bumped by every subscribe and unsubscribe; callbacks of an older one are ignored.
+        generation: 0,
         lastSent: null,
         // Set by INVALID_REQUEST: the host refused our request shape, so re-checking cannot help.
         pinned: false
@@ -146,6 +171,8 @@ function create(deps) {
     }
 
     function onData(envelope) {
+        var ts = readingTime(envelope);
+        if (ts) state.lastReadingTs = ts;
         console.log('Glucose plugin data: ' + (((envelope && envelope.instances) || []).length) + ' instance(s)');
         state.lastPluginOkMs = now();
         state.errorCount = 0;
@@ -187,16 +214,40 @@ function create(deps) {
     }
 
     function subscribe() {
+        // Callbacks of a subscription that was replaced are ignored. Android's host drops them
+        // already (mobileapp startup.js _signalSourceUpdate); other hosts weren't checked.
+        // The generation is set before subscribing, so a host that answers synchronously
+        // still reaches onData.
+        var gen = ++state.generation;
         state.subscription = deps.Pebble.subscribeToSource({
             category: CATEGORY,
             item: ITEM,
             plugin: PLUGIN_UUID,
-            onData: onData,
-            onError: onError
+            onData: function(envelope) { if (gen === state.generation) onData(envelope); },
+            onError: function(err) { if (gen === state.generation) onError(err); }
         });
     }
 
+    /**
+     * Replace the subscription: the phone host reads at once on a new one (mobileapp
+     * plugin/JsPlugin.kt observe()). The mode, the gate and the watchdog are left as they are.
+     * @returns {boolean} True if subscribed again
+     */
+    function resubscribe() {
+        state.lastResubscribeMs = now();
+        unsubscribe();
+        try {
+            subscribe();
+            return true;
+        } catch (e) {
+            console.log('resubscribe failed: ' + e);
+            toUnavailable('resubscribe failed');
+            return false;
+        }
+    }
+
     function unsubscribe() {
+        state.generation++;
         if (state.subscription && typeof state.subscription.unsubscribe === 'function') {
             try {
                 state.subscription.unsubscribe();
@@ -266,19 +317,34 @@ function create(deps) {
         },
 
         /**
+         * Reading overdue: resubscribe so the plugin runs now instead of at the host's next
+         * poll, which counts only time the phone is awake and was seen to take about 6 min.
+         * Run in fetchAllData() on every watch ping (the watch pings each minute while a
+         * reading is late, messaging.c / rat_scout.c). Only in plugin mode with a reading,
+         * more than READING_DUE_SEC after it, and at most once per RESUBSCRIBE_MIN_MS after
+         * an envelope or a resubscribe. The plugin's cache and throttle bound Dexcom calls.
+         * @param {number} t - Now, epoch ms
+         * @returns {boolean} True if it resubscribed
+         */
+        refreshIfOverdue: function(t) {
+            if (state.mode !== 'plugin' || !state.subscription || !state.lastReadingTs) return false;
+            var overdue = Math.floor(t / 1000) - state.lastReadingTs;
+            if (overdue <= READING_DUE_SEC) return false;
+            if (t - state.lastPluginOkMs < RESUBSCRIBE_MIN_MS || t - state.lastResubscribeMs < RESUBSCRIBE_MIN_MS) {
+                return false;
+            }
+            console.log('Glucose plugin: resubscribe (reading overdue ' + overdue + ' s)');
+            return resubscribe();
+        },
+
+        /**
          * Settings were saved: forget the last send and resubscribe so the plugin's next
          * answer is re-formatted and sent.
          */
         onSettingsChanged: function() {
             state.lastSent = null;
             if (!state.subscription) return;
-            unsubscribe();
-            try {
-                subscribe();
-            } catch (e) {
-                console.log('resubscribe failed: ' + e);
-                toUnavailable('resubscribe failed');
-            }
+            resubscribe();
         }
     };
 }
@@ -287,6 +353,8 @@ module.exports = {
     PLUGIN_UUID: PLUGIN_UUID,
     PLUGIN_GRACE_MS: PLUGIN_GRACE_MS,
     STALL_MS: STALL_MS,
+    READING_DUE_SEC: READING_DUE_SEC,
+    RESUBSCRIBE_MIN_MS: RESUBSCRIBE_MIN_MS,
     pluginAvailable: pluginAvailable,
     envelopeToDictionary: envelopeToDictionary,
     create: create

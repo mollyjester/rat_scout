@@ -186,11 +186,12 @@ var glucoseSource = GlucosePlugin.create({
  * Fetch all watchface data (weather and astronomy) and look after the glucose
  * subscription. Astronomy is fetched independently based on its daily cache,
  * not on every cycle, to reduce unnecessary API calls. Glucose arrives through
- * the plugin subscription.
+ * the plugin subscription; an overdue reading resubscribes so the plugin runs now.
  */
 function fetchAllData() {
     glucoseSource.checkStall(Date.now());
     glucoseSource.recheck();
+    glucoseSource.refreshIfOverdue(Date.now());
     // Fetch weather independently (sent as separate message)
     fetchAndSendWeather();
     // Fetch astronomy independently — only hits the API when cache is stale (daily)

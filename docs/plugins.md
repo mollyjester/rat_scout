@@ -215,7 +215,7 @@ From mobileapp `dbc937e` (`libpebble3/src/commonMain/kotlin/io/rebble/libpebblec
 - **`validUntilMs` doesn't affect scheduling.** It is passed through into the envelope (`JsPlugin.kt:198-203`) and ignored for change detection (`plugin/PluginUpstreams.kt:101`). `maxStalenessMs` on subscribe is parsed but never used (`SourceDispatcher.kt:113`, not passed on at `:72-78`).
 - **The poll interval counts awake time only.** The loop's scope has no dispatcher (`di/LibPebbleModule.kt:354`: `CoroutineName` only), so its timeout runs on kotlinx-coroutines' default delay: `DefaultExecutor` (`System.nanoTime` / `parkNanos`) or the main dispatcher (`DefaultExecutor.kt` `initializeDefaultDelay`, kotlinx master; the app's exact version wasn't checked). Android's `SystemClock` documentation: `uptimeMillis` "stops when the system enters deep sleep" and is "the basis for … `Object.wait`, and `System.nanoTime()`"; `Handler` uses it too. libpebble3 takes no wakelock and uses no `AlarmManager` (searched; the app module outside libpebble3 wasn't). So a "60 s" wait lasts 60 s of awake time.
   - That this caused the gaps we saw is a **hypothesis**, consistent with the log: 60 s polls only right after subscribing, gaps of about 6 minutes later, and a gap ending at the second a watch message woke the phone. Not proven.
-- **What to do as a consumer:** the watch talking to the phone wakes it. If your watchapp knows data is due, have it message PKJS, and resubscribe from there to get an immediate read. Rate-limit it, and keep the plugin's own cache and throttle, because every resubscribe runs the plugin.
+- **What to do as a consumer:** the watch talking to the phone wakes it. If your watchapp knows data is due, have it message PKJS, and resubscribe from there to get an immediate read (Rat Scout: `refreshIfOverdue` in `src/pkjs/glucose_plugin.js`, §9 last row). Rate-limit it, and keep the plugin's own cache and throttle, because every resubscribe runs the plugin.
 
 ## 7. Building the pbws
 
@@ -279,6 +279,7 @@ Rat Scout's plugin builds into `plugin/plugin.js` with `node scripts/build-plugi
 | The old Dexcom password stayed in the face's storage | Clay keeps every key it ever stored, even after the field is removed | Purge obsolete keys on `ready` (`src/pkjs/legacy_cleanup.js`) |
 | The face kept a stale reading for 11 min after the preview was turned off | The phone closed the subscription with `UNKNOWN` "… subscribe again", which the face counted as a soft error | Treat that message as "subscription closed": detect again at once (§6) |
 | A start-up log line never appeared | `pebble install --logs` attaches after `ready` | Don't rely on lines logged at `ready` (§8) |
+| Readings reached the watch 1–5 min late, one skipped, although the plugin asked for 60 s polls | The host's poll timeout counts only awake time (§6.1); a sleeping phone polled about every 6 min | When a reading is late, a watch ping makes PKJS resubscribe (at most once per 55 s), and the host reads at once. Keep the plugin's cache and throttle so this can't raise upstream load |
 
 ## 10. References
 

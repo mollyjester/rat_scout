@@ -302,7 +302,128 @@ console.log('\nonSettingsChanged');
     assert(h.sent.length === 2, 'gate cleared: the same reading is sent again (new units/delta apply)');
 })();
 
-// 8. Hygiene
+// 8. Overdue reading: resubscribe so the host reads now
+console.log('\nrefreshIfOverdue');
+(function() {
+    var TS = 1700000000;
+    var DUE = GP.READING_DUE_SEC;
+    var GAP = GP.RESUBSCRIBE_MIN_MS;
+    // Plugin mode, one reading at TS received at clock TS + 60 s.
+    function live() {
+        var h = harness();
+        h.t = (TS + 60) * 1000;
+        h.gp.start();
+        h.data(reading(120, 5, TS));
+        return h;
+    }
+    var h = live();
+    h.t = (TS + DUE) * 1000;
+    assert(!h.gp.refreshIfOverdue(h.t) && h.subs.length === 1, 'at ' + DUE + ' s: not overdue yet');
+    h.t = (TS + DUE + 1) * 1000;
+    var first = h.sub();
+    assert(h.gp.refreshIfOverdue(h.t) && h.subs.length === 2, 'overdue, quiet: resubscribes');
+    assert(first.unsubscribed && h.sub().cfg.plugin === UUID && h.sub().cfg.item === 'glucose', 'old one unsubscribed; new one pinned to the plugin');
+    assert(h.gp.mode() === 'plugin' && h.sent.length === 1, 'mode kept, nothing sent');
+    h.t += GAP - 1000;
+    assert(!h.gp.refreshIfOverdue(h.t) && h.subs.length === 2, 'rate limit: not again within ' + (GAP / 1000) + ' s');
+    h.t += 1000;
+    assert(h.gp.refreshIfOverdue(h.t) && h.subs.length === 3, 'again after ' + (GAP / 1000) + ' s');
+    h.data(reading(120, 5, TS));
+    assert(h.sent.length === 1, 'the same reading again is skipped by the gate');
+    h.t += GAP;
+    h.data(reading(125, 5, TS + 300));
+    assert(h.sent.length === 2 && h.sent[1].TIMESTAMP === TS + 300, 'the new reading is sent');
+    assert(!h.gp.refreshIfOverdue(h.t + 1000), 'new reading: not overdue');
+    h.t = (TS + 300 + DUE + 1) * 1000;
+    assert(h.gp.refreshIfOverdue(h.t), 'overdue counts from the newest reading');
+
+    var e = live();
+    e.t = (TS + DUE + 30) * 1000;
+    e.data(reading(120, 5, TS));
+    e.t += GAP - 1000;
+    assert(!e.gp.refreshIfOverdue(e.t), 'an envelope less than ' + (GAP / 1000) + ' s ago: no resubscribe');
+    e.t += 1000;
+    assert(e.gp.refreshIfOverdue(e.t), 'and ' + (GAP / 1000) + ' s after it: resubscribes');
+
+    var p = harness();
+    p.gp.start();
+    assert(!p.gp.refreshIfOverdue(p.t + 3600000) && p.subs.length === 1, 'pending: never');
+    var u = harness({ plugins: [] });
+    u.gp.start();
+    assert(!u.gp.refreshIfOverdue(u.t + 3600000) && u.subs.length === 0, 'unavailable: never');
+    var n = live();
+    n.t = (TS + 600) * 1000;
+    n.error('PLUGIN_UNAVAILABLE');
+    assert(!n.gp.refreshIfOverdue(n.t + GAP) && n.subs.length === 1, 'unavailable with the subscription kept: never');
+    var z = harness();
+    z.gp.start();
+    z.data({ instances: [] });
+    assert(!z.gp.refreshIfOverdue(z.t + 3600000) && z.subs.length === 1, 'no reading yet ("---"): never');
+    var b = harness();
+    b.gp.start();
+    b.data({ instances: [{ instanceId: 'dexcom', properties: { status: { shortText: { text: 'busy' } } } }] });
+    assert(!b.gp.refreshIfOverdue(b.t + 3600000), 'only a busy answer so far: never');
+    var i = live();
+    i.error('INVALID_REQUEST');
+    assert(!i.gp.refreshIfOverdue(i.t + 3600000) && i.subs.length === 1, 'after INVALID_REQUEST: never');
+
+    // Settings saved resubscribes; the fetchAllData() that follows must not do it again.
+    var s = live();
+    s.t = (TS + 400) * 1000;
+    s.gp.onSettingsChanged();
+    assert(s.subs.length === 2 && !s.gp.refreshIfOverdue(s.t) && s.subs.length === 2, 'settings resubscribe counts for the rate limit');
+
+    // Callbacks of the replaced subscription are ignored.
+    var o = live();
+    o.t = (TS + 400) * 1000;
+    var old = o.sub();
+    o.gp.refreshIfOverdue(o.t);
+    old.cfg.onData(reading(130, 5, TS + 300));
+    old.cfg.onError({ code: 'PERMISSION_DENIED', message: 'x' });
+    assert(o.sent.length === 1 && o.gp.mode() === 'plugin', 'old subscription: data and errors ignored');
+    o.data(reading(130, 5, TS + 300));
+    assert(o.sent.length === 2, 'new subscription: data handled');
+
+    // A host that answers inside subscribeToSource still reaches onData.
+    var y = live();
+    y.pebble.subscribeToSource = function(cfg) {
+        cfg.onData(reading(140, 5, TS + 300));
+        return { unsubscribe: function() {} };
+    };
+    y.gp.refreshIfOverdue((TS + 400) * 1000);
+    assert(y.sent.length === 2 && y.sent[1].TIMESTAMP === TS + 300, 'synchronous answer on resubscribe is handled');
+
+    // Resubscribing doesn't feed the stall watchdog.
+    var w = live();
+    var start = w.t;
+    for (var k = 1; k <= 11; k++) {
+        w.t = start + k * 60000;
+        w.gp.checkStall(w.t);
+        w.gp.refreshIfOverdue(w.t);
+    }
+    w.t = start + GP.STALL_MS + 1000;
+    w.gp.checkStall(w.t);
+    assert(w.gp.mode() === 'unavailable' && w.sent[w.sent.length - 1].BG === '---', 'no envelope for 11 min despite resubscribes: watchdog shows "---"');
+    assert(!w.gp.refreshIfOverdue(w.t + GAP), 'and stops resubscribing once unavailable');
+
+    // Errors on the new subscription follow the usual rules.
+    var r = live();
+    r.gp.refreshIfOverdue((TS + 400) * 1000);
+    r.error('TIMEOUT');
+    assert(r.gp.mode() === 'plugin', 'first soft error on the new subscription keeps the reading');
+    r.error('TIMEOUT');
+    assert(r.gp.mode() === 'unavailable', 'second one: unavailable');
+    var c = live();
+    c.gp.refreshIfOverdue((TS + 400) * 1000);
+    c.sub().cfg.onError({ code: 'UNKNOWN', message: 'Rat Scout Glucose was updated or removed; subscribe again' });
+    assert(c.subs.length === 3 && c.gp.mode() === 'pending', 'subscription closed on the new one: detects and subscribes again');
+
+    var f = live();
+    f.pebble.subscribeToSource = function() { throw new Error('gone'); };
+    assert(!f.gp.refreshIfOverdue((TS + 400) * 1000) && f.gp.mode() === 'unavailable', 'resubscribe throws: unavailable, "---"');
+})();
+
+// 9. Hygiene
 console.log('\nhygiene');
 (function() {
     var src = fs.readFileSync(path.join(__dirname, '..', 'src', 'pkjs', 'glucose_plugin.js'), 'utf8');
