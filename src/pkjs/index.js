@@ -197,6 +197,7 @@ var glucoseSource = GlucosePlugin.create({
 function fetchAllData() {
     var now = Date.now();
     glucoseSource.checkStall(now);
+    glucoseSource.retryUnsent();
     glucoseSource.recheck();
     glucoseSource.recoverIfStuck(now);
     glucoseSource.refreshIfOverdue(now);

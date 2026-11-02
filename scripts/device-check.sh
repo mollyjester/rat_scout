@@ -150,6 +150,7 @@ stats = [
     ('Reading fetches', r'Fetching glucose readings'),
     ('Logins skipped', r'Skipping Dexcom login|Dexcom login (paused|in progress)'),
     ('Resubscribes', r'Glucose plugin: resubscribe'),
+    ('Failed BG sends', r'Glucose gate: send failed'),
 ]
 for label, pat in stats:
     print('%-18s %d' % (label + ':', count(pat)))
@@ -169,10 +170,11 @@ if nodata and nodata == count(r'Glucose gate: plugin send'):
     print('WARN every glucose send was "---" (no reading from Dexcom, or a failure: check the log)')
 
 # The gate must never resend the last reading, except right after the settings page closed
-# (onSettingsChanged clears the gate on purpose so new units/delta apply).
+# (onSettingsChanged clears the gate on purpose so new units/delta apply) or after its send
+# failed (retried on the next watch request).
 last = None
 for l in lines:
-    if 'Settings form closed' in l:
+    if 'Settings form closed' in l or 'Glucose gate: send failed' in l:
         last = None
         continue
     m = re.search(r'Glucose gate: plugin send ts=(\S+)', l)

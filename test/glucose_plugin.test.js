@@ -61,7 +61,7 @@ function harness(opts) {
         Glucose: Glucose,
         settings: function() { return h.settings; },
         msgType: MSG,
-        send: function(d) { h.sent.push(d); },
+        send: function(d, type, onFailure) { h.sent.push(d); h.failNext = onFailure; },
         now: function() { return h.t; },
         setTimeout: function(fn, ms) { h.timers.push({ fn: fn, at: h.t + ms, done: false }); return h.timers.length - 1; },
         clearTimeout: function(id) { if (h.timers[id]) h.timers[id].done = true; }
@@ -505,7 +505,40 @@ console.log('\nrecoverIfStuck, synchronous start, INVALID_REQUEST pin');
     assert(p.subs.length === 2 && p.gp.mode() === 'pending', 'settings saved: detects and subscribes again');
 })();
 
-// 10. Hygiene
+// 10. A failed glucose send is retried
+console.log('\nretryUnsent');
+(function() {
+    var h = harness();
+    h.gp.start();
+    h.data(reading(120, 5, 1700000000));
+    assert(h.sent.length === 1 && typeof h.failNext === 'function', 'sent with a failure callback');
+    h.failNext();
+    h.data(reading(120, 5, 1700000000));
+    assert(h.sent.length === 2, 'after a failure the same reading is not skipped as a duplicate');
+    h.failNext();
+    assert(h.gp.retryUnsent() && h.sent.length === 3 && h.sent[2].TIMESTAMP === 1700000000, 'the next watch ping resends it');
+    assert(!h.gp.retryUnsent(), 'only once');
+    h.data(reading(120, 5, 1700000000));
+    assert(h.sent.length === 3, 'once delivered, a repeat is skipped again');
+
+    var n = harness();
+    n.gp.start();
+    n.data(reading(120, 5, 1700000000));
+    var failOld = n.failNext;
+    n.data(reading(125, 5, 1700000300));
+    failOld();
+    assert(!n.gp.retryUnsent() && n.sent.length === 2, 'a failure of an older send is ignored once a newer one went out');
+    n.failNext();
+    n.data(reading(130, 5, 1700000600));
+    assert(!n.gp.retryUnsent() && n.sent.length === 3, 'a newer reading replaces the pending retry');
+
+    var d = harness({ plugins: [] });
+    d.gp.start();
+    d.failNext();
+    assert(d.gp.retryUnsent() && d.sent.length === 2 && d.sent[1].BG === '---', '"---" is retried too');
+})();
+
+// 11. Hygiene
 console.log('\nhygiene');
 (function() {
     var src = fs.readFileSync(path.join(__dirname, '..', 'src', 'pkjs', 'glucose_plugin.js'), 'utf8');

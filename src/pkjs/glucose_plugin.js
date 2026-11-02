@@ -141,6 +141,8 @@ function create(deps) {
         unavailableSinceMs: 0,
         unavailableWhy: '',
         lastSent: null,
+        // A glucose dictionary whose send failed (or timed out): resent on the next watch ping.
+        unsent: null,
         // Set by INVALID_REQUEST: the host refused our request shape, so re-checking cannot help.
         pinned: false
     };
@@ -168,8 +170,17 @@ function create(deps) {
             return;
         }
         console.log('Glucose gate: plugin send ts=' + dict.TIMESTAMP);
-        state.lastSent = { BG: dict.BG, TIMESTAMP: dict.TIMESTAMP };
-        deps.send(dict, dict.BG === '---' ? NO_DATA_TYPE : 'BG (plugin)');
+        var sent = { BG: dict.BG, TIMESTAMP: dict.TIMESTAMP };
+        state.lastSent = sent;
+        state.unsent = null;
+        deps.send(dict, dict.BG === '---' ? NO_DATA_TYPE : 'BG (plugin)', function() {
+            // The watch didn't get it. Unless something newer was sent since, forget it was sent
+            // (so a repeat of it isn't skipped as a duplicate) and keep it for retryUnsent().
+            if (state.lastSent !== sent) return;
+            state.lastSent = null;
+            state.unsent = dict;
+            console.log('Glucose gate: send failed ts=' + dict.TIMESTAMP + ', retrying on the next watch request');
+        });
     }
 
     /**
@@ -377,6 +388,20 @@ function create(deps) {
             console.log('Glucose plugin: resubscribe (unavailable for ' +
                 Math.round((t - state.unavailableSinceMs) / 60000) + ' min: ' + state.unavailableWhy + ')');
             return resubscribe(t);
+        },
+
+        /**
+         * Resend a glucose dictionary whose send failed, run in fetchAllData(): a watch ping
+         * means the watch is reachable again. Goes through the gate like any send.
+         * @returns {boolean} True if it resent one
+         */
+        retryUnsent: function() {
+            if (!state.unsent) return false;
+            var dict = state.unsent;
+            state.unsent = null;
+            console.log('Glucose gate: retrying ts=' + dict.TIMESTAMP);
+            send(dict);
+            return true;
         },
 
         /**
