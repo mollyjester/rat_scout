@@ -26,8 +26,10 @@
 # Options for install/logs: --seconds N (default 120), --expect unavailable|pending|plugin,
 #   --name NAME (log file name). All: --out DIR (default .device-check, gitignored; not under build/, which pack-plugin.py cleans).
 #
-# Logs are redacted before they are written: UUIDs other than the app's and email
-# addresses are masked. Dexcom IDs and coordinates are never logged by the app
+# Logs are redacted before they are written: UUIDs other than the app's, email
+# addresses, and IPv4 addresses with a port or in a URL are masked (a bare a.b.c.d is
+# left alone: app versions such as 1.16.0.5 look the same). REDACT=word1,word2 masks
+# more, e.g. a Dexcom login that isn't an email address. Dexcom IDs and coordinates are never logged by the app
 # (dexcom.js, index.js). BG values are not logged by PKJS; the watch's own logs
 # may still carry health data, so logs stay in .device-check/ (gitignored).
 #
@@ -63,11 +65,21 @@ mkdir -p "$OUT"
 
 UUID="$(python3 -I -c 'import json; print(json.load(open("package.json"))["pebble"]["uuid"])')"
 
+# REDACT words as sed expressions, regex characters escaped.
+EXTRA_REDACT=()
+IFS=',' read -r -a _words <<< "${REDACT:-}"
+for _w in "${_words[@]}"; do
+    [[ -n "$_w" ]] && EXTRA_REDACT+=(-e "s/$(printf '%s' "$_w" | sed -E 's/[][\\/.*^$+?(){}|]/\\&/g')/<redacted>/g")
+done
+
 redact() {  # stdin -> stdout
     sed -u -E \
         -e "s/$UUID/__APP_UUID__/g" \
         -e 's/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/<uuid>/g' \
         -e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/<email>/g' \
+        -e 's#([0-9]{1,3}\.){3}[0-9]{1,3}:[0-9]+#<ip>:<port>#g' \
+        -e 's#//([0-9]{1,3}\.){3}[0-9]{1,3}#//<ip>#g' \
+        "${EXTRA_REDACT[@]}" \
         -e "s/__APP_UUID__/$UUID/g"
 }
 
@@ -79,17 +91,21 @@ capture() {  # capture <name> <pebble args...>; sets LOG
     # Run outside the project: pebble-tool 5.1.1/5.1.2 registers its log handlers before
     # loading build/pebble-js-app.js.map (util/logs.py PebbleLogPrinter.__init__), and a
     # PKJS log arriving meanwhile crashes it. With no sourcemap the window is tiny.
-    local here; here="$(pwd)"; LOG="$here/$LOG"
+    [[ "$LOG" == /* ]] || LOG="$(pwd)/$LOG"
     local start; start=$(date +%s)
-    (cd "$(mktemp -d)" && timeout "$SECS" pebble "$@" "${TRANSPORT[@]}") 2>&1 | redact > "$LOG"
+    local tmp; tmp="$(mktemp -d)"
+    (cd "$tmp" && timeout "$SECS" pebble "$@" "${TRANSPORT[@]}") 2>&1 | redact > "$LOG"
+    local rc=${PIPESTATUS[0]}
+    rmdir "$tmp" 2>/dev/null || rm -rf "$tmp"
     local took=$(( $(date +%s) - start ))
     echo "==> Captured $(wc -l < "$LOG") lines in ${took}s"
-    # pebble exits by itself when the phone's developer connection drops ("Disconnected.");
-    # timeout ends a full capture. A short one must not pass as a full run.
+    # timeout ends a full capture with status 124. Any other status means pebble stopped by
+    # itself: the phone's developer connection dropped ("Disconnected."), or it failed at once
+    # (not logged in, wrong address). Such a capture must not pass as a full run.
     SHORT=0
-    if [ "$took" -lt $(( SECS - 30 )) ]; then
+    if [ "$rc" -ne 124 ]; then
         SHORT=1
-        echo "FAIL capture ended after ${took}s of ${SECS}s ($(grep -q '^Disconnected\.' "$LOG" && echo 'the phone disconnected' || echo 'pebble exited'))"
+        echo "FAIL capture ended after ${took}s of ${SECS}s ($(grep -q '^Disconnected\.' "$LOG" && echo 'the phone disconnected' || echo "pebble exited with status $rc"))"
     fi
 }
 

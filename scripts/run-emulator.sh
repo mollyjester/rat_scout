@@ -32,7 +32,8 @@ PBW_FILE=""
 # ---------------------------------------------------------------------------
 CLEANUP_EXIT_CODE=0
 BROWSER_PY_BACKUP=""   # set later; used by cleanup to restore original
-cleanup() {
+cleanup() {  # cleanup [status]: the script's own exit status unless one is given
+    local rc="${1:-$?}"
     # Avoid re-triggering the trap on EXIT while we're already cleaning up
     trap - EXIT INT TERM
     echo
@@ -52,9 +53,13 @@ cleanup() {
         find "$(dirname "$BROWSER_PY_BACKUP")" -path '*/__pycache__/browser*' -delete 2>/dev/null || true
         echo "==> Restored original browser.py"
     fi
-    exit "$CLEANUP_EXIT_CODE"
+    # Keep a failure's status (every `exit 1` and set -e abort runs this trap); Ctrl-C and
+    # TERM are the normal way to stop the emulator and exit 0.
+    [[ "$CLEANUP_EXIT_CODE" -ne 0 ]] && rc="$CLEANUP_EXIT_CODE"
+    exit "$rc"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'cleanup 0' INT TERM
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -337,7 +342,13 @@ PEBBLE_PYTHON="$(head -1 "$(which pebble)" | sed 's/^#!//')"
 BROWSER_PY="$("$PEBBLE_PYTHON" -c "import pebble_tool.util.browser; print(pebble_tool.util.browser.__file__)" 2>/dev/null || true)"
 
 if [[ -n "$BROWSER_PY" && -f "$BROWSER_PY" ]]; then
-    cp -f "$BROWSER_PY" "${BROWSER_PY}.orig"
+    # A run killed with SIGKILL never restored the file: browser.py is still our override and
+    # .orig holds pebble-tool's original. Keep that backup instead of overwriting it.
+    if [[ -f "${BROWSER_PY}.orig" ]] && cmp -s "$BROWSER_PY" "${PROJECT_ROOT}/scripts/browser_override.py"; then
+        echo "==> browser.py is still the override from an earlier run; keeping the original backup"
+    else
+        cp -f "$BROWSER_PY" "${BROWSER_PY}.orig"
+    fi
     BROWSER_PY_BACKUP="${BROWSER_PY}.orig"
     cp -f "${PROJECT_ROOT}/scripts/browser_override.py" "$BROWSER_PY"
     # Clear bytecode cache so Python picks up our override
