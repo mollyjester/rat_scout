@@ -27,6 +27,10 @@ var NO_DATA_TYPE = 'No glucose data';
 var SUBSCRIPTION_CLOSED = /subscribe again/;
 // A reading is due 300 s after the last one; the watch pings PKJS from +305 s (messaging.c).
 var READING_DUE_SEC = 305;
+// The plugin answers from its cache, without calling Dexcom, until its reading is this old
+// (src/plugin-src/main.js READING_FRESH_SEC). An envelope from before that says nothing about
+// a newer reading, so it doesn't hold back a resubscribe.
+var PLUGIN_FRESH_SEC = 310;
 // The plugin calls Dexcom at most once per 55 s (src/plugin-src/main.js ATTEMPT_THROTTLE_MS), so
 // resubscribing sooner after an envelope or a resubscribe could only be answered from its cache.
 var RESUBSCRIBE_MIN_MS = 55000;
@@ -322,7 +326,9 @@ function create(deps) {
          * Run in fetchAllData() on every watch ping (the watch pings each minute while a
          * reading is late, messaging.c / rat_scout.c). Only in plugin mode with a reading,
          * more than READING_DUE_SEC after it, and at most once per RESUBSCRIBE_MIN_MS after
-         * an envelope or a resubscribe. The plugin's cache and throttle bound Dexcom calls.
+         * a resubscribe or an envelope that came once the plugin's cache was stale (an earlier
+         * one was a cached answer: seen on the phone at ts + 303 s, which held a reading back
+         * a minute). The plugin's cache and throttle bound Dexcom calls.
          * @param {number} t - Now, epoch ms
          * @returns {boolean} True if it resubscribed
          */
@@ -330,7 +336,9 @@ function create(deps) {
             if (state.mode !== 'plugin' || !state.subscription || !state.lastReadingTs) return false;
             var overdue = Math.floor(t / 1000) - state.lastReadingTs;
             if (overdue <= READING_DUE_SEC) return false;
-            if (t - state.lastPluginOkMs < RESUBSCRIBE_MIN_MS || t - state.lastResubscribeMs < RESUBSCRIBE_MIN_MS) {
+            var staleAnswer = state.lastPluginOkMs >= (state.lastReadingTs + PLUGIN_FRESH_SEC) * 1000;
+            if ((staleAnswer && t - state.lastPluginOkMs < RESUBSCRIBE_MIN_MS) ||
+                t - state.lastResubscribeMs < RESUBSCRIBE_MIN_MS) {
                 return false;
             }
             console.log('Glucose plugin: resubscribe (reading overdue ' + overdue + ' s)');
@@ -354,6 +362,7 @@ module.exports = {
     PLUGIN_GRACE_MS: PLUGIN_GRACE_MS,
     STALL_MS: STALL_MS,
     READING_DUE_SEC: READING_DUE_SEC,
+    PLUGIN_FRESH_SEC: PLUGIN_FRESH_SEC,
     RESUBSCRIBE_MIN_MS: RESUBSCRIBE_MIN_MS,
     pluginAvailable: pluginAvailable,
     envelopeToDictionary: envelopeToDictionary,

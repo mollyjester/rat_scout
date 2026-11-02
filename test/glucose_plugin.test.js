@@ -345,6 +345,21 @@ console.log('\nrefreshIfOverdue');
     e.t += 1000;
     assert(e.gp.refreshIfOverdue(e.t), 'and ' + (GAP / 1000) + ' s after it: resubscribes');
 
+    // Phone, 2026-11-02: a cached host answer at ts + 303 s held the 16:04 ping back a minute.
+    var c0 = live();
+    c0.t = (TS + 303) * 1000;
+    c0.data(reading(120, 5, TS));
+    c0.t = (TS + 355) * 1000;
+    assert(c0.gp.refreshIfOverdue(c0.t), 'an envelope from before the plugin cache went stale does not hold it back');
+    var c1 = live();
+    c1.t = (TS + GP.PLUGIN_FRESH_SEC) * 1000;
+    c1.data(reading(120, 5, TS));
+    c1.t += GAP - 1000;
+    assert(!c1.gp.refreshIfOverdue(c1.t), 'an envelope from when the plugin could have called Dexcom does');
+    var src = fs.readFileSync(path.join(__dirname, '..', 'src', 'plugin-src', 'main.js'), 'utf8');
+    var m = /var READING_FRESH_SEC = (\d+);/.exec(src);
+    assert(m && +m[1] === GP.PLUGIN_FRESH_SEC, 'PLUGIN_FRESH_SEC matches the plugin\'s READING_FRESH_SEC');
+
     var p = harness();
     p.gp.start();
     assert(!p.gp.refreshIfOverdue(p.t + 3600000) && p.subs.length === 1, 'pending: never');
