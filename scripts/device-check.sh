@@ -113,6 +113,7 @@ stats = [
     ('Session logins ok', r'Session ID received'),
     ('Reading fetches', r'Fetching glucose readings'),
     ('Logins skipped', r'Skipping Dexcom login|Dexcom login (paused|in progress)'),
+    ('Resubscribes', r'Glucose plugin: resubscribe'),
 ]
 for label, pat in stats:
     print('%-18s %d' % (label + ':', count(pat)))
@@ -145,6 +146,25 @@ for l in lines:
 if span >= 600:
     per5 = count(r'Fetching glucose readings') * 300.0 / span
     print('Reading fetches per 5 min: %.1f' % per5)
+
+# Delay from Dexcom reading time to the send, per new reading. Log times are HH:MM:SS of the
+# capturing machine, read as UTC (as in this container); the reading ts is epoch seconds.
+sends = []
+for l in lines:
+    m = re.match(r'^\[(\d\d):(\d\d):(\d\d)\].*Glucose gate: plugin send ts=(\d+)', l)
+    if m and m.group(4) != '0' and (not sends or sends[-1][1] != int(m.group(4))):
+        sends.append((int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3)), int(m.group(4))))
+if sends:
+    print('New readings sent (reading UTC -> sent, delay):')
+    skipped = 0
+    for i, (at, ts) in enumerate(sends):
+        delay = (at - ts % 86400) % 86400
+        r = ts % 86400
+        print('    %02d:%02d:%02d -> %02d:%02d:%02d  %d s' % (r // 3600, r // 60 % 60, r % 60, at // 3600, at // 60 % 60, at % 60, delay))
+        if i:
+            skipped += max(0, int(round((ts - sends[i - 1][1]) / 300.0)) - 1)
+    print('Readings skipped between sends: %d' % skipped)
+    print('Reading fetches per new reading: %.1f' % (count(r'Fetching glucose readings') / float(len(sends))))
 if expect:
     final = modes[-1] if modes else None
     # Already in plugin mode before the capture: no mode line, but plugin envelopes arrive.
@@ -202,7 +222,8 @@ Start a session first: login, open the printed URL, paste the failed localhost:6
    units come from Clay; the plugin's units only change its own glucose/delta shapes)
 6. Wrong password: not on device. Covered by mocked unit tests only (never against real Dexcom).
 7. Long run, preview ON.                             Run: logs --seconds 1800 --expect plugin
-   (about 6 reading fetches, no plugin resends, no crash)
+   (about 6 new readings, each sent once within about 1-2 min, none skipped,
+    about 1-2 reading fetches per new reading, no plugin resends, no crash)
 EOF
         ;;
     *) sed -n '2,/^$/p' "$0"; exit 2 ;;
