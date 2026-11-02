@@ -150,7 +150,7 @@ iOS's JavaScriptCore. iOS itself wasn't tested.
 - **`console.log` shows in `pebble logs`** as `plugin>` lines. The phone streams them to the developer connection (`plugin/PluginLogs.kt`), and they also arrived through CloudPebble.
 - **Return data, not errors, for "no data".** Keep `respond.error` for real faults; an empty `instances: []` keeps the caller's subscription healthy.
 - **Keep sessions across runs.** Store login tokens in `localStorage` and drop them only on a login or session failure. Rat Scout first cleared them on *any* failure, so every 60 s poll became a full login while Dexcom had no reading.
-- **Polling cadence:** while something is subscribed the host calls your handler about every `suggestedRefreshIntervalSec` ("may change"). On the phone (60 s requested) we saw 60 s most of the time, but also gaps of about 6 minutes that skipped a 5-minute Dexcom reading. Don't promise subscribers fresher data than that, and use your own throttle and cache for an upstream API you must not hammer.
+- **Polling cadence:** while something is subscribed the host calls your handler about every `suggestedRefreshIntervalSec` ("may change"), but that interval counts only time the phone is awake, so it can stretch to minutes (§6.1). On the phone (60 s requested) we saw 60 s right after subscribing and gaps of about 6 minutes later, which skipped a 5-minute Dexcom reading. Don't promise subscribers fresher data than that, and use your own throttle and cache for an upstream API you must not hammer.
 
 ### 5.3 A settings page for the plugin
 
@@ -201,6 +201,21 @@ What we saw on Pebble app 1.16.0.5:
 - **Log `err.message` as well as `err.code`.** The message is what tells "no plugin" apart from "no handler".
 - **An error doesn't end a subscription** (guide), so keep it alive. Rat Scout's modes are `unavailable` (shows "---") / `pending` / `plugin`, with a 30 s grace period, one tolerated soft error, an 11-minute stall watchdog, and a re-check on every watch ping so it picks the plugin up when it's installed or the preview is turned on (`src/pkjs/glucose_plugin.js`).
 - **Check, during detection, that your uuid is listed with the category/item you need,** not just that the API functions exist. Whether they exist with the preview off wasn't checked, and their existence alone says nothing about your plugin being usable.
+
+### 6.1 When the host reads a source
+
+From mobileapp `dbc937e` (`libpebble3/src/commonMain/kotlin/io/rebble/libpebblecommon/`):
+
+- **Every subscription has its own poll loop.** `JsPlugin.observe()` (`plugin/JsPlugin.kt:124-135`) requests, sends the answer, then waits `withTimeoutOrNull(suggestedRefreshIntervalSec) { refreshRequests.first { it == key } }`, and repeats. Each `subscribeToSource` starts a new loop through `SourceDispatcher.subscribe` → `PluginClient.observe` → `JsPlugin.observe` (`plugin/SourceDispatcher.kt:61-91`, `plugin/PluginClient.kt:103-142`, `:198-206`). Nothing is shared or replayed between subscriptions.
+- **A new subscription reads at once.** The loop requests before its first wait. On the phone a subscribe or a resubscribe delivered within about 1 s. `unsubscribe()` cancels the old loop (`SourceDispatcher.kt:94-96`). On Android, callbacks still in flight for the old subscription are dropped (`androidMain/assets/startup.js:310-311`); iOS wasn't checked.
+- **What ends the wait early** (`refreshRequests`, fed in two places only):
+  - `Pebble.refreshSources([...])` called by the **plugin** (`plugin/JsPlugin.kt:429-432`, `plugin/PluginHostJs.kt:55`). PKJS has no `refreshSources` (`startup.js:540-549` exposes `subscribeToSource`, `enumeratePlugins`, `invokeAction`).
+  - The `refreshed` list of a successful **action** (`JsPlugin.kt:183`), which a consumer can call with `Pebble.invokeAction`. But an app invoking an action of a plugin that can send data off the phone needs the user's `InvokeAction` permission as well (guide; `PluginClient.kt:171-172`), and `Internet` counts (`permissions/PermissionRegistry.kt:32`, kind `Exfiltrating`). The action is also offered to Index.
+  - A refresh emitted while the loop isn't waiting (for example during a request) is lost: `refreshRequests` is a `MutableSharedFlow` without replay (`JsPlugin.kt:87-90`).
+- **`validUntilMs` doesn't affect scheduling.** It is passed through into the envelope (`JsPlugin.kt:198-203`) and ignored for change detection (`plugin/PluginUpstreams.kt:101`). `maxStalenessMs` on subscribe is parsed but never used (`SourceDispatcher.kt:113`, not passed on at `:72-78`).
+- **The poll interval counts awake time only.** The loop's scope has no dispatcher (`di/LibPebbleModule.kt:354`: `CoroutineName` only), so its timeout runs on kotlinx-coroutines' default delay: `DefaultExecutor` (`System.nanoTime` / `parkNanos`) or the main dispatcher (`DefaultExecutor.kt` `initializeDefaultDelay`, kotlinx master; the app's exact version wasn't checked). Android's `SystemClock` documentation: `uptimeMillis` "stops when the system enters deep sleep" and is "the basis for … `Object.wait`, and `System.nanoTime()`"; `Handler` uses it too. libpebble3 takes no wakelock and uses no `AlarmManager` (searched; the app module outside libpebble3 wasn't). So a "60 s" wait lasts 60 s of awake time.
+  - That this caused the gaps we saw is a **hypothesis**, consistent with the log: 60 s polls only right after subscribing, gaps of about 6 minutes later, and a gap ending at the second a watch message woke the phone. Not proven.
+- **What to do as a consumer:** the watch talking to the phone wakes it. If your watchapp knows data is due, have it message PKJS, and resubscribe from there to get an immediate read. Rate-limit it, and keep the plugin's own cache and throttle, because every resubscribe runs the plugin.
 
 ## 7. Building the pbws
 
