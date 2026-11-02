@@ -128,18 +128,8 @@ function createXHR(fetchFn, setTimeoutFn, clearTimeoutFn) {
         try {
             promise = fetchFn(this._url, options);
         } catch (e) {
-            // Whether fetch accepts a User-Agent header is UNVERIFIED: retry without it.
-            var headers = {};
-            for (var k in this._headers) {
-                if (k.toLowerCase() !== 'user-agent') headers[k] = this._headers[k];
-            }
-            options.headers = headers;
-            try {
-                promise = fetchFn(this._url, options);
-            } catch (e2) {
-                self._fail();
-                return;
-            }
+            self._fail();
+            return;
         }
 
         promise.then(function(res) {
@@ -280,36 +270,8 @@ Dexcom.prototype.formatReading = function(reading) {
         _value: reading.Value,
         _trend_direction: reading.Trend,
         _trend_arrow: TREND_ARROWS.hasOwnProperty(reading.Trend) ? TREND_ARROWS[reading.Trend] : '?',
-        _datetime: new Date(parseInt(reading.WT.match(/\d+/)[0])),
-        _status: this.getGlucoseStatus(reading.Value)
+        _datetime: new Date(parseInt(reading.WT.match(/\d+/)[0]))
     };
-};
-
-/**
- * Get glucose status
- * @param {number} value - BG value
- * @returns {string} Status (LOW, HIGH, IN RANGE)
- */
-Dexcom.prototype.getGlucoseStatus = function(value) {
-    if (value < 70) return 'LOW';
-    if (value > 180) return 'HIGH';
-    return 'IN RANGE';
-};
-
-/**
- * Get trend description from delta
- * @param {number} delta - BG delta value
- * @returns {string} Trend description
- */
-Dexcom.prototype.getTrendDescription = function(delta) {
-    if (delta === null) return 'Unknown';
-    if (delta > 15) return 'Rising quickly';
-    if (delta > 7) return 'Rising';
-    if (delta > 3) return 'Rising slowly';
-    if (delta >= -3) return 'Stable';
-    if (delta >= -7) return 'Dropping slowly';
-    if (delta >= -15) return 'Dropping';
-    return 'Dropping quickly';
 };
 
 /**
@@ -617,12 +579,10 @@ Dexcom.prototype._handleGlucoseResponse = function(readings) {
         _trend_direction: current._trend_direction,
         _trend_arrow: current._trend_arrow,
         _datetime: current._datetime,
-        _status: current._status,
         _delta: delta,
         _delta_time: deltaTime,
         _previous_value: previous ? previous._value : null,
-        _rate_of_change: deltaTime ? (delta / deltaTime) : null,
-        _trend_description: this.getTrendDescription(delta)
+        _rate_of_change: deltaTime ? (delta / deltaTime) : null
     };
 
     this.onResults({
@@ -661,7 +621,8 @@ Dexcom.prototype._handleServerError = function(error) {
         }
     } else {
         this.retryCount = 0;
-        throw new Error('Server error: ' + error.Message);
+        // The code only: Dexcom's free-text Message ends up in logs read from real phones.
+        throw new Error('Server error: ' + error.Code);
     }
 };
 
@@ -787,15 +748,17 @@ function djb2(str) {
 }
 
 /**
- * Key identifying the Dexcom credentials in settings.
- * @param {Object} settings - Clay settings (DEX_LOGIN, DEX_PASSWORD, DEX_REGION)
+ * Key identifying the Dexcom credentials in settings. The password is not part of it: a new
+ * password bumps DEX_CRED_VERSION (settings.js save), so nothing derived from the password is
+ * stored.
+ * @param {Object} settings - Settings.load() result (DEX_LOGIN, DEX_REGION, DEX_CRED_VERSION)
  * @returns {string} Credential key
  */
 function credKey(settings) {
     settings = settings || {};
     return djb2(String(settings.DEX_LOGIN || '') + '|' +
                 String(settings.DEX_REGION || '') + '|' +
-                String(settings.DEX_PASSWORD || ''));
+                String(settings.DEX_CRED_VERSION || '0'));
 }
 
 // dexcom.js errors from the login steps or a failed session. Anything else (no readings, a
@@ -863,9 +826,17 @@ function create(storage, owner, now) {
     function blockReason(key) {
         var t = now();
         var bad = readJson(storage, BADCREDS_KEY);
-        if (bad && bad.credKey === key && t < bad.until) return 'badcreds';
+        if (bad && bad.credKey === key && t < bad.until) {
+            // A pause longer than the longest one means the clock went back: keep pausing, but
+            // no longer than LOCKOUT_PAUSE_MS from now.
+            if (bad.until - t > LOCKOUT_PAUSE_MS) {
+                storage.setItem(BADCREDS_KEY, JSON.stringify({ credKey: bad.credKey, until: t + LOCKOUT_PAUSE_MS }));
+            }
+            return 'badcreds';
+        }
         var lock = readJson(storage, INFLIGHT_KEY);
-        if (lock && typeof lock.at === 'number' && t - lock.at < INFLIGHT_TTL_MS) return 'inflight';
+        // A lock dated in the future (clock went back) counts as expired, as main.js's throttle.
+        if (lock && typeof lock.at === 'number' && t >= lock.at && t - lock.at < INFLIGHT_TTL_MS) return 'inflight';
         return null;
     }
 
@@ -944,6 +915,9 @@ var LOGIN_KEY = 'ratscout.settings.login';
 var REGION_KEY = 'ratscout.settings.region';
 var UNITS_KEY = 'ratscout.settings.units';
 var PASSWORD_KEY = 'dexcom.password';
+// Bumped by every save that stores a new password, so the plugin can tell credentials apart
+// without keeping anything derived from the password (dexcom_guard.js credKey).
+var CRED_VERSION_KEY = 'ratscout.settings.credVersion';
 
 var REGIONS = ['ous', 'us', 'jp'];
 var UNITS = ['mg/dL', 'mmol/L'];
@@ -956,8 +930,11 @@ var DEFAULT_UNITS = 'mg/dL';
  * @returns {Promise} Resolves the password, '' if none
  */
 function readPassword(secure) {
-    if (!secure || typeof secure.getItem !== 'function') return Promise.resolve('');
-    return Promise.resolve(secure.getItem(PASSWORD_KEY)).then(function(v) {
+    // Inside the chain, so a throwing secure storage rejects instead of escaping the caller.
+    return Promise.resolve().then(function() {
+        if (!secure || typeof secure.getItem !== 'function') return '';
+        return secure.getItem(PASSWORD_KEY);
+    }).then(function(v) {
         return v ? String(v) : '';
     });
 }
@@ -977,7 +954,7 @@ function oneOf(value, allowed, fallback) {
  * Load everything the source handler needs.
  * @param {Object} storage - localStorage
  * @param {?Object} secure - Pebble.secureStorage
- * @returns {Promise} Resolves {DEX_LOGIN, DEX_PASSWORD, DEX_REGION, BG_UNITS}
+ * @returns {Promise} Resolves {DEX_LOGIN, DEX_PASSWORD, DEX_REGION, BG_UNITS, DEX_CRED_VERSION}
  */
 function load(storage, secure) {
     return readPassword(secure).then(function(password) {
@@ -985,9 +962,19 @@ function load(storage, secure) {
             DEX_LOGIN: storage.getItem(LOGIN_KEY) || '',
             DEX_PASSWORD: password,
             DEX_REGION: oneOf(storage.getItem(REGION_KEY), REGIONS, DEFAULT_REGION),
-            BG_UNITS: oneOf(storage.getItem(UNITS_KEY), UNITS, DEFAULT_UNITS)
+            BG_UNITS: oneOf(storage.getItem(UNITS_KEY), UNITS, DEFAULT_UNITS),
+            DEX_CRED_VERSION: storage.getItem(CRED_VERSION_KEY) || '0'
         };
     });
+}
+
+/**
+ * Bump the credential version (a new password was stored).
+ * @param {Object} storage - localStorage
+ */
+function bumpCredVersion(storage) {
+    var v = parseInt(storage.getItem(CRED_VERSION_KEY), 10) || 0;
+    storage.setItem(CRED_VERSION_KEY, String(v + 1));
 }
 
 /**
@@ -1007,20 +994,28 @@ function view(storage, secure) {
  * @param {Object} storage - localStorage
  * @param {?Object} secure - Pebble.secureStorage
  * @param {Object} msg - {login, password, region, units}
- * @returns {Promise} Resolves when stored
+ * @returns {Promise} Resolves {credentialsChanged} when stored
  */
 function save(storage, secure, msg) {
     msg = msg || {};
-    storage.setItem(LOGIN_KEY, String(msg.login || '').trim());
-    storage.setItem(REGION_KEY, oneOf(msg.region, REGIONS, DEFAULT_REGION));
-    storage.setItem(UNITS_KEY, oneOf(msg.units, UNITS, DEFAULT_UNITS));
-    if (typeof msg.password === 'string' && msg.password !== '') {
-        if (!secure || typeof secure.setItem !== 'function') {
-            return Promise.reject(new Error('secure storage unavailable'));
-        }
-        return Promise.resolve(secure.setItem(PASSWORD_KEY, msg.password));
-    }
-    return Promise.resolve();
+    return Promise.resolve().then(function() {
+        var login = String(msg.login || '').trim();
+        var region = oneOf(msg.region, REGIONS, DEFAULT_REGION);
+        var changed = login !== (storage.getItem(LOGIN_KEY) || '') ||
+            region !== oneOf(storage.getItem(REGION_KEY), REGIONS, DEFAULT_REGION);
+        storage.setItem(LOGIN_KEY, login);
+        storage.setItem(REGION_KEY, region);
+        storage.setItem(UNITS_KEY, oneOf(msg.units, UNITS, DEFAULT_UNITS));
+        if (typeof msg.password !== 'string' || msg.password === '') return { credentialsChanged: changed };
+        if (!secure || typeof secure.setItem !== 'function') throw new Error('secure storage unavailable');
+        return readPassword(secure).then(function(old) {
+            if (old === msg.password) return { credentialsChanged: changed };
+            return Promise.resolve(secure.setItem(PASSWORD_KEY, msg.password)).then(function() {
+                bumpCredVersion(storage);
+                return { credentialsChanged: true };
+            });
+        });
+    });
 }
 
 module.exports = {
@@ -1028,6 +1023,8 @@ module.exports = {
     REGION_KEY: REGION_KEY,
     UNITS_KEY: UNITS_KEY,
     PASSWORD_KEY: PASSWORD_KEY,
+    CRED_VERSION_KEY: CRED_VERSION_KEY,
+    bumpCredVersion: bumpCredVersion,
     load: load,
     view: view,
     save: save
@@ -1270,10 +1267,13 @@ function answer(respond, env, settings) {
     }
 
     /**
-     * Answer without calling Dexcom: cached reading if any, else "busy".
+     * Answer without calling Dexcom: cached reading if any, else "busy" while another run is
+     * logging in, else empty (the last attempt finished without a reading).
      */
     function answerSkipped() {
-        respond.data(cacheOk ? readingEnvelope(cache, units, t) : busyEnvelope(t));
+        if (cacheOk) respond.data(readingEnvelope(cache, units, t));
+        else if (DexcomGuard.create(storage, 'plugin', env.now).blockReason(key) === 'inflight') respond.data(busyEnvelope(t));
+        else respond.data(emptyEnvelope(t));
     }
 
     var lastAttempt = parseInt(storage.getItem(LAST_ATTEMPT_KEY), 10) || 0;
@@ -1343,8 +1343,10 @@ function answer(respond, env, settings) {
 
 /**
  * Answer the settings page (plugin/config.html).
- * 'load' returns what the page shows (never the password); 'save' stores a submission, drops
- * the session and throttle so the new account is tried at once, and refreshes subscribers.
+ * 'load' returns what the page shows (never the password); 'save' stores a submission and
+ * refreshes subscribers. Only a change of login, region or password drops the session and the
+ * throttle, so the new account is tried at once; saving units (or the same account again)
+ * keeps both, so repeated saves can't bypass the 55 s Dexcom throttle.
  * @param {Object} message - {type: 'load'|'save', ...}
  * @param {Function} respond - Reply to the page
  * @param {Object} env - {storage, secure, refreshSources}
@@ -1358,10 +1360,12 @@ function handleConfigMessage(message, respond, env) {
         });
     }
     if (type === 'save') {
-        return Settings.save(env.storage, env.secure, message).then(function() {
-            env.storage.removeItem(ACCOUNT_ID_KEY);
-            env.storage.removeItem(SESSION_ID_KEY);
-            env.storage.removeItem(LAST_ATTEMPT_KEY);
+        return Settings.save(env.storage, env.secure, message).then(function(saved) {
+            if (saved && saved.credentialsChanged) {
+                env.storage.removeItem(ACCOUNT_ID_KEY);
+                env.storage.removeItem(SESSION_ID_KEY);
+                env.storage.removeItem(LAST_ATTEMPT_KEY);
+            }
             if (env.refreshSources) env.refreshSources([CATEGORY + '/' + ITEM]);
             respond({ ok: true });
         }, function(e) {

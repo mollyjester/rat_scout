@@ -116,36 +116,8 @@ Dexcom.prototype.formatReading = function(reading) {
         _value: reading.Value,
         _trend_direction: reading.Trend,
         _trend_arrow: TREND_ARROWS.hasOwnProperty(reading.Trend) ? TREND_ARROWS[reading.Trend] : '?',
-        _datetime: new Date(parseInt(reading.WT.match(/\d+/)[0])),
-        _status: this.getGlucoseStatus(reading.Value)
+        _datetime: new Date(parseInt(reading.WT.match(/\d+/)[0]))
     };
-};
-
-/**
- * Get glucose status
- * @param {number} value - BG value
- * @returns {string} Status (LOW, HIGH, IN RANGE)
- */
-Dexcom.prototype.getGlucoseStatus = function(value) {
-    if (value < 70) return 'LOW';
-    if (value > 180) return 'HIGH';
-    return 'IN RANGE';
-};
-
-/**
- * Get trend description from delta
- * @param {number} delta - BG delta value
- * @returns {string} Trend description
- */
-Dexcom.prototype.getTrendDescription = function(delta) {
-    if (delta === null) return 'Unknown';
-    if (delta > 15) return 'Rising quickly';
-    if (delta > 7) return 'Rising';
-    if (delta > 3) return 'Rising slowly';
-    if (delta >= -3) return 'Stable';
-    if (delta >= -7) return 'Dropping slowly';
-    if (delta >= -15) return 'Dropping';
-    return 'Dropping quickly';
 };
 
 /**
@@ -453,12 +425,10 @@ Dexcom.prototype._handleGlucoseResponse = function(readings) {
         _trend_direction: current._trend_direction,
         _trend_arrow: current._trend_arrow,
         _datetime: current._datetime,
-        _status: current._status,
         _delta: delta,
         _delta_time: deltaTime,
         _previous_value: previous ? previous._value : null,
-        _rate_of_change: deltaTime ? (delta / deltaTime) : null,
-        _trend_description: this.getTrendDescription(delta)
+        _rate_of_change: deltaTime ? (delta / deltaTime) : null
     };
 
     this.onResults({
@@ -497,7 +467,8 @@ Dexcom.prototype._handleServerError = function(error) {
         }
     } else {
         this.retryCount = 0;
-        throw new Error('Server error: ' + error.Message);
+        // The code only: Dexcom's free-text Message ends up in logs read from real phones.
+        throw new Error('Server error: ' + error.Code);
     }
 };
 

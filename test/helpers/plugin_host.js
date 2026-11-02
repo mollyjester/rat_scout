@@ -94,8 +94,16 @@ function load(opts) {
             .forEach(function(kv) {
                 if (kv[1] === undefined) delete store[kv[0]]; else store[kv[0]] = String(kv[1]);
             });
+        var oldPassword = secure[Settings.PASSWORD_KEY];
         if (s.DEX_PASSWORD === undefined) delete secure[Settings.PASSWORD_KEY];
         else secure[Settings.PASSWORD_KEY] = String(s.DEX_PASSWORD);
+        // As Settings.save: a new password bumps the credential version.
+        if (oldPassword !== undefined && secure[Settings.PASSWORD_KEY] !== oldPassword) {
+            Settings.bumpCredVersion({
+                getItem: function(k) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; },
+                setItem: function(k, v) { store[k] = String(v); }
+            });
+        }
     }
     setSettings(opts.settings);
     function FakeDate(v) { return arguments.length ? new Date(v) : new Date(clock.t); }

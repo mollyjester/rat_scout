@@ -482,6 +482,62 @@ test('settings page: a saved account is used by the next request', function() {
     });
 });
 
+test('settings page: saving units or the same account keeps the session and throttle', function() {
+    var h = host.load({ settings: settings(), storage: { accountId: 'a0', sessionId: 's0', 'ratscout.plugin.lastAttempt': '123' } });
+    return h.config({ type: 'save', login: 'user', password: '', region: 'ous', units: 'mmol/L' }).then(function(r) {
+        assert(r.ok && h.store.sessionId === 's0' && h.store['ratscout.plugin.lastAttempt'] === '123', 'units only: kept');
+        return h.config({ type: 'save', login: 'user', password: 'pw', region: 'ous', units: 'mmol/L' });
+    }).then(function() {
+        assert(h.store.sessionId === 's0' && h.store['ratscout.plugin.lastAttempt'] === '123', 'same password typed again: kept');
+        assert(h.refreshed.length === 2, 'subscribers refreshed each time');
+        return h.config({ type: 'save', login: 'user', password: 'new', region: 'ous', units: 'mmol/L' });
+    }).then(function() {
+        assert(h.store.sessionId === undefined && h.store['ratscout.plugin.lastAttempt'] === undefined, 'new password: dropped, tried at once');
+        assert(h.store['ratscout.settings.credVersion'] === '1', 'credential version bumped');
+        return h.config({ type: 'save', login: 'other', password: '', region: 'ous', units: 'mmol/L' });
+    }).then(function() {
+        assert(h.store['ratscout.settings.credVersion'] === '1', 'a login change needs no version bump (login is in the key)');
+    });
+});
+
+test('nothing derived from the password is stored', function() {
+    var f = host.fakeDexcom();
+    var h = host.load({ fetch: f, settings: settings({ DEX_PASSWORD: 'Secret-pw-123' }) });
+    return h.request(REQ).then(function() {
+        var all = JSON.stringify(h.store);
+        var withPw = require('../src/plugin-src/dexcom_guard').credKey({ DEX_LOGIN: 'user', DEX_REGION: 'ous', DEX_CRED_VERSION: 'Secret-pw-123' });
+        assert(all.indexOf('Secret-pw-123') === -1, 'no plaintext password in localStorage');
+        assert(JSON.parse(h.store['ratscout.plugin.lastReading']).credKey === require('../src/plugin-src/dexcom_guard').credKey({ DEX_LOGIN: 'user', DEX_REGION: 'ous' }),
+            'cache key is login|region|version');
+        assert(all.indexOf(withPw) === -1, 'sanity: the key differs from one built with the password');
+    });
+});
+
+test('secure storage that throws: the source request and the settings page still get an answer', function() {
+    var h = host.load({ settings: settings() });
+    h.context.Pebble.secureStorage.getItem = function() { throw new Error('keystore locked'); };
+    h.context.Pebble.secureStorage.setItem = function() { throw new Error('keystore locked'); };
+    return h.request(REQ).then(function(r) {
+        assert(r.error === 'UNKNOWN' && /keystore locked/.test(r.message), 'source: UNKNOWN with the reason');
+        return h.config({ type: 'load' });
+    }).then(function(r) {
+        assert(r.ok === false && /keystore locked/.test(r.error), 'page load: error reply');
+        return h.config({ type: 'save', login: 'user', password: 'x', region: 'ous', units: 'mg/dL' });
+    }).then(function(r) {
+        assert(r.ok === false && /keystore locked/.test(r.error), 'page save: error reply');
+    });
+});
+
+test('a Dexcom server error is logged by code, not by its free-text message', function() {
+    var f = host.fakeDexcom({ readingsQueue: [{ status: 500, body: JSON.stringify({ Code: 'InvalidArgument', Message: 'user@example.com something' }) }] });
+    var h = host.load({ fetch: f, settings: settings(), storage: { accountId: 'a0', sessionId: 's0' } });
+    return h.request(REQ).then(function() {
+        var logs = h.logs.join('\n');
+        assert(/Server error: InvalidArgument/.test(logs), 'code logged');
+        assert(logs.indexOf('user@example.com') === -1, 'message not logged');
+    });
+});
+
 test('test runner: a test that never settles fails the suite', function() {
     var cp = require('child_process');
     var helper = JSON.stringify(path.join(__dirname, 'helpers', 'plugin_host.js'));

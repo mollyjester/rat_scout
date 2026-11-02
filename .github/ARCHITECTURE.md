@@ -114,7 +114,7 @@ Plugin (`plugin/package.json`):
 | Property | Shapes | Notes |
 |---|---|---|
 | `name` | shortText | "Dexcom" |
-| `status` | shortText, longText | shortText `ok` (longText "Latest reading") on every reading instance; shortText `busy` (longText "Signing in to Dexcom") on an instance that has only `name` and `status`, sent when Dexcom was not called (login lock held, or throttled) and no reading for these credentials is cached |
+| `status` | shortText, longText | shortText `ok` (longText "Latest reading") on every reading instance; shortText `busy` (longText "Signing in to Dexcom") on an instance that has only `name` and `status`, sent when Dexcom was not called because another run holds the login lock and no reading for these credentials is cached |
 | `glucose` | numericValue, shortText, longText | Plugin's units (`ratscout.settings.units`, default mg/dL), formatted by glucose.js `formatBGValue`. numericValue range: mg/dL min 40, max 400; mmol/L min 2.2, max 22.2. Long: value and units ("120 mg/dL"); every shape is the same reading, so the trend stays in `trend` (preview guide, "Shapes") |
 | `delta` | numericValue, shortText | User's units, glucose.js `formatBGDelta` ("+5"). Omitted when the reading has no numeric delta (single reading) |
 | `glucose_mgdl` | numericValue | Raw Dexcom mg/dL (`unit: "mg/dL"`), no min/max: the lossless value Rat Scout's PKJS reads (it formats in its own Clay `BG_UNITS`) |
@@ -128,14 +128,15 @@ Answers:
 - Wrong category/item → `respond.error('INVALID_REQUEST')`; an exception while handling the Dexcom result → `respond.error('UNKNOWN')` (`main.js`), releasing the login lock if this request took it.
 - Reading younger than 310 s (cached, same credentials) → served from cache, no Dexcom call; `validUntilMs = max(now + 60 s, (ts + 310) * 1000)`.
 - Dexcom is called at most once per 55 s (`ratscout.plugin.lastAttempt`; 55 rather than 60 so jitter in a 60 s poll never skips one).
-- Login lock held (younger than 45 s), or throttled → cached reading for these credentials if any (any age, same `validUntilMs` rule), else the `busy` instance (`validUntilMs` now + 30 s).
+- Login lock held (younger than 45 s, and not dated in the future), or throttled → cached reading for these credentials if any (any age, same `validUntilMs` rule); else the `busy` instance (`validUntilMs` now + 30 s) while the lock is held, or `instances: []` when the last attempt finished without a reading.
 
 Runtime: a plugin "is started fresh for each request" (preview guide), so all state is in the plugin's localStorage. The plugin has its own uuid, so it shares no localStorage with the watchface and does not read the face's `clay-settings`.
 
 Settings (`src/plugin-src/settings.js`): set on the plugin's own settings page, `plugin/config.html` (`configPage`, bundled in the pbw). The page calls `Pebble.sendMessage('plugin', {type: 'load'|'save'})`, answered by `handleConfigMessage` (`main.js`):
 - Login, region and units in the plugin's localStorage (`ratscout.settings.login`, `ratscout.settings.region`, `ratscout.settings.units`); the password in `Pebble.secureStorage` under `dexcom.password`. Region defaults to `ous`, units to `mg/dL`.
 - `load` returns `{login, region, units, hasPassword}`: the page never receives the password. An empty password on save keeps the stored one.
-- `save` stores, removes `accountId`, `sessionId` and `ratscout.plugin.lastAttempt` so the new account is tried at once, then calls `Pebble.refreshSources(['health/glucose'])` (if present).
+- `save` stores and calls `Pebble.refreshSources(['health/glucose'])` (if present). Only when the login, the region or the password changed does it remove `accountId`, `sessionId` and `ratscout.plugin.lastAttempt`, so the new account is tried at once; saving units or the same account again keeps them, so repeated saves can't bypass the 55 s throttle. A new password (different from the stored one) bumps `ratscout.settings.credVersion`.
+- `Settings.load` and `Settings.save` run inside a promise chain, so a throwing `secureStorage` still answers the request (`UNKNOWN`) or the page (`ok: false`).
 
 HTTP: `src/plugin-src/dexcom.js` uses XMLHttpRequest; the preview guide documents only `fetch` ("Nothing else"), so the bundle binds `src/plugin-src/xhr_shim.js` as `XMLHttpRequest` in bundle scope (never as a global), and `setTimeout`/`clearTimeout` to the runtime's if present, else no-ops. Phone-side availability of XHR and setTimeout is UNVERIFIED; the emulator has both (`pypkjs/plugins/js_plugin.py` installs Timers and XHRExtension), which is why the shim is used unconditionally.
 
@@ -223,6 +224,7 @@ Plugin (Rat Scout Glucose):
 | Key | Writer | Contents |
 |---|---|---|
 | `ratscout.settings.login`, `ratscout.settings.region`, `ratscout.settings.units` | settings page (`settings.js`) | Dexcom login, region (`ous`/`us`/`jp`), units (`mg/dL`/`mmol/L`) |
+| `ratscout.settings.credVersion` | settings page | Counter bumped when a new password is saved (absent = 0); part of `credKey` |
 | `dexcom.password` (in `Pebble.secureStorage`, not localStorage) | settings page | Dexcom password; never returned to the page |
 | `accountId`, `sessionId` | plugin | Dexcom session; removed on settings save |
 | `ratscout.plugin.lastReading` | plugin | `{credKey, value, delta, trend, arrow, ts}`, raw mg/dL |
@@ -231,7 +233,7 @@ Plugin (Rat Scout Glucose):
 | `ratscout.auth.badcreds` | plugin | `{credKey, until}`: no login for 15 min after a refused login (60 min after Dexcom's lockout answer), unless the credentials change |
 | `ratscout.auth.sessionCredKey` | plugin | credKey of the stored session; a mismatch forces a new login (no key = trusted) |
 
-`credKey` is a djb2 hash of `login|region|password`: a change detector, not security.
+`credKey` is a djb2 hash of `login|region|credVersion`: a change detector, not security. It holds nothing derived from the password (before 2026-11-02 it hashed the password; the first run after the update sees a different key and logs in once). A login pause (`badcreds`) longer than 60 min means the clock went back and is cut to 60 min from now; a login lock dated in the future is ignored.
 
 Watchface: `clay-settings` (Clay; no Dexcom fields) and the weather/astronomy cache keys (`index.js` `CONFIG`). On `ready`, `legacy_cleanup.js` deletes `DEX_LOGIN`/`DEX_PASSWORD`/`DEX_REGION` from `clay-settings`, and the session/plugin/guard keys above if an older version left them in the face's store.
 

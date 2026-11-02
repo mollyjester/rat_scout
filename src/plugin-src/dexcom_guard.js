@@ -39,15 +39,17 @@ function djb2(str) {
 }
 
 /**
- * Key identifying the Dexcom credentials in settings.
- * @param {Object} settings - Clay settings (DEX_LOGIN, DEX_PASSWORD, DEX_REGION)
+ * Key identifying the Dexcom credentials in settings. The password is not part of it: a new
+ * password bumps DEX_CRED_VERSION (settings.js save), so nothing derived from the password is
+ * stored.
+ * @param {Object} settings - Settings.load() result (DEX_LOGIN, DEX_REGION, DEX_CRED_VERSION)
  * @returns {string} Credential key
  */
 function credKey(settings) {
     settings = settings || {};
     return djb2(String(settings.DEX_LOGIN || '') + '|' +
                 String(settings.DEX_REGION || '') + '|' +
-                String(settings.DEX_PASSWORD || ''));
+                String(settings.DEX_CRED_VERSION || '0'));
 }
 
 // dexcom.js errors from the login steps or a failed session. Anything else (no readings, a
@@ -115,9 +117,17 @@ function create(storage, owner, now) {
     function blockReason(key) {
         var t = now();
         var bad = readJson(storage, BADCREDS_KEY);
-        if (bad && bad.credKey === key && t < bad.until) return 'badcreds';
+        if (bad && bad.credKey === key && t < bad.until) {
+            // A pause longer than the longest one means the clock went back: keep pausing, but
+            // no longer than LOCKOUT_PAUSE_MS from now.
+            if (bad.until - t > LOCKOUT_PAUSE_MS) {
+                storage.setItem(BADCREDS_KEY, JSON.stringify({ credKey: bad.credKey, until: t + LOCKOUT_PAUSE_MS }));
+            }
+            return 'badcreds';
+        }
         var lock = readJson(storage, INFLIGHT_KEY);
-        if (lock && typeof lock.at === 'number' && t - lock.at < INFLIGHT_TTL_MS) return 'inflight';
+        // A lock dated in the future (clock went back) counts as expired, as main.js's throttle.
+        if (lock && typeof lock.at === 'number' && t >= lock.at && t - lock.at < INFLIGHT_TTL_MS) return 'inflight';
         return null;
     }
 

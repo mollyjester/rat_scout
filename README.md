@@ -95,7 +95,7 @@ The plugin calls Dexcom at most once every 55 s, reuses a reading until the next
 | Region | Dexcom server: Outside US (default), US, or Japan |
 | Units | mg/dL or mmol/L, for the plugin's own `glucose`/`delta` values (Rat Scout's display uses its own BG Units) |
 
-Saving drops the plugin's Dexcom session and throttle and asks the phone to refresh `health/glucose`, so the new account is tried at once.
+Saving asks the phone to refresh `health/glucose`. When the login, region or password changed, it also drops the plugin's Dexcom session and throttle, so the new account is tried at once; saving only the units keeps them. The plugin stores nothing derived from the password: a counter changes when you save a new one.
 
 ### Rat Scout (Clay settings)
 Open Rat Scout settings from the Pebble app on your phone. It has no Dexcom fields; the "Glucose" section points to the plugin's settings page.

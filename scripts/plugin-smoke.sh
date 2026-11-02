@@ -105,7 +105,7 @@ key() { node -e "console.log(JSON.parse(process.argv[1])[process.argv[2]])" "$SE
 ACCOUNT="{\"$(key login)\": \"$FAKE_LOGIN\", \"$(key region)\": \"ous\", \"$(key units)\": \"mmol/L\"}"
 SECRET="{\"$(key password)\": \"$FAKE_PASSWORD\"}"
 credkey() {
-    node -e "console.log(require('./src/plugin-src/dexcom_guard').credKey({DEX_LOGIN:process.argv[1],DEX_PASSWORD:process.argv[2],DEX_REGION:'ous'}))" "$FAKE_LOGIN" "$FAKE_PASSWORD"
+    node -e "console.log(require('./src/plugin-src/dexcom_guard').credKey({DEX_LOGIN:process.argv[1],DEX_REGION:'ous'}))" "$FAKE_LOGIN"
 }
 NO_DATA="No glucose data sent to Pebble successfully"
 

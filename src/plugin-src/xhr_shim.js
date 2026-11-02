@@ -104,18 +104,8 @@ function createXHR(fetchFn, setTimeoutFn, clearTimeoutFn) {
         try {
             promise = fetchFn(this._url, options);
         } catch (e) {
-            // Whether fetch accepts a User-Agent header is UNVERIFIED: retry without it.
-            var headers = {};
-            for (var k in this._headers) {
-                if (k.toLowerCase() !== 'user-agent') headers[k] = this._headers[k];
-            }
-            options.headers = headers;
-            try {
-                promise = fetchFn(this._url, options);
-            } catch (e2) {
-                self._fail();
-                return;
-            }
+            self._fail();
+            return;
         }
 
         promise.then(function(res) {

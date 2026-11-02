@@ -234,10 +234,13 @@ function answer(respond, env, settings) {
     }
 
     /**
-     * Answer without calling Dexcom: cached reading if any, else "busy".
+     * Answer without calling Dexcom: cached reading if any, else "busy" while another run is
+     * logging in, else empty (the last attempt finished without a reading).
      */
     function answerSkipped() {
-        respond.data(cacheOk ? readingEnvelope(cache, units, t) : busyEnvelope(t));
+        if (cacheOk) respond.data(readingEnvelope(cache, units, t));
+        else if (DexcomGuard.create(storage, 'plugin', env.now).blockReason(key) === 'inflight') respond.data(busyEnvelope(t));
+        else respond.data(emptyEnvelope(t));
     }
 
     var lastAttempt = parseInt(storage.getItem(LAST_ATTEMPT_KEY), 10) || 0;
@@ -307,8 +310,10 @@ function answer(respond, env, settings) {
 
 /**
  * Answer the settings page (plugin/config.html).
- * 'load' returns what the page shows (never the password); 'save' stores a submission, drops
- * the session and throttle so the new account is tried at once, and refreshes subscribers.
+ * 'load' returns what the page shows (never the password); 'save' stores a submission and
+ * refreshes subscribers. Only a change of login, region or password drops the session and the
+ * throttle, so the new account is tried at once; saving units (or the same account again)
+ * keeps both, so repeated saves can't bypass the 55 s Dexcom throttle.
  * @param {Object} message - {type: 'load'|'save', ...}
  * @param {Function} respond - Reply to the page
  * @param {Object} env - {storage, secure, refreshSources}
@@ -322,10 +327,12 @@ function handleConfigMessage(message, respond, env) {
         });
     }
     if (type === 'save') {
-        return Settings.save(env.storage, env.secure, message).then(function() {
-            env.storage.removeItem(ACCOUNT_ID_KEY);
-            env.storage.removeItem(SESSION_ID_KEY);
-            env.storage.removeItem(LAST_ATTEMPT_KEY);
+        return Settings.save(env.storage, env.secure, message).then(function(saved) {
+            if (saved && saved.credentialsChanged) {
+                env.storage.removeItem(ACCOUNT_ID_KEY);
+                env.storage.removeItem(SESSION_ID_KEY);
+                env.storage.removeItem(LAST_ATTEMPT_KEY);
+            }
             if (env.refreshSources) env.refreshSources([CATEGORY + '/' + ITEM]);
             respond({ ok: true });
         }, function(e) {

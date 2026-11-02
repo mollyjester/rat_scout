@@ -30,7 +30,9 @@ function memStorage() {
 test('credKey', function() {
     var a = Guard.credKey(CREDS);
     assert(a === Guard.credKey({ DEX_LOGIN: 'user', DEX_PASSWORD: 'pw', DEX_REGION: 'ous' }), 'stable');
-    assert(a !== Guard.credKey({ DEX_LOGIN: 'user', DEX_PASSWORD: 'pw2', DEX_REGION: 'ous' }), 'password changes it');
+    assert(a === Guard.credKey({ DEX_LOGIN: 'user', DEX_PASSWORD: 'other', DEX_REGION: 'ous' }), 'the password is not part of it');
+    assert(a !== Guard.credKey({ DEX_LOGIN: 'user', DEX_REGION: 'ous', DEX_CRED_VERSION: '1' }), 'a new credential version (new password saved) changes it');
+    assert(a !== Guard.credKey({ DEX_LOGIN: 'other', DEX_REGION: 'ous' }), 'login changes it');
     assert(a !== Guard.credKey({ DEX_LOGIN: 'user', DEX_PASSWORD: 'pw', DEX_REGION: 'us' }), 'region changes it');
     assert(a.indexOf('pw') === -1 && /^[0-9a-f]+$/.test(a), 'hex, no plaintext');
 });
@@ -172,13 +174,40 @@ test('plugin: lastAttempt throttles Dexcom calls to one per 55 s', function() {
         return h.request(REQ);
     }).then(function(r) {
         assert(f.calls.length === 1, 'a poll 30 s later is throttled');
-        assert(r.data.instances.length === 1 && r.data.instances[0].properties.status.shortText.text === 'busy',
-            'throttled with no cache answers busy');
+        assert(r.data.instances.length === 0, 'throttled with no cache and no login running: empty (not "busy")');
         h.setNow(t0 + 55000);
         return h.request(REQ);
     }).then(function() {
         assert(f.calls.length > 1, 'a poll 55 s later calls Dexcom again');
     });
+});
+
+test('plugin: throttled while another run holds the login lock answers busy', function() {
+    var f = host.fakeDexcom();
+    var t0 = 1700000100000;
+    var h = host.load({ fetch: f, now: t0, settings: CREDS, storage: {
+        'ratscout.plugin.lastAttempt': String(t0 - 10000),
+        'ratscout.auth.inflight': JSON.stringify({ owner: 'plugin', at: t0 - 10000 })
+    } });
+    return h.request(REQ).then(function(r) {
+        assert(f.calls.length === 0, 'no Dexcom call');
+        assert(r.data.instances[0].properties.status.shortText.text === 'busy', 'busy');
+    });
+});
+
+test('clock moved back: a lock dated in the future is expired, a pause is bounded', function() {
+    var st = memStorage();
+    var t = 1000000000;
+    var g = Guard.create(st, 'plugin', function() { return t; });
+    var key = Guard.credKey(CREDS);
+    st.setItem(Guard.INFLIGHT_KEY, JSON.stringify({ owner: 'plugin', at: t + 3600000 }));
+    assert(g.blockReason(key) === null, 'a lock taken "an hour from now" does not block');
+    st.setItem(Guard.BADCREDS_KEY, JSON.stringify({ credKey: key, until: t + 10 * 3600000 }));
+    assert(g.blockReason(key) === 'badcreds', 'a pause ending in 10 h still pauses');
+    assert(JSON.parse(st.getItem(Guard.BADCREDS_KEY)).until === t + Guard.LOCKOUT_PAUSE_MS, 'but no longer than the 60 min lockout pause');
+    st.removeItem(Guard.INFLIGHT_KEY);
+    t += Guard.LOCKOUT_PAUSE_MS;
+    assert(g.blockReason(key) === null, 'and ends then');
 });
 
 s.run();
