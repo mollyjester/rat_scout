@@ -123,63 +123,69 @@ function httpGet(url, onSuccess, onError) {
  * @param {string} units - 'metric' (°C, m/s) or 'imperial' (°F, mph)
  * @param {Function} onSuccess - Callback with parsed weather data and location
  * @param {Function} onError - Callback with error message
+ * @param {Object} coords - Optional {latitude, longitude} already known: no geolocation request
  */
-function fetchWeatherData(apiKey, units, onSuccess, onError) {
+function fetchWeatherData(apiKey, units, onSuccess, onError, coords) {
     if (!apiKey) {
         console.error('OpenWeatherMap API key is required');
         if (onError) onError('API key is required');
         return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-        function(pos) {
-            var latitude = pos.coords.latitude;
-            var longitude = pos.coords.longitude;
-            
-            var params = {
-                lat: latitude.toFixed(4),
-                lon: longitude.toFixed(4),
-                appid: apiKey,
-                units: units || 'metric'
-            };
-
-            var weatherUrl = OWM_WEATHER_URL + utils.buildQueryString(params);
-            var forecastUrl = OWM_FORECAST_URL + utils.buildQueryString(params);
-
-            console.log('Fetching weather from OpenWeatherMap 2.5 API');
-
-            httpGet(weatherUrl,
-                function(currentResponse) {
-                    httpGet(forecastUrl,
-                        function(forecastResponse) {
-                            var data = parseWeatherData(currentResponse, forecastResponse.list);
-                            data.latitude = latitude;
-                            data.longitude = longitude;
-                            logWeatherData(data);
-                            if (onSuccess) onSuccess(data);
-                        },
-                        function() {
-                            console.log('Forecast fetch failed, using current weather only');
-                            var data = parseWeatherData(currentResponse, null);
-                            data.latitude = latitude;
-                            data.longitude = longitude;
-                            logWeatherData(data);
-                            if (onSuccess) onSuccess(data);
-                        }
-                    );
-                },
-                function(error) {
-                    console.error('Weather API error: ' + error);
-                    if (onError) onError('API error: ' + error);
-                }
-            );
-        },
+    if (coords && typeof coords.latitude === 'number' && typeof coords.longitude === 'number') {
+        fetchForPosition({ coords: coords });
+        return;
+    }
+    navigator.geolocation.getCurrentPosition(fetchForPosition,
         function(err) {
             console.error('Geolocation error: ' + err.message);
             if (onError) onError('Location error: ' + err.message);
         },
         { timeout: REQUEST_TIMEOUT_MS, maximumAge: GEOLOCATION_MAX_AGE_MS }
     );
+
+    function fetchForPosition(pos) {
+        var latitude = pos.coords.latitude;
+        var longitude = pos.coords.longitude;
+        
+        var params = {
+            lat: latitude.toFixed(4),
+            lon: longitude.toFixed(4),
+            appid: apiKey,
+            units: units || 'metric'
+        };
+
+        var weatherUrl = OWM_WEATHER_URL + utils.buildQueryString(params);
+        var forecastUrl = OWM_FORECAST_URL + utils.buildQueryString(params);
+
+        console.log('Fetching weather from OpenWeatherMap 2.5 API');
+
+        httpGet(weatherUrl,
+            function(currentResponse) {
+                httpGet(forecastUrl,
+                    function(forecastResponse) {
+                        var data = parseWeatherData(currentResponse, forecastResponse.list);
+                        data.latitude = latitude;
+                        data.longitude = longitude;
+                        logWeatherData(data);
+                        if (onSuccess) onSuccess(data);
+                    },
+                    function() {
+                        console.log('Forecast fetch failed, using current weather only');
+                        var data = parseWeatherData(currentResponse, null);
+                        data.latitude = latitude;
+                        data.longitude = longitude;
+                        logWeatherData(data);
+                        if (onSuccess) onSuccess(data);
+                    }
+                );
+            },
+            function(error) {
+                console.error('Weather API error: ' + error);
+                if (onError) onError('API error: ' + error);
+            }
+        );
+    }
 }
 
 module.exports = {

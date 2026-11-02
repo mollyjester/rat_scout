@@ -50,6 +50,8 @@ rat_scout/
 │       ├── glucose.js      # BG/delta formatters + sendNoGlucoseData (also bundled into the plugin)
 │       ├── glucose_plugin.js # Glucose source: subscription to the plugin, modes, watchdog, gate
 │       ├── legacy_cleanup.js # Purges Dexcom data older versions left in the face's localStorage
+│       ├── message_queue.js # Watch message queue (one in flight, 30 s timeout) + change filter
+│       ├── watch_settings.js # Settings dictionary (night window, garbage bag)
 │       ├── weather.js      # OpenWeatherMap API client (current + forecast, smart cache)
 │       ├── geolocation.js  # ipgeolocation.io astronomy API client
 │       ├── astronomy.js    # Astronomy time calculations (next sun/moon event, phase)
@@ -68,6 +70,8 @@ rat_scout/
 │   ├── garbage.test.js
 │   ├── glucose.test.js
 │   ├── legacy_cleanup.test.js
+│   ├── message_queue.test.js
+│   ├── watch_settings.test.js
 │   ├── utils.test.js
 │   └── weather.test.js
 └── scripts/
@@ -153,17 +157,19 @@ Errors (`onError(err)`, by `err.code` only, missing code = `UNKNOWN`; whether `e
 
 | Code | Action |
 |---|---|
-| `INVALID_REQUEST` | unsubscribe, `unavailable`, pinned (no re-check) |
+| `INVALID_REQUEST` | unsubscribe, `unavailable`, pinned (no re-check) until Rat Scout's settings are saved (`onSettingsChanged` lifts the pin and detects again) |
 | message "… was updated or removed; subscribe again" (code `UNKNOWN`) | the phone closed the subscription because it retired the plugin (plugin updated or removed, or the plugin preview turned off; mobileapp `plugin/JsPlugin.kt` `observe()`). Drop it and detect again: still listed → subscribe at once (`pending`, the shown reading stays); not listed → `unavailable`, "---" at once, and the re-check resubscribes later |
 | `PERMISSION_DENIED`, `PLUGIN_UNAVAILABLE` | `unavailable`, keep the subscription (the guide: `PERMISSION_DENIED` lasts until the user answers; an error does not end a subscription) |
 | anything else while `pending` | `unavailable`, keep the subscription |
 | anything else in `plugin` | count (reset by any `onData`); the first keeps the shown reading; `unavailable` at the 2nd consecutive error or if no envelope for more than 11 min |
 
 - **Grace:** still `pending` 30 s after subscribing → `unavailable`.
+- **Recovery:** `recoverIfStuck(now)` runs in `fetchAllData()`. While `unavailable` *with* a subscription (grace expiry, stall watchdog, `PLUGIN_UNAVAILABLE`, a second soft error) nothing else would resubscribe, so it does, at most every 5 min (`RECOVER_MIN_MS`, counted from entering `unavailable` or the last resubscribe). Not after `PERMISSION_DENIED`: the host re-evaluates grants on the open subscription and serves it once the user approves (mobileapp `plugin/PluginClient.kt` `observe()`). The mode stays `unavailable` until an envelope arrives.
+- **Synchronous answers:** `tryStart` enters `pending` and starts the grace timer only if no callback ran inside `subscribeToSource` (a callback counter). Android answers asynchronously (`SourceDispatcher.subscribe` launches a coroutine); other hosts weren't checked.
 - **Re-check:** `recheck()` runs at the top of `fetchAllData()` after the stall watchdog, only while `unavailable` without a subscription and not pinned. It repeats the detection and subscribes if the plugin is listed now, e.g. when the user installs the plugin or turns the preview on while the face runs. Detection is a local `enumeratePlugins()` call, so a re-check on every watch ping costs nothing; a re-check that still finds nothing logs and sends nothing.
 - **Overdue refresh:** `refreshIfOverdue(now)` runs in `fetchAllData()` after the re-check. In `plugin` mode with a subscription and a reading, when that reading is more than 305 s old (`READING_DUE_SEC`, as the watch's `ts + 305`), no envelope arrived in the last 55 s after the plugin's cache went stale (`ts + 310`, `PLUGIN_FRESH_SEC` = `main.js` `READING_FRESH_SEC`; an earlier envelope was a cached answer, which on the phone held a reading back a minute) and the last resubscribe was at least 55 s ago (`RESUBSCRIBE_MIN_MS`, the plugin's Dexcom throttle; `onSettingsChanged` counts too), it unsubscribes and subscribes again (`Glucose plugin: resubscribe (reading overdue N s)`). The watch pings every minute while the reading is overdue, up to 600 s after it (see Gate). The phone host reads at once on a new subscription, while its own poll waits 60 s of *awake* time, which took about 6 min on the phone (docs/plugins.md §6.1). The mode, the gate and `lastPluginOkMs` are untouched, so a repeat of the shown reading is skipped and the stall watchdog still counts from the last real envelope; no grace timer starts; errors on the new subscription follow the table above. Callbacks of a replaced subscription are ignored (a generation counter set before subscribing). Never in `pending` or `unavailable`, before the first reading, or after `INVALID_REQUEST`. Dexcom load stays bounded by the plugin: a cached reading younger than 310 s is served without a call, and at most one call per 55 s otherwise (`test/plugin.test.js` "frequent requests").
 - **Stall watchdog:** `checkStall(now)` at the top of `fetchAllData()` (runs on `ready`, `webviewclosed` and every watch ping, at least every 5 min, `rat_scout.c` tick handler). In `plugin` mode with no envelope for more than 11 min → `unavailable` (subscription kept). A later envelope returns to `plugin`. An old reading timestamp alone (sensor gap) never triggers it.
-- **Envelope → watch:** an instance with `glucose_mgdl` + `reading_time` becomes `{current: {_value, _delta: delta_mgdl or null, _datetime}}` passed to `Glucose.buildGlucoseDictionary`, formatted in the face's Clay `BG_UNITS` (no mmol round trip). `status: busy` sends nothing (the watch keeps its value). Anything else sends `"---"` with `TIMESTAMP 0`.
+- **Envelope → watch:** an instance with `glucose_mgdl` + `reading_time` becomes `{current: {_value, _delta: delta_mgdl or null, _datetime}}` passed to `Glucose.buildGlucoseDictionary`, formatted in the face's Clay `BG_UNITS` (no mmol round trip); without `delta_mgdl`, `BGDELTA` is `""` (it used to be the string `"null"`, or `"0.0"` in mmol/L). `status: busy` sends nothing (the watch keeps its value). Anything else sends `"---"` with `TIMESTAMP 0`.
 - **Gate:** every glucose dictionary (plugin data and `unavailable`'s "---") goes through one gate; one whose `BG` and `TIMESTAMP` equal the last sent is dropped (`Glucose gate: skipped duplicate ts=…`), which stops repeat host refreshes. Catch-up polling still works: every glucose message sets `s_next_fetch_time = ts + 305` (`messaging.c`); from then the watch pings every minute until `ts + 600` (`OVERDUE_PING_WINDOW_SECONDS`, `rat_scout.c` tick handler), then every 5 min (`FALLBACK_FETCH_MINUTES`) until a newer reading arrives. Watch pings drive the re-check, the watchdog and the overdue refresh. Alerts fire only on a zone change (`glucose.c`, `new_zone != s_bg_zone`).
 - **Settings saved:** `onSettingsChanged()` clears the gate and resubscribes, so the next envelope is re-formatted and sent (`BGDELTA`/`BG_SHOW_TIMEDELTA` only arrive in glucose messages, `messaging.c`). The host reads at once on a new subscription: mobileapp `plugin/JsPlugin.kt:124-135` requests before its first wait (pypkjs `plugins/base.py` `observe()` does the same), and on the phone the resubscribe delivered within about 1 s.
 - **Legacy cleanup:** on `ready`, `src/pkjs/legacy_cleanup.js` removes `DEX_LOGIN`, `DEX_PASSWORD`, `DEX_REGION` from the face's `clay-settings` (Clay keeps stored keys otherwise) and the old session, cache and guard keys (`accountId`, `sessionId`, `ratscout.plugin.*`, `ratscout.auth.*`) that versions fetching Dexcom in the face left there. Unit-tested only (`test/legacy_cleanup.test.js`); its phone log line was not captured.
@@ -235,7 +241,7 @@ Plugin (Rat Scout Glucose):
 
 `credKey` is a djb2 hash of `login|region|credVersion`: a change detector, not security. It holds nothing derived from the password (before 2026-11-02 it hashed the password; the first run after the update sees a different key and logs in once). A login pause (`badcreds`) longer than 60 min means the clock went back and is cut to 60 min from now; a login lock dated in the future is ignored.
 
-Watchface: `clay-settings` (Clay; no Dexcom fields) and the weather/astronomy cache keys (`index.js` `CONFIG`). On `ready`, `legacy_cleanup.js` deletes `DEX_LOGIN`/`DEX_PASSWORD`/`DEX_REGION` from `clay-settings`, and the session/plugin/guard keys above if an older version left them in the face's store.
+Watchface: `clay-settings` (Clay; no Dexcom fields) and the weather/astronomy cache keys (`index.js` `CONFIG.TIME_CACHE_KEYS`: data, fetch time, location, and `lastWeatherUnits`, `lastAstronomyLocation`, `lastAstronomyFailTime`). On `ready`, `legacy_cleanup.js` deletes `DEX_LOGIN`/`DEX_PASSWORD`/`DEX_REGION` from `clay-settings`, and the session/plugin/guard keys above if an older version left them in the face's store.
 
 ### Login guard (`src/plugin-src/dexcom_guard.js`)
 - Used by the plugin only (owner `plugin`); the watchface no longer logs in to Dexcom. The lock still guards against overlapping plugin runs.
@@ -288,9 +294,11 @@ Phone JS:
   fetchAllData():
     glucoseSource.checkStall()
     glucoseSource.recheck()       → subscribe if the plugin appeared (unavailable, no subscription)
+    glucoseSource.recoverIfStuck()  → resubscribe from unavailable with a kept subscription (every 5 min, not PERMISSION_DENIED)
     glucoseSource.refreshIfOverdue() → resubscribe if the reading is overdue (plugin mode, at most once per 55 s)
-    fetchAndSendWeather()         → MSG_TYPE_WEATHER  (cached per interval)
-    fetchAndSendAstronomy()       → MSG_TYPE_ASTRONOMY (cached daily)
+    refreshTimedSettings()        → MSG_TYPE_SETTINGS again when night thresholds or garbage bag changed
+    fetchAndSendWeather()         → MSG_TYPE_WEATHER  (cached per interval; dropped on a units change or a >5 km move; sent only if changed)
+    fetchAndSendAstronomy()       → MSG_TYPE_ASTRONOMY (cached daily; dropped on a >5 km move; 15 min backoff after failures; sent only if changed)
 
 Plugin (Rat Scout Glucose, started fresh per request):
   source request → Settings.load() → cache / throttle / guard → Dexcom → envelope (validUntilMs)

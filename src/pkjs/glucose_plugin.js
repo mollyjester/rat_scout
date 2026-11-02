@@ -34,6 +34,11 @@ var PLUGIN_FRESH_SEC = 310;
 // The plugin calls Dexcom at most once per 55 s (src/plugin-src/main.js ATTEMPT_THROTTLE_MS), so
 // resubscribing sooner after an envelope or a resubscribe could only be answered from its cache.
 var RESUBSCRIBE_MIN_MS = 55000;
+// Unavailable while still holding a subscription (grace expired, stall, PLUGIN_UNAVAILABLE, a
+// second soft error): resubscribe this often, since nothing else would. Not after
+// PERMISSION_DENIED: the host re-evaluates grants on the open subscription and serves it once
+// the user approves (mobileapp plugin/PluginClient.kt observe(), grantedKeys flatMapLatest).
+var RECOVER_MIN_MS = 5 * 60 * 1000;
 
 /**
  * Whether the phone app lists the Rat Scout Glucose plugin serving health/glucose.
@@ -131,6 +136,10 @@ function create(deps) {
         lastResubscribeMs: 0,
         // Bumped by every subscribe and unsubscribe; callbacks of an older one are ignored.
         generation: 0,
+        // Callbacks handled so far; tryStart() tells a synchronous answer by it.
+        callbacks: 0,
+        unavailableSinceMs: 0,
+        unavailableWhy: '',
         lastSent: null,
         // Set by INVALID_REQUEST: the host refused our request shape, so re-checking cannot help.
         pinned: false
@@ -170,6 +179,10 @@ function create(deps) {
      */
     function toUnavailable(why) {
         clearGrace();
+        if (state.mode !== 'unavailable') {
+            state.unavailableSinceMs = now();
+            state.unavailableWhy = why;
+        }
         setMode('unavailable', why);
         send({ 'MSG_TYPE': deps.msgType, 'BG': '---', 'TIMESTAMP': 0 });
     }
@@ -227,18 +240,19 @@ function create(deps) {
             category: CATEGORY,
             item: ITEM,
             plugin: PLUGIN_UUID,
-            onData: function(envelope) { if (gen === state.generation) onData(envelope); },
-            onError: function(err) { if (gen === state.generation) onError(err); }
+            onData: function(envelope) { if (gen === state.generation) { state.callbacks++; onData(envelope); } },
+            onError: function(err) { if (gen === state.generation) { state.callbacks++; onError(err); } }
         });
     }
 
     /**
      * Replace the subscription: the phone host reads at once on a new one (mobileapp
      * plugin/JsPlugin.kt observe()). The mode, the gate and the watchdog are left as they are.
+     * @param {number} t - Now, epoch ms (the caller's clock)
      * @returns {boolean} True if subscribed again
      */
-    function resubscribe() {
-        state.lastResubscribeMs = now();
+    function resubscribe(t) {
+        state.lastResubscribeMs = typeof t === 'number' ? t : now();
         unsubscribe();
         try {
             subscribe();
@@ -273,6 +287,7 @@ function create(deps) {
             if (!quiet) toUnavailable('plugin not available');
             return false;
         }
+        var before = state.callbacks;
         try {
             subscribe();
         } catch (e) {
@@ -280,6 +295,8 @@ function create(deps) {
             if (!quiet) toUnavailable('subscribe failed');
             return false;
         }
+        // A host that answered inside subscribeToSource has already set the mode.
+        if (state.callbacks !== before) return true;
         setMode('pending', 'subscribed');
         state.graceTimer = setT(function() {
             state.graceTimer = null;
@@ -342,15 +359,38 @@ function create(deps) {
                 return false;
             }
             console.log('Glucose plugin: resubscribe (reading overdue ' + overdue + ' s)');
-            return resubscribe();
+            return resubscribe(t);
+        },
+
+        /**
+         * Unavailable with a kept subscription is otherwise a dead end: the re-check needs no
+         * subscription, the overdue refresh needs plugin mode. Resubscribe at most every
+         * RECOVER_MIN_MS, not after PERMISSION_DENIED (see RECOVER_MIN_MS). Stays unavailable
+         * until an envelope arrives. Run in fetchAllData().
+         * @param {number} t - Now, epoch ms
+         * @returns {boolean} True if it resubscribed
+         */
+        recoverIfStuck: function(t) {
+            if (state.mode !== 'unavailable' || !state.subscription || state.pinned) return false;
+            if (state.unavailableWhy === 'PERMISSION_DENIED') return false;
+            if (t - Math.max(state.unavailableSinceMs, state.lastResubscribeMs) < RECOVER_MIN_MS) return false;
+            console.log('Glucose plugin: resubscribe (unavailable for ' +
+                Math.round((t - state.unavailableSinceMs) / 60000) + ' min: ' + state.unavailableWhy + ')');
+            return resubscribe(t);
         },
 
         /**
          * Settings were saved: forget the last send and resubscribe so the plugin's next
-         * answer is re-formatted and sent.
+         * answer is re-formatted and sent. Also lifts an INVALID_REQUEST pin, so saving
+         * settings is a way to retry after one.
          */
         onSettingsChanged: function() {
             state.lastSent = null;
+            if (state.pinned) {
+                state.pinned = false;
+                tryStart(false);
+                return;
+            }
             if (!state.subscription) return;
             resubscribe();
         }
@@ -364,6 +404,7 @@ module.exports = {
     READING_DUE_SEC: READING_DUE_SEC,
     PLUGIN_FRESH_SEC: PLUGIN_FRESH_SEC,
     RESUBSCRIBE_MIN_MS: RESUBSCRIBE_MIN_MS,
+    RECOVER_MIN_MS: RECOVER_MIN_MS,
     pluginAvailable: pluginAvailable,
     envelopeToDictionary: envelopeToDictionary,
     create: create

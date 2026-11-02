@@ -438,7 +438,74 @@ console.log('\nrefreshIfOverdue');
     assert(!f.gp.refreshIfOverdue((TS + 400) * 1000) && f.gp.mode() === 'unavailable', 'resubscribe throws: unavailable, "---"');
 })();
 
-// 9. Hygiene
+// 9. Recovery from unavailable with a kept subscription, synchronous first answer, pin reset
+console.log('\nrecoverIfStuck, synchronous start, INVALID_REQUEST pin');
+(function() {
+    var R = GP.RECOVER_MIN_MS;
+    var g = harness();
+    g.gp.start();
+    g.advance(GP.PLUGIN_GRACE_MS);
+    assert(g.gp.mode() === 'unavailable' && !g.sub().unsubscribed, 'grace expired: unavailable, subscription kept');
+    assert(!g.gp.recoverIfStuck(g.t + R - 1), 'not before ' + (R / 60000) + ' min');
+    assert(g.gp.recoverIfStuck(g.t + R) && g.subs.length === 2 && g.subs[0].unsubscribed, 'then resubscribes');
+    assert(g.gp.mode() === 'unavailable', 'stays unavailable until data');
+    assert(!g.gp.recoverIfStuck(g.t + R + 1000), 'rate-limited after a resubscribe');
+    assert(g.gp.recoverIfStuck(g.t + 2 * R), 'and again ' + (R / 60000) + ' min later');
+    g.data(reading(120, 5));
+    assert(g.gp.mode() === 'plugin', 'an envelope on the new subscription returns to plugin');
+
+    var st = harness();
+    st.gp.start();
+    st.data(reading(120, 5));
+    st.gp.checkStall(st.t + GP.STALL_MS + 1);
+    assert(st.gp.recoverIfStuck(st.t + GP.STALL_MS + 1 + R), 'after the stall watchdog: resubscribes');
+
+    var pu = harness();
+    pu.gp.start();
+    pu.error('PLUGIN_UNAVAILABLE');
+    assert(pu.gp.recoverIfStuck(pu.t + R), 'PLUGIN_UNAVAILABLE: resubscribes');
+
+    var pd = harness();
+    pd.gp.start();
+    pd.error('PERMISSION_DENIED');
+    assert(!pd.gp.recoverIfStuck(pd.t + 10 * R) && pd.subs.length === 1, 'PERMISSION_DENIED: never (the host serves it once approved)');
+
+    var none = harness({ plugins: [] });
+    none.gp.start();
+    assert(!none.gp.recoverIfStuck(none.t + 10 * R), 'no subscription: left to recheck()');
+    var live = harness();
+    live.gp.start();
+    live.data(reading(120, 5));
+    assert(!live.gp.recoverIfStuck(live.t + 10 * R), 'plugin mode: never');
+
+    // A host that answers inside subscribeToSource on the first subscribe.
+    var y = harness();
+    y.pebble.subscribeToSource = function(cfg) {
+        cfg.onData(reading(130, 5));
+        return { unsubscribe: function() {} };
+    };
+    y.gp.start();
+    assert(y.gp.mode() === 'plugin', 'synchronous first answer: plugin, not set back to pending');
+    y.advance(GP.PLUGIN_GRACE_MS + 1);
+    assert(y.gp.mode() === 'plugin' && y.sent.length === 1 && y.sent[0].BG !== '---', 'no grace timer: no "---" 30 s later');
+    var ye = harness();
+    ye.pebble.subscribeToSource = function(cfg) {
+        cfg.onError({ code: 'PERMISSION_DENIED', message: 'waiting' });
+        return { unsubscribe: function() {} };
+    };
+    ye.gp.start();
+    assert(ye.gp.mode() === 'unavailable', 'synchronous first error: unavailable, not pending');
+
+    // Saving settings lifts the INVALID_REQUEST pin.
+    var p = harness();
+    p.gp.start();
+    p.error('INVALID_REQUEST');
+    assert(!p.gp.recheck(), 'pinned: no re-check');
+    p.gp.onSettingsChanged();
+    assert(p.subs.length === 2 && p.gp.mode() === 'pending', 'settings saved: detects and subscribes again');
+})();
+
+// 10. Hygiene
 console.log('\nhygiene');
 (function() {
     var src = fs.readFileSync(path.join(__dirname, '..', 'src', 'pkjs', 'glucose_plugin.js'), 'utf8');

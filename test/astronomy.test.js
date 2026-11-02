@@ -87,11 +87,11 @@ assert(dateStr === expected, 'date is tomorrow (' + expected + ')');
 console.log('\ndetermineTomorrowMoonEvent');
 // Rise only (set is null)
 var r1 = determineTomorrowMoonEvent('22:00', 'N/A');
-assert(r1.needMoonrise === true && r1.needMoonset === false, 'rise-only → needMoonrise');
+assert(r1.needMoonrise === false && r1.needMoonset === true, 'rise-only: after the moonrise the next event is tomorrow\'s moonset');
 
 // Set only (rise is null)
 var r2 = determineTomorrowMoonEvent('N/A', '08:00');
-assert(r2.needMoonrise === false && r2.needMoonset === true, 'set-only → needMoonset');
+assert(r2.needMoonrise === true && r2.needMoonset === false, 'set-only: after the moonset the next event is tomorrow\'s moonrise');
 
 // Normal order (rise before set): need tomorrow moonrise
 var r3 = determineTomorrowMoonEvent('06:00', '18:00');
@@ -104,6 +104,29 @@ assert(r4.needMoonrise === false && r4.needMoonset === true, 'inverted order →
 // Both null
 var r5 = determineTomorrowMoonEvent('N/A', 'N/A');
 assert(r5.needMoonrise === false && r5.needMoonset === false, 'both null → neither needed');
+
+// --- getNextMoonEvent with a pinned clock ---
+console.log('\ngetNextMoonEvent');
+var M = astronomy.getNextMoonEvent;
+var e1 = M('14:00', 'N/A', 13 * 60);
+assert(e1.time === '14:00' && !e1.needsTomorrowData && e1.isRising, 'rise-only, before the moonrise: today\'s moonrise, rising');
+var e2 = M('14:00', 'N/A', 15 * 60);
+assert(e2.needsTomorrowData && e2.isRising === false, 'rise-only, after the moonrise: tomorrow\'s event, setting');
+var e3 = M('N/A', '10:00', 9 * 60);
+assert(e3.time === '10:00' && !e3.needsTomorrowData && e3.isRising === false, 'set-only, before the moonset: today\'s moonset, setting');
+var e4 = M('N/A', '10:00', 11 * 60);
+assert(e4.needsTomorrowData && e4.isRising === true, 'set-only, after the moonset: tomorrow\'s event, rising');
+var e5 = M('08:00', '20:00', 21 * 60);
+assert(e5.needsTomorrowData && e5.isRising === true, 'normal order, after the moonset: tomorrow\'s moonrise, rising');
+var e6 = M('20:00', '08:00', 21 * 60);
+assert(e6.needsTomorrowData && e6.isRising === false, 'inverted order, after the moonrise: tomorrow\'s moonset, setting');
+[['14:00', 'N/A', 15 * 60], ['N/A', '10:00', 11 * 60], ['08:00', '20:00', 21 * 60], ['20:00', '08:00', 21 * 60]].forEach(function(c) {
+    var ev = M(c[0], c[1], c[2]);
+    var need = determineTomorrowMoonEvent(c[0], c[1]);
+    assert(ev.isRising === need.needMoonrise && !ev.isRising === need.needMoonset,
+        'rise ' + c[0] + ' / set ' + c[1] + ': tomorrow\'s event matches the arrow');
+});
+assert(/^\d{4}-\d{2}-\d{2}$/.test(getTomorrowDateString()), 'tomorrow date string is YYYY-MM-DD (no padStart)');
 
 console.log('\nResults: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed > 0 ? 1 : 0);

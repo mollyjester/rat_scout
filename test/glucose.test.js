@@ -65,7 +65,7 @@ var settingsMgDl = {
 
 var dict = Glucose.buildGlucoseDictionary(mockResult, settingsMgDl, 1);
 assert(dict.MSG_TYPE === 1, 'MSG_TYPE matches passed constant');
-assert(dict.BG_UNITS === 'mg/dL', 'BG_UNITS from settings');
+assert(!('BG_UNITS' in dict), 'no BG_UNITS (the watch never read it)');
 assert(dict.BG === '120', 'BG formatted as mg/dL');
 assert(dict.BGDELTA === '+5', 'BGDELTA with positive sign');
 assert(dict.BG_SHOW_DELTA === 1, 'BG_SHOW_DELTA truthy → 1');
@@ -87,7 +87,13 @@ assert(dictMmol.BG_SHOW_TIMEDELTA === 0, 'BG_SHOW_TIMEDELTA falsy → 0');
 // Test default BG_UNITS
 var settingsNoUnits = {};
 var dictDefault = Glucose.buildGlucoseDictionary(mockResult, settingsNoUnits, 1);
-assert(dictDefault.BG_UNITS === 'mg/dL', 'defaults to mg/dL when no BG_UNITS');
+assert(dictDefault.BG === '120', 'defaults to mg/dL when no BG_UNITS');
+
+// No delta (single reading, or the plugin sent no delta_mgdl)
+var noDelta = { current: { _value: 120, _delta: null, _datetime: new Date('2025-01-15T10:30:00Z') } };
+assert(Glucose.buildGlucoseDictionary(noDelta, settingsMgDl, 1).BGDELTA === '', 'null delta, mg/dL → empty, not "null"');
+assert(Glucose.buildGlucoseDictionary(noDelta, settingsMmol, 1).BGDELTA === '', 'null delta, mmol/L → empty, not "0.0"');
+assert(Glucose.formatBGDelta(undefined, 'mg/dL') === '' && Glucose.formatBGDelta(0, 'mg/dL') === '0', 'undefined → empty; 0 stays "0"');
 
 console.log('\nResults: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed > 0 ? 1 : 0);

@@ -103,5 +103,34 @@ var farFuture = Math.floor(new Date(Date.now() + 48 * 3600 * 1000).getTime() / 1
 var futureRain = [{ dt: farFuture, pop: 0.9 }];
 assert(checkForecastPrecipitation(futureRain, 0.3) === false, 'future timestamp → false');
 
+// --- fetchWeatherData with known coordinates: no second geolocation request ---
+console.log('\nfetchWeatherData(coords)');
+(function() {
+    var Weather = require('../src/pkjs/weather');
+    var geoCalls = 0;
+    var urls = [];
+    global.navigator = { geolocation: { getCurrentPosition: function() { geoCalls++; } } };
+    global.XMLHttpRequest = function() {
+        var x = this;
+        x.open = function(m, u) { urls.push(u); };
+        x.send = function() {
+            x.status = 200;
+            x.responseText = JSON.stringify(/forecast/.test(urls[urls.length - 1])
+                ? { list: [] }
+                : { main: { temp: 5 }, wind: { speed: 2 }, weather: [{ main: 'Clear' }] });
+            x.onload();
+        };
+    };
+    var got = null;
+    Weather.fetchWeatherData('k', 'metric', function(d) { got = d; }, function() {}, { latitude: 50.1, longitude: 14.4 });
+    assert(geoCalls === 0, 'no geolocation request');
+    assert(urls.length === 2 && /lat=50\.1000/.test(urls[0]) && /lon=14\.4000/.test(urls[0]), 'requests use the given position');
+    assert(got && got.latitude === 50.1 && got.longitude === 14.4, 'result carries the position');
+    Weather.fetchWeatherData('k', 'metric', function() {}, function() {});
+    assert(geoCalls === 1, 'without coordinates it asks for a position');
+    delete global.navigator;
+    delete global.XMLHttpRequest;
+})();
+
 console.log('\nResults: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed > 0 ? 1 : 0);

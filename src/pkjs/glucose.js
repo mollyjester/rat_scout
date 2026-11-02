@@ -19,11 +19,12 @@ function formatBGValue(value, units) {
 
 /**
  * Format BG delta with sign
- * @param {number} delta - Delta value
+ * @param {?number} delta - Delta value; null/undefined when the reading has none
+ * @returns {string} Formatted delta, '' without one
  * @param {string} units - Blood glucose units
- * @returns {string} Formatted delta
  */
 function formatBGDelta(delta, units) {
+    if (typeof delta !== 'number' || isNaN(delta)) return '';
     var formatted = units === 'mmol/L'
         ? (delta / MMOL_CONVERSION_FACTOR).toFixed(1)
         : String(delta);
@@ -43,7 +44,6 @@ function buildGlucoseDictionary(result, settings, msgTypeGlucose) {
 
     return {
         "MSG_TYPE": msgTypeGlucose,
-        "BG_UNITS": bgUnits,
         "BG_SHOW_DELTA": settings.BG_SHOW_DELTA ? 1 : 0,
         "BG_SHOW_TIMEDELTA": settings.BG_SHOW_TIMEDELTA ? 1 : 0,
         "BG": formatBGValue(result.current._value, bgUnits),
