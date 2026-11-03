@@ -1,9 +1,9 @@
 var Geolocation = require('./geolocation');
-var Weather = require('./weather');
 var Astronomy = require('./astronomy');
 var Garbage = require('./garbage');
 var Glucose = require('./glucose');
 var GlucosePlugin = require('./glucose_plugin');
+var WeatherPlugin = require('./weather_plugin');
 var LegacyCleanup = require('./legacy_cleanup');
 var MessageQueue = require('./message_queue');
 var WatchSettings = require('./watch_settings');
@@ -24,7 +24,6 @@ var MSG_TYPE_SOUND_TEST   = 6;
 
 // Retry cancellation guards (Fix 8)
 var astronomyRetryPending = false;
-var weatherRetryPending   = false;
 
 // Last known GPS position (used to pass coordinates to astronomy API)
 var lastKnownLat = undefined;
@@ -39,10 +38,6 @@ var CONFIG = {
     TIME_CACHE_KEYS: {
         ASTRONOMY_DATA: 'cachedAstronomyData',
         ASTRONOMY_FETCH_TIME: 'lastAstronomyFetchTime',
-        WEATHER_DATA: 'cachedWeatherData',
-        WEATHER_FETCH_TIME: 'lastWeatherFetchTime',
-        WEATHER_LOCATION: 'lastWeatherLocation',
-        WEATHER_UNITS: 'lastWeatherUnits',
         ASTRONOMY_LOCATION: 'lastAstronomyLocation',
         ASTRONOMY_FAIL_TIME: 'lastAstronomyFailTime'
     },
@@ -50,7 +45,6 @@ var CONFIG = {
     MMOL_CONVERSION_FACTOR: 18.0182,
     MAX_FETCH_RETRIES: 2,
     REQUEST_TIMEOUT_MS: 15000,
-    DEFAULT_WEATHER_INTERVAL_MIN: 60,
     SIGNIFICANT_LOCATION_CHANGE_KM: 5,
     GEOLOCATION_MAX_AGE_MS: 300000,
     // How old a last known position may be for the "did we move?" check on a fresh cache. The
@@ -81,7 +75,8 @@ var messageQueue = MessageQueue.create({
     sendAppMessage: function(dict, onOk, onFail) { Pebble.sendAppMessage(dict, onOk, onFail); }
 });
 
-// Weather and astronomy are re-sent from cache on every watch ping; only send what changed.
+// Astronomy is re-sent from cache on every watch ping, weather on every plugin answer; only send
+// what changed.
 var changeFilter = MessageQueue.createChangeFilter();
 
 /**
@@ -188,11 +183,19 @@ var glucoseSource = GlucosePlugin.create({
     send: sendToPebble
 });
 
+// Weather comes from whichever plugin serves weather/location, in the units of preferences/units
+// ("--" while either is unavailable).
+var weatherSource = WeatherPlugin.create({
+    Pebble: Pebble,
+    msgType: MSG_TYPE_WEATHER,
+    send: function(dict) { sendIfChanged('weather', dict, 'Weather'); }
+});
+
 /**
- * Fetch all watchface data (weather and astronomy) and look after the glucose
- * subscription. Astronomy is fetched independently based on its daily cache,
- * not on every cycle, to reduce unnecessary API calls. Glucose arrives through
- * the plugin subscription; an overdue reading resubscribes so the plugin runs now.
+ * Fetch astronomy and look after the glucose and weather subscriptions. Astronomy is
+ * fetched independently based on its daily cache, not on every cycle, to reduce
+ * unnecessary API calls. Glucose and weather arrive through plugin subscriptions; an
+ * overdue reading resubscribes so the glucose plugin runs now.
  */
 function fetchAllData() {
     var now = Date.now();
@@ -202,8 +205,7 @@ function fetchAllData() {
     glucoseSource.recoverIfStuck(now);
     glucoseSource.refreshIfOverdue(now);
     refreshTimedSettings();
-    // Fetch weather independently (sent as separate message)
-    fetchAndSendWeather();
+    weatherSource.recheck();
     // Fetch astronomy independently — only hits the API when cache is stale (daily)
     fetchAndSendAstronomy();
 }
@@ -215,6 +217,7 @@ Pebble.addEventListener('ready', function() {
     appSettings = getSettings();
     sendSettings();
     glucoseSource.start();
+    weatherSource.start();
     fetchAllData();
 });
 
@@ -273,6 +276,7 @@ Pebble.addEventListener('webviewclosed', function(e) {
         sendSettings();
         // Re-read the plugin so a unit/delta change is re-sent even if the reading is unchanged.
         glucoseSource.onSettingsChanged();
+        weatherSource.onSettingsChanged();
 
         // Queue test commands after settings so they arrive in order
         if (vibePattern > 0) {
@@ -628,135 +632,3 @@ function fetchFreshAstronomy(apiKey, attemptCount) {
         { timeout: CONFIG.REQUEST_TIMEOUT_MS, maximumAge: CONFIG.GEOLOCATION_MAX_AGE_MS }
     );
 }
-
-/**
- * Fetch weather data from OpenWeatherMap and send to Pebble.
- * The cache is used for WEATHER_INTERVAL minutes, checked before any GPS request; it is
- * dropped early when the weather units changed or the phone moved more than
- * SIGNIFICANT_LOCATION_CHANGE_KM (checked against the last known position, no new fix).
- * @param {number} attemptCount - Internal retry counter
- */
-function fetchAndSendWeather(attemptCount) {
-    weatherRetryPending = false;
-    attemptCount = attemptCount || 0;
-    
-    var apiKey = appSettings.OWM_API_KEY;
-    if (!apiKey) {
-        console.log('No OpenWeatherMap API key configured, skipping weather');
-        return;
-    }
-    
-    var units = appSettings.WEATHER_UNITS || 'metric';
-    var cachedData = window.localStorage.getItem(CONFIG.TIME_CACHE_KEYS.WEATHER_DATA);
-    var lastFetchTime = window.localStorage.getItem(CONFIG.TIME_CACHE_KEYS.WEATHER_FETCH_TIME);
-    // A cache from before units were stored is taken as metric (the default).
-    var cachedUnits = window.localStorage.getItem(CONFIG.TIME_CACHE_KEYS.WEATHER_UNITS) || 'metric';
-    var weatherIntervalMs = (parseInt(appSettings.WEATHER_INTERVAL, 10) || CONFIG.DEFAULT_WEATHER_INTERVAL_MIN) * 60 * 1000;
-    
-    if (attemptCount === 0 && cachedData && lastFetchTime && cachedUnits === units) {
-        var elapsed = Date.now() - parseInt(lastFetchTime, 10);
-        if (elapsed >= 0 && elapsed < weatherIntervalMs) {
-            var cached = null;
-            try {
-                cached = JSON.parse(cachedData);
-            } catch (e) {
-                console.error('Error parsing cached weather: ' + e.message);
-            }
-            if (cached) {
-                checkMoved(CONFIG.TIME_CACHE_KEYS.WEATHER_LOCATION, function(moved) {
-                    if (moved) {
-                        console.log('Location changed, fetching fresh weather data');
-                        fetchFreshWeather(apiKey, units, cachedData, 0);
-                        return;
-                    }
-                    console.log('Using cached weather data (age: ' + Math.round(elapsed / 60000) + 'min)');
-                    sendWeatherToPebble(cached);
-                });
-                return;
-            }
-        }
-    } else if (attemptCount === 0 && cachedData && cachedUnits !== units) {
-        console.log('Weather units changed, fetching fresh weather data');
-    }
-    fetchFreshWeather(apiKey, units, cachedData, attemptCount);
-}
-
-/**
- * Get a position and fetch the weather for it, with retries.
- * @param {string} apiKey - OpenWeatherMap API key
- * @param {string} units - 'metric' or 'imperial'
- * @param {?string} cachedData - Cached weather JSON, sent if everything fails
- * @param {number} attemptCount - Retry counter
- */
-function fetchFreshWeather(apiKey, units, cachedData, attemptCount) {
-    navigator.geolocation.getCurrentPosition(
-        function(pos) {
-            console.log('Fetching fresh weather data (attempt ' + (attemptCount + 1) + ')');
-            // The position just obtained: weather.js asks for one only when given none.
-            Weather.fetchWeatherData(apiKey, units,
-                function(data) {
-                    window.localStorage.setItem(CONFIG.TIME_CACHE_KEYS.WEATHER_DATA, JSON.stringify(data));
-                    window.localStorage.setItem(CONFIG.TIME_CACHE_KEYS.WEATHER_FETCH_TIME, String(Date.now()));
-                    window.localStorage.setItem(CONFIG.TIME_CACHE_KEYS.WEATHER_UNITS, units);
-                    window.localStorage.setItem(CONFIG.TIME_CACHE_KEYS.WEATHER_LOCATION, JSON.stringify({
-                        latitude: data.latitude,
-                        longitude: data.longitude
-                    }));
-                    sendWeatherToPebble(data);
-                },
-                function(error) {
-                    console.error('Weather fetch error (attempt ' + (attemptCount + 1) + '): ' + error);
-                    
-                    if (attemptCount < CONFIG.MAX_FETCH_RETRIES) {
-                        weatherRetryPending = true;
-                        setTimeout(function() {
-                            if (!weatherRetryPending) return;
-                            weatherRetryPending = false;
-                            fetchAndSendWeather(attemptCount + 1);
-                        }, 2000);
-                    } else {
-                        console.log('Max weather retries reached, trying cached data');
-                        if (cachedData) {
-                            try {
-                                sendWeatherToPebble(JSON.parse(cachedData));
-                            } catch (e) {
-                                console.error('Error using expired weather cache: ' + e.message);
-                            }
-                        }
-                    }
-                },
-                pos.coords
-            );
-        },
-        function(err) {
-            // Geolocation error - fall back to cache if available
-            console.error('Geolocation error: ' + err.message);
-            if (cachedData) {
-                try {
-                    var cached = JSON.parse(cachedData);
-                    console.log('Using cached weather data (geolocation unavailable)');
-                    sendWeatherToPebble(cached);
-                } catch (e) {
-                    console.error('Error using cached weather: ' + e.message);
-                }
-            }
-        },
-        { timeout: CONFIG.REQUEST_TIMEOUT_MS, maximumAge: CONFIG.GEOLOCATION_MAX_AGE_MS }
-    );
-}
-
-/**
- * Send weather data to Pebble watchface
- * @param {Object} data - Weather data { temp, windSpeed, needsUmbrella }
- */
-function sendWeatherToPebble(data) {
-    var dictionary = {
-        "MSG_TYPE": MSG_TYPE_WEATHER,
-        "WEATHER_TEMP": String(data.temp),
-        "WEATHER_WIND": String(data.windSpeed),
-        "WEATHER_UMBRELLA": data.needsUmbrella ? 1 : 0
-    };
-    
-    sendIfChanged('weather', dictionary, 'Weather');
-}
-

@@ -253,7 +253,7 @@ Start a session first: login, open the printed URL, paste the failed localhost:6
    Check its page lists only the three Dexcom domains.
 2. Watchface.                                         Run: install face --expect plugin --seconds 180
    Operator: approve "Read your glucose readings (via Rat Scout Glucose)" if asked.
-   Check the face's page lists weather, location and that glucose permission, no Dexcom domains.
+   Check the face's page lists location, api.ipgeolocation.io and that glucose permission, no Dexcom or weather domains.
 3. Preview OFF while the face runs.                   Run: logs --seconds 900 --expect unavailable
    ("---" after a PLUGIN_UNAVAILABLE error, or at the latest when the 11 min stall watchdog fires)
    Preview ON again.                                  Run: logs --seconds 360 --expect plugin (re-check)

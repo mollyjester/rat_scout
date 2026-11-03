@@ -63,7 +63,6 @@ Pass a JSON file with `--settings`. The script writes its non-null values into t
 
   ```json
   {
-    "OWM_API_KEY": "<openweathermap key>",
     "ASTRO_API_KEY": "<ipgeolocation key>",
     "DATE_FORMAT": "mm.dd"
   }

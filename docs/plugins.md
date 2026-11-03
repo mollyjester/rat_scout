@@ -31,7 +31,9 @@ Taken from the official guide.
 - **Actions:** operations with JSON-Schema arguments that other apps or Index can invoke.
 - **Shapes:** `shortText` (about 7 characters), `longText`, `numericValue` (`value`, `unit`, optional `min`/`max`), `timestamp` (epoch seconds), `boolean`, `icon` and `image` (4-bpp palettised, only when the request asks for `iconPixelSize`), plus `series.<shape>`.
   - **Every shape of a property must be the same reading.** Rat Scout's `glucose.longText` is "120 mg/dL", not "120 mg/dL →": the trend is its own property.
-- **How a source is chosen:** apps ask for a category and item, not a plugin. The phone serves the user's preferred plugin. To use your own, pin it with `plugin: "<your uuid>"`.
+- **How a source is chosen:** apps ask for a category and item, not a plugin. The phone serves the caller's named plugin if it serves the source, else the user's choice for that source in the app, else built-ins first (mobileapp `PluginRegistry.kt` `findSourcePlugin`). Plugins serving the same source are meant to replace each other, so read a shared source (`weather/location`, `preferences/units`) **without** `plugin`: Rat Scout's weather does (`src/pkjs/weather_plugin.js`). Pin with `plugin: "<uuid>"` only where one provider defines the source, as Rat Scout's own `health/glucose`.
+- **The user's choice applies when you subscribe.** For weather it is Settings → Weather → "Weather provider" in the app (`WatchSettingsScreen.kt:1460-1469`, `setPreferredSourcePlugin`). Changing it does not move an open subscription: on 1.16.0.5 Rat Scout's subscription stayed on MET Norway, with no error, until the face subscribed again.
+- **Units travel with the number.** Phone-verified for weather on 1.16.0.5: MET Norway sent `19 °C`, `16.7 m/s`; the built-in Weather `17 °C`, `19 mph`. A `numericValue` carries its `unit`, and providers of the same source differ: for `weather/location`, MET Norway sends °C and m/s, the built-in Weather the app's temperature unit and mph (mobileapp `WeatherPlugin.kt:131`, `:253`). Convert from the reported unit; the user's preferred units are in `preferences/units` (built-in Preferences: `temperature` `°C`/`°F`, `wind_speed` `km/h`/`mph`/`m/s`/`knots`, `PreferencesPlugin.kt`).
 - **Defining a category:** names are free-form. If an existing category fits, reuse its names; otherwise define your own and document it, as Rat Scout does for `health/glucose`.
 - **Lifetime:** a plugin **runs only when needed** (a subscription, an action, or its open settings page), starts fresh for every request, and keeps state in `localStorage`, which it shares with your PKJS.
 
@@ -90,7 +92,7 @@ The consuming watchface (`package.json`) declares only what it uses, plus the pr
 ```json
 "usesPermissions": [
   "Location",
-  { "name": "Internet", "parameters": { "domains": ["api.openweathermap.org"] } },
+  { "name": "Internet", "parameters": { "domains": ["api.ipgeolocation.io"] } },
   { "name": "Glucose", "plugin": "<plugin uuid>" }
 ]
 ```

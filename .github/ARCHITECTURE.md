@@ -52,7 +52,7 @@ rat_scout/
 │       ├── legacy_cleanup.js # Purges Dexcom data older versions left in the face's localStorage
 │       ├── message_queue.js # Watch message queue (one in flight, 30 s timeout) + change filter
 │       ├── watch_settings.js # Settings dictionary (night window, garbage bag)
-│       ├── weather.js      # OpenWeatherMap API client (current + forecast, smart cache)
+│       ├── weather_plugin.js # Weather source: weather/location + preferences/units subscriptions, units, umbrella
 │       ├── geolocation.js  # ipgeolocation.io astronomy API client
 │       ├── astronomy.js    # Astronomy time calculations (next sun/moon event, phase)
 │       └── garbage.js      # Garbage bag schedule computation
@@ -95,8 +95,7 @@ Watchface (`package.json`):
 
 | Permission | Why |
 |---|---|
-| `Location` | `navigator.geolocation` in `index.js` (astronomy, weather) and `weather.js` |
-| `Internet` → `api.openweathermap.org` | `weather.js` |
+| `Location` | `navigator.geolocation` in `index.js` (astronomy), and reading `weather/location`: weather plugins require it of their callers (`callerPermissions: ["Location"]` in the built-in Weather, mobileapp `WeatherPlugin.kt:113`, and MET Norway's manifest; enforced in `PluginClient.kt` `observe()` via `requiredOfCaller`) |
 | `Internet` → `api.ipgeolocation.io` | `geolocation.js` |
 | `Glucose` (plugin: `01523c90-aa11-4a82-8e00-58cc3e98472c`) | Reading the Rat Scout Glucose plugin. The user approves it on the phone ("Read your glucose readings (via Rat Scout Glucose)"); until then the subscription gets `PERMISSION_DENIED` |
 
@@ -108,7 +107,7 @@ Plugin (`plugin/package.json`):
 
 - They only take effect when the pbw is marked `manifestVersion: 2` and the user has plugins enabled (Pebble plugins preview guide, "Permissions" and "Declaring": "only in place when plugins are enabled"; "Without that it's a legacy app"). A legacy pbw keeps the old implicit internet + location access.
 - `pebble build` alone produces a legacy pbw (see [Build](#build)); only `scripts/pack-plugin.py` output is manifestVersion 2.
-- Keep `Internet` limited to domains the JS actually requests. `pebble convert-manifest --dry-run` also lists hosts found in comments and help text (github.com, openweathermap.org, ipgeolocation.io); those are never requested and are deliberately not declared.
+- Keep `Internet` limited to domains the JS actually requests. `pebble convert-manifest --dry-run` also lists hosts found in comments and help text (github.com, ipgeolocation.io); those are never requested and are deliberately not declared.
 
 ## Plugin (preview) — `health/glucose`
 **Rat Scout Glucose** is a separate plugin-only pbw (`plugin/`, uuid `01523c90-aa11-4a82-8e00-58cc3e98472c`; Pebble plugins preview, mobile app 1.16.x, disabled by default) that serves the latest Dexcom reading to Rat Scout and any other watchface, app or Index. Category contract (our own; no published `health` category exists yet):
@@ -175,6 +174,26 @@ Errors (`onError(err)`, by `err.code` only, missing code = `UNKNOWN`; whether `e
 - **Legacy cleanup:** on `ready`, `src/pkjs/legacy_cleanup.js` removes `DEX_LOGIN`, `DEX_PASSWORD`, `DEX_REGION` from the face's `clay-settings` (Clay keeps stored keys otherwise) and the old session, cache and guard keys (`accountId`, `sessionId`, `ratscout.plugin.*`, `ratscout.auth.*`) that versions fetching Dexcom in the face left there. Unit-tested only (`test/legacy_cleanup.test.js`); its phone log line was not captured.
 - All watch messages still go through `sendToPebble()`.
 
+### Weather source (`src/pkjs/weather_plugin.js`)
+The face reads weather from plugins only, through two subscriptions that **never name a plugin** (no `plugin` field): plugins serving the same source replace each other, and the phone picks the provider (mobileapp `PluginRegistry.kt` `findSourcePlugin`: the caller's named plugin, else the user's choice for the source in the app, else built-ins first).
+
+| Subscription | Served by | Asked for |
+|---|---|---|
+| `weather/location` | The user's chosen weather plugin (e.g. MET Norway Weather), else the built-in Weather | `temperature`, `wind_speed`, `condition_code`, `daily_precipitation`, `hourly_condition_code`; no `iconPixelSize` (no glyphs) |
+| `preferences/units` | Built-in Preferences (`PreferencesPlugin.kt`) | `temperature` (`°C`/`°F`), `wind_speed` (`km/h`/`mph`/`m/s`/`knots`) |
+
+- **Instance:** the first one (the user's first weather location), as upstream `weather-face` does.
+- **Units:** each `numericValue` carries its unit and the plugins differ: MET Norway always `°C` and `m/s` (met-weather `src/plugin/index.js:369`, `:525`, pebble-plugins `0e348c2`); the built-in Weather the app's temperature unit and always `mph` for wind (`WeatherPlugin.kt:131`, `:253`, `:311`, mobileapp `dbc937e`). The face converts from the reported unit into `preferences/units` and rounds; a value in a unit it doesn't know (or without one) shows "--".
+- **Umbrella:** current `condition_code`, or any hour of `hourly_condition_code` from now to the end of today, in `light_rain`, `heavy_rain`, `light_snow`, `heavy_snow`, `rain_and_snow` (the vocabulary both plugins use: `WeatherPlugin.kt` `conditionCodeOf`, met-weather `conditionCode`); or today's `daily_precipitation` above 30%. Series index today from their `start` (a local midnight) and `stepSec`. A property the plugin leaves out counts as no.
+- **"--" / "--" / no umbrella** (through the change filter): a source not listed by `enumeratePlugins()` (shown and logged once until one appears), `subscribeToSource` throwing, `PERMISSION_DENIED` (the subscription is kept: the host serves it once approved), `INVALID_REQUEST` (unsubscribed until Rat Scout's settings are saved), no instance, or one of the two answers still missing.
+- **Other errors** (e.g. MET's `PLUGIN_UNAVAILABLE` "Could not reach MET Norway.") are logged; the watch keeps the last weather.
+- **Provider choice:** the app's Settings → Weather → "Weather provider" sets the user's choice for `weather/location`. The phone applies it when a subscription is made, not to an open one (phone-verified: no error, no new data), so a change reaches the face when it subscribes again: the face restarting, or one of the cases below.
+- **"… subscribe again"** (code `UNKNOWN`: the phone retired the serving plugin, e.g. updated, removed or the preview turned off): unsubscribe, detect again, subscribe at once; callbacks of the old subscription are ignored (generation counter).
+- **Watch pings** (`fetchAllData()` → `recheck()`): subscribe to a source that had no plugin, and render again, so a failed send (forgotten by the change filter) is retried and the umbrella follows the hours left today.
+- **Cadence:** the host polls `weather/location` per the plugin's `suggestedRefreshIntervalSec` (MET 1800 s; awake time only, see docs/plugins.md §6.1). MET caches its forecast until MET's `Expires`; the built-in Weather reads what the app last fetched and never fetches itself (`WeatherPlugin.kt`).
+- **Log:** `Weather data: plugin=<name> temperature=<value> <unit> wind=<value> <unit>` and `Weather units: plugin=<name> temperature=<unit> wind=<unit>`; the name is looked up from `enumeratePlugins()` because `scripts/device-check.sh` masks UUIDs other than the face's. No place names or coordinates.
+- Weather settings in Clay no longer exist (no API key, units or interval).
+
 ### Plugin pbws
 - `python3 -I scripts/pack-plugin.py` checks the bundle (`build-plugin.js --check`), runs `pebble clean` + `pebble build` (skipped with `--no-build`), then writes:
   - `build/rat-scout.pbw`: the watchface, `pebble build` output with `manifestVersion: 2` (a watchapp needs it to read plugins; preview guide, "Writing a watchface or app that uses plugins"), no plugin. Copied unchanged if already manifestVersion 2.
@@ -221,6 +240,7 @@ Log lines the checks rely on (PKJS): `Glucose source: mode=<mode>`, `Glucose plu
 | Re-check: preview turned on while the face runs | Phone-verified (embedded design): on the next watch request the face subscribed and reached `plugin` within 1 s, no face switch. Split design: re-check from `unavailable` is unit-tested; on the phone it is step 3 of `device-check.sh steps` |
 | Plugin logs over the developer connection | Phone-verified: `plugin>` lines arrive through CloudPebble (mobileapp `plugin/PluginLogs.kt`) |
 | The Dexcom session kept while no reading exists | Phone-verified (embedded design): one login, then reading requests only, next poll after 60 s. The session used to be dropped on every failure, which meant a full login per poll |
+| Weather from `weather/location` + `preferences/units` without a named plugin; unit conversion; umbrella; "--" cases; re-detection on "subscribe again" | Phone-verified 2026-11-02/03 (app 1.16.0.5, flint), conversion and provider choice: with MET Norway as the app's Weather provider the face got `plugin=MET Norway Weather temperature=19 °C wind=16.7 m/s` and the watch showed 19 / 17 (units °C, m/s); with the built-in Weather (Pebble) it got `plugin=Weather temperature=17 °C wind=19 mph` and showed 17 / 8 (19 mph = 8.5 m/s). The Weather provider setting (Settings → Weather, `WatchSettingsScreen.kt:1460-1469`) is the user's choice for `weather/location` and applies when the face subscribes: switching it sent no "subscribe again" and the open subscription stayed on MET until the face restarted. Umbrella, "--" cases and "subscribe again": unit tests only (`test/weather_plugin.test.js`). The phone's log loses one trailing character per `°` in a line (`wind=m/` for `m/s`); the values are unaffected |
 
 ### Plugin storage keys
 The plugin and the face have different uuids, so each has its own localStorage; nothing is shared.
@@ -241,7 +261,7 @@ Plugin (Rat Scout Glucose):
 
 `credKey` is a djb2 hash of `login|region|credVersion`: a change detector, not security. It holds nothing derived from the password (before 2026-11-02 it hashed the password; the first run after the update sees a different key and logs in once). A login pause (`badcreds`) longer than 60 min means the clock went back and is cut to 60 min from now; a login lock dated in the future is ignored.
 
-Watchface: `clay-settings` (Clay; no Dexcom fields) and the weather/astronomy cache keys (`index.js` `CONFIG.TIME_CACHE_KEYS`: data, fetch time, location, and `lastWeatherUnits`, `lastAstronomyLocation`, `lastAstronomyFailTime`). On `ready`, `legacy_cleanup.js` deletes `DEX_LOGIN`/`DEX_PASSWORD`/`DEX_REGION` from `clay-settings`, and the session/plugin/guard keys above if an older version left them in the face's store.
+Watchface: `clay-settings` (Clay; no Dexcom fields) and the astronomy cache keys (`index.js` `CONFIG.TIME_CACHE_KEYS`: data, fetch time, `lastAstronomyLocation`, `lastAstronomyFailTime`). Weather keeps nothing in localStorage. On `ready`, `legacy_cleanup.js` deletes `DEX_LOGIN`/`DEX_PASSWORD`/`DEX_REGION` from `clay-settings`, and the session/plugin/guard keys above if an older version left them in the face's store.
 
 ### Login guard (`src/plugin-src/dexcom_guard.js`)
 - Used by the plugin only (owner `plugin`); the watchface no longer logs in to Dexcom. The lock still guards against overlapping plugin runs.
@@ -288,8 +308,9 @@ Watchface: `clay-settings` (Clay; no Dexcom fields) and the weather/astronomy ca
 ## Data Flow
 ```
 Phone JS:
-  Pebble ready → purgeLegacyDexcomData() → getSettings() → sendSettings() → glucoseSource.start() → fetchAllData()
-  webviewclosed → clay.getSettings() → sendSettings() → glucoseSource.onSettingsChanged() [then test command if flagged]
+  Pebble ready → purgeLegacyDexcomData() → getSettings() → sendSettings() → glucoseSource.start() → weatherSource.start() → fetchAllData()
+  webviewclosed → clay.getSettings() → sendSettings() → glucoseSource.onSettingsChanged() → weatherSource.onSettingsChanged() [then test command if flagged]
+  weather/location or preferences/units onData → convert to the user's units → MSG_TYPE_WEATHER (sent only if changed)
   plugin subscription onData → envelope → gate → MSG_TYPE_GLUCOSE (switches the mode to plugin)
   plugin onError / 30 s grace expiry / stall → unavailable → "---" through the gate (INVALID_REQUEST also unsubscribes)
 
@@ -300,7 +321,7 @@ Phone JS:
     glucoseSource.recoverIfStuck()  → resubscribe from unavailable with a kept subscription (every 5 min, not PERMISSION_DENIED)
     glucoseSource.refreshIfOverdue() → resubscribe if the reading is overdue (plugin mode, at most once per 55 s)
     refreshTimedSettings()        → MSG_TYPE_SETTINGS again when night thresholds or garbage bag changed
-    fetchAndSendWeather()         → MSG_TYPE_WEATHER  (cached per interval; dropped on a units change or a >5 km move; sent only if changed)
+    weatherSource.recheck()       → subscribe to a weather/units source that had no plugin; MSG_TYPE_WEATHER again (sent only if changed)
     fetchAndSendAstronomy()       → MSG_TYPE_ASTRONOMY (cached daily; dropped on a >5 km move; 15 min backoff after failures; sent only if changed)
 
 Plugin (Rat Scout Glucose, started fresh per request):
@@ -345,11 +366,12 @@ Watch C:
 1. Glucose (text only: the Dexcom account is set on the Rat Scout Glucose plugin's settings page)
 2. Blood Glucose (units, show delta, show time delta, BG vibe, low/high sounds, thresholds, night thresholds + window)
 3. Watchface (date format, hourly vibe, hourly sound)
-4. Weather (OWM API key, units, update interval)
-5. Astronomy (ipgeolocation.io API key)
-6. Garbage Collection (pickup hour, organic/grey/black days)
-7. Quick View Alerts (enable toggle, duration select: 3/10/20 s, test button → MSG_TYPE_OVERLAY_TEST)
-8. Vibration Test (3 buttons → MSG_TYPE_VIBE_TEST)
-9. Sound Test (3 buttons → MSG_TYPE_SOUND_TEST)
+4. Astronomy (ipgeolocation.io API key)
+5. Garbage Collection (pickup hour, organic/grey/black days)
+6. Quick View Alerts (enable toggle, duration select: 3/10/20 s, test button → MSG_TYPE_OVERLAY_TEST)
+7. Vibration Test (3 buttons → MSG_TYPE_VIBE_TEST)
+8. Sound Test (3 buttons → MSG_TYPE_SOUND_TEST)
+
+Weather has no Clay section: provider and units come from the phone app (see [Weather source](#weather-source-srcpkjsweather_pluginjs)).
 
 Key-by-key reference: `scripts/settings.md`.

@@ -33,9 +33,6 @@ The **Default** columns below are Clay's `defaultValue`, which applies only when
 | `DATE_FORMAT` | `"dd.mm"` | `"dd.mm"` |
 | `HOURLY_VIBRATION` | `false` | off |
 | `HOURLY_SOUND` | `false` | off |
-| `OWM_API_KEY` | `""` | weather skipped |
-| `WEATHER_UNITS` | `"metric"` | `"metric"` |
-| `WEATHER_INTERVAL` | `"60"` | 60 minutes |
 | `ASTRO_API_KEY` | `""` | astronomy shows N/A |
 | `GARBAGE_PICKUP_TIME` | `"9"` | 9 |
 | `GARBAGE_ORGANIC_DAYS` | `[true,false,true,false,true,false,false]` | **no days** |
@@ -99,34 +96,6 @@ Optional. When set, these override the general thresholds during the configured 
 |-------|---------|
 | `"dd.mm"` | 11.05 (default) |
 | `"mm.dd"` | 05.11 |
-
----
-
-## Weather
-
-Requires a free [OpenWeatherMap](https://openweathermap.org/api) API key.
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `OWM_API_KEY` | string | `""` | OpenWeatherMap API key |
-| `WEATHER_UNITS` | string | `"metric"` | Temperature and wind speed units |
-| `WEATHER_INTERVAL` | string | `"60"` | How often to fetch weather (minutes) |
-
-**`WEATHER_UNITS` values:**
-
-| Value | Units |
-|-------|-------|
-| `"metric"` | °C, m/s (default) |
-| `"imperial"` | °F, mph |
-
-**`WEATHER_INTERVAL` values:**
-
-| Value | Meaning |
-|-------|---------|
-| `"30"` | Every 30 minutes |
-| `"60"` | Every hour (default) |
-| `"120"` | Every 2 hours |
-| `"180"` | Every 3 hours |
 
 ---
 

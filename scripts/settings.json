@@ -20,10 +20,6 @@
   "HOURLY_VIBRATION":           null,
   "HOURLY_SOUND":               null,
 
-  "OWM_API_KEY":                null,
-  "WEATHER_UNITS":              null,
-  "WEATHER_INTERVAL":           null,
-
   "ASTRO_API_KEY":              null,
 
   "GARBAGE_PICKUP_TIME":        null,

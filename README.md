@@ -27,10 +27,11 @@ Rat Scout displays real-time Dexcom Share blood glucose readings on your Pebble 
   - Each toggle is independent of vibration; sounds can be enabled, disabled, and previewed separately
 - **Multi-region Dexcom**: US, Outside-US (OUS), and Japan servers (set in the plugin)
 
-### Weather (OpenWeatherMap)
-- **Temperature & wind speed** in metric or imperial units
-- **Umbrella indicator**: highlights when rain/snow is expected today (current conditions + 5-day forecast)
-- **Smart caching**: configurable interval (30 min – 3 hours); the cache is dropped early when you change the weather units or move more than 5 km (checked against the phone's last known position, without a new GPS fix). Unchanged weather isn't re-sent to the watch
+### Weather (phone app weather plugin)
+- **From the phone app's weather source** (`weather/location`): the plugin you chose for weather in the Pebble app (for example [MET Norway Weather](https://github.com/coredevices/pebble-plugins/tree/main/met-weather)), else the built-in Weather. The face never names a plugin, so plugins serving weather replace each other without a face update. Needs the plugin preview (app 1.16.x) and the `Location` permission, which weather plugins require of their readers
+- **Temperature & wind speed** in the units set in the Pebble app (built-in Preferences plugin, `preferences/units`: °C/°F; km/h, mph, m/s or knots). Each plugin says which unit its numbers are in (MET Norway: °C and m/s; built-in Weather: your temperature unit and mph), and the face converts them
+- **Umbrella indicator**: on when it rains or snows now, in any hour left today, or today's chance of precipitation is above 30%
+- **"--"** when no plugin serves the weather or the units, or the weather permission is denied. Other plugin errors keep the last weather. Unchanged weather isn't re-sent to the watch
 
 ### Astronomy (ipgeolocation.io)
 - **Sunrise/Sunset**: shows the next upcoming event; after sunset shows tomorrow's sunrise
@@ -134,13 +135,6 @@ Night thresholds allow you to use different alerting ranges while you sleep (e.g
 |---------|-------------|
 | API Key | ipgeolocation.io API key ([free signup](https://ipgeolocation.io/)) |
 
-### Weather (Optional)
-| Setting | Description |
-|---------|-------------|
-| API Key | OpenWeatherMap API key ([free signup](https://openweathermap.org/api)) |
-| Units | Metric (°C, m/s) or Imperial (°F, mph) |
-| Update Interval | 30 min, 1 hour, 2 hours, or 3 hours |
-
 ### Garbage Collection
 | Setting | Description |
 |---------|-------------|
@@ -179,7 +173,7 @@ src/
     ├── glucose.js            # BG/delta formatting (also bundled into the plugin)
     ├── glucose_plugin.js     # Subscribes to the plugin; unavailable/pending/plugin modes
     ├── legacy_cleanup.js     # Purges Dexcom data older versions stored in the face
-    ├── weather.js            # OpenWeatherMap 2.5 API (current + forecast)
+    ├── weather_plugin.js     # Subscribes to weather/location and preferences/units
     ├── geolocation.js        # ipgeolocation.io astronomy API client
     ├── astronomy.js          # Astronomy time calculations (next sun/moon event logic)
     ├── garbage.js            # Garbage bag schedule
@@ -197,12 +191,14 @@ plugin/                       # The Rat Scout Glucose pbw (plugin-only)
 Rat Scout Glucose plugin ─→ Dexcom Share API ─→ health/glucose envelope ─┐
 Phone JS (face) ─→ subscription to the plugin ─→ glucose dictionary  ←───┘ ─┐
                 ─→ ipgeolocation.io ─→ Astronomy data (cached daily)          ─┤
-                ─→ OpenWeatherMap   ─→ Weather data (cached per interval)     ─┤
+                ─→ weather/location + preferences/units ─→ weather dictionary ─┤
                                                                                ├─→ Message Queue ─→ Pebble Watch
                                                             Settings ──────────┘
 ```
 
 PKJS subscribes to the Rat Scout Glucose plugin (`health/glucose`) and shows "---" (mode `unavailable`) when the plugin API is absent, the plugin isn't listed, the permission is denied, the plugin fails, sends nothing within 30 s of subscribing, or is silent for more than 11 minutes. One transient error keeps the shown reading; a second leads to "---". While unavailable without a subscription it checks for the plugin again on every watch request (at least every 5 minutes), so installing the plugin or turning the preview on while the face runs switches to it without restarting the face. When a reading is overdue (more than 5 minutes old) and the plugin hasn't answered for about a minute since its cached reading went stale, a watch request resubscribes, which makes the phone run the plugin at once instead of at its next poll (the phone's 60 s poll counts only time the phone is awake and was seen to take about 6 minutes). It does this at most about once a minute, and the plugin's cache and throttle still allow at most one Dexcom call per 55 s (`src/pkjs/glucose_plugin.js`; modes and triggers in [.github/ARCHITECTURE.md](.github/ARCHITECTURE.md#glucose-source-selection-srcpkjsglucose_pluginjs)). How a manifestVersion 2 pbw behaves on phone apps older than 1.16 is UNVERIFIED.
+
+Weather comes from two subscriptions that name no plugin, so the phone picks the provider: `weather/location` (the plugin chosen for weather in the Pebble app, else the built-in Weather) and `preferences/units` (built-in Preferences). The face converts each plugin's numbers from the unit it reports into the app's units, sends "--" while either source has no plugin or the weather permission is denied, checks for a missing source on every watch request, and subscribes again at once when the phone retires the serving plugin (another plugin chosen, or the plugin updated or removed). Each answer is logged as `Weather data: plugin=<name> temperature=<value> <unit> wind=<value> <unit>` and `Weather units: plugin=<name> temperature=<unit> wind=<unit>` (no place names or coordinates; `src/pkjs/weather_plugin.js`). A change of Weather provider in the app reaches the face when it subscribes again, e.g. when the face restarts.
 
 Glucose, weather and astronomy data are sent as separate messages. A message queue (`src/pkjs/message_queue.js`) keeps one `sendAppMessage` call in flight at a time; a send with no answer within 30 s counts as failed and the queue moves on. Weather and astronomy are sent only when they changed (a failed send is retried on the next watch request); a glucose message whose send failed is also resent on the next watch request. The settings message is re-sent when the night thresholds or the garbage bag change with the time of day. While glucose shows "---" with the subscription still open (no data for 11 minutes, the plugin failing), the face resubscribes every 5 minutes, except while the Glucose permission is waiting for your approval; saving Rat Scout's settings also retries a plugin that rejected the request.
 
@@ -316,7 +312,7 @@ pebble-tool 5.1.1 runs `waf` with the SDK's own venv but passes its own `sys.pat
 - Dexcom API approach inspired by [pydexcom](https://github.com/gagebenne/pydexcom)
 - Settings UI powered by [Pebble Clay](https://github.com/pebble/clay)
 - Astronomy data by [ipgeolocation.io](https://ipgeolocation.io/)
-- Weather data by [OpenWeatherMap](https://openweathermap.org/)
+- Weather data from the Pebble app's weather plugin (for example [MET Norway](https://api.met.no/) via MET Norway Weather)
 
 ## Disclaimer
 

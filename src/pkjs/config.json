@@ -5,7 +5,7 @@
     },
     {
         "type": "text",
-        "defaultValue": "Configure display, notifications, weather and astronomy. The Dexcom account is set in the Rat Scout Glucose plugin."
+        "defaultValue": "Configure display, notifications and astronomy. The Dexcom account is set in the Rat Scout Glucose plugin. Weather comes from the phone app's weather plugin, in the app's units."
     },
     {
         "type": "section",
@@ -172,65 +172,6 @@
                 "messageKey": "HOURLY_SOUND",
                 "defaultValue": false,
                 "label": "Hourly Sound"
-            }
-        ]
-    },
-    {
-        "type": "section",
-        "items": [
-            {
-                "type": "heading",
-                "defaultValue": "Weather"
-            },
-            {
-                "type": "text",
-                "defaultValue": "Enter your OpenWeatherMap API key to display current weather. Get a free key at https://openweathermap.org/api"
-            },
-            {
-                "type": "input",
-                "messageKey": "OWM_API_KEY",
-                "defaultValue": "",
-                "label": "OpenWeatherMap API Key"
-            },
-            {
-                "type": "select",
-                "messageKey": "WEATHER_UNITS",
-                "defaultValue": "metric",
-                "label": "Units",
-                "options": [
-                    {
-                        "label": "Metric (°C, m/s)",
-                        "value": "metric"
-                    },
-                    {
-                        "label": "Imperial (°F, mph)",
-                        "value": "imperial"
-                    }
-                ]
-            },
-            {
-                "type": "select",
-                "messageKey": "WEATHER_INTERVAL",
-                "defaultValue": "60",
-                "label": "Update Interval",
-                "options": [
-                    {
-                        "label": "Every 30 minutes",
-                        "value": "30"
-                    },
-                    {
-                        "label": "Every hour",
-                        "value": "60"
-                    },
-                    {
-                        "label": "Every 2 hours",
-                        "value": "120"
-                    },
-                    {
-                        "label": "Every 3 hours",
-                        "value": "180"
-                    }
-                ]
             }
         ]
     },

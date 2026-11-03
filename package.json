@@ -23,7 +23,6 @@
                 "name": "Internet",
                 "parameters": {
                     "domains": [
-                        "api.openweathermap.org",
                         "api.ipgeolocation.io"
                     ]
                 }
@@ -54,7 +53,6 @@
             "MOON_PHASE",
             "SUN_IS_RISING",
             "MOON_IS_RISING",
-            "WEATHER_UNITS",
             "WEATHER_TEMP",
             "WEATHER_WIND",
             "WEATHER_UMBRELLA",
