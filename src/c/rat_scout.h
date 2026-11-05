@@ -87,12 +87,11 @@ extern const int STATUS_BLACK_X;
 #define BATTERY_SEGMENT_HEIGHT  7
 #define FETCH_INTERVAL_SECONDS 300
 #define FETCH_INTERVAL_JITTER    5
-// While the next reading is due, ping JS from FETCH_INTERVAL_SECONDS + FETCH_INTERVAL_JITTER
-// after the last reading every FAST_PING_INTERVAL_SECONDS up to FAST_PING_END_SECONDS (an
-// AppTimer, messaging.c), so the phone checks Dexcom about every 15 s until the reading is
-// there; then the minute pings below take over.
-#define FAST_PING_INTERVAL_SECONDS 15
-#define FAST_PING_END_SECONDS     425
+// One ping per reading, timed to the second (an AppTimer, messaging.c) rather than the next
+// minute tick: Dexcom usually has the next reading 300 + 5..20 s after the last one. If it is
+// still missing, the tick handler pings each minute from DUE_PING_SECONDS + 60 (see
+// OVERDUE_PING_WINDOW_SECONDS), as before. No faster cadence: every ping costs watch battery.
+#define DUE_PING_SECONDS 320
 #define FALLBACK_FETCH_MINUTES   5
 // Ping JS every minute until this long after the last reading (two reading intervals), then
 // fall back to FALLBACK_FETCH_MINUTES: each overdue ping lets JS resubscribe to the plugin.

@@ -30,8 +30,8 @@ var NO_DATA_TYPE = 'No glucose data';
 // plugin preview turned off) with this message and code UNKNOWN (mobileapp libpebble3
 // plugin/JsPlugin.kt observe(): "$name was updated or removed; subscribe again").
 var SUBSCRIPTION_CLOSED = /subscribe again/;
-// A reading is due 300 s after the last one; the watch pings PKJS from +305 s, every 15 s up
-// to +425 s, then every minute (messaging.c, rat_scout.h FAST_PING_*).
+// A reading is due 300 s after the last one; the watch pings PKJS once at +320 s
+// (rat_scout.h DUE_PING_SECONDS, a timer), then each minute while it is still missing.
 var READING_DUE_SEC = 300;
 // The plugin answers from its cache, without calling Dexcom, until its reading is this old
 // (src/plugin-src/main.js READING_FRESH_SEC). An envelope from before that says nothing about
@@ -41,8 +41,9 @@ var PLUGIN_FRESH_SEC = 300;
 // resubscribing sooner after an envelope or a resubscribe could only be answered from its cache.
 var RESUBSCRIBE_MIN_MS = 55000;
 // While the reading is due (up to this long after the last one) the plugin calls Dexcom up to
-// every 12 s (main.js FAST_WINDOW_SEC, FAST_ATTEMPT_THROTTLE_MS), so each 15 s watch ping may
-// resubscribe.
+// every 12 s (main.js FAST_WINDOW_SEC, FAST_ATTEMPT_THROTTLE_MS), so the watch's due ping may
+// resubscribe even right after a host poll found nothing. Phone side only: the watch's pings
+// don't get more frequent.
 var FAST_WINDOW_SEC = 435;
 var FAST_RESUBSCRIBE_MIN_MS = 12000;
 // Unavailable while still holding a subscription (grace expired, stall, PLUGIN_UNAVAILABLE, a
@@ -369,9 +370,8 @@ function create(deps) {
         /**
          * Reading overdue: resubscribe so the plugin runs now instead of at the host's next
          * poll, which counts only time the phone is awake and was seen to take about 6 min.
-         * Run in fetchAllData() on every watch ping (the watch pings each minute while a
-         * reading is due: every 15 s from +305 s to +425 s, then each minute, messaging.c /
-         * rat_scout.c). Only in plugin mode with a reading, at least READING_DUE_SEC after it,
+         * Run in fetchAllData() on every watch ping (the watch pings once at +320 s, then each
+         * minute while the reading is missing, messaging.c / rat_scout.c). Only in plugin mode with a reading, at least READING_DUE_SEC after it,
          * and at most once per FAST_RESUBSCRIBE_MIN_MS (before FAST_WINDOW_SEC) or
          * RESUBSCRIBE_MIN_MS (after) since a resubscribe or an envelope that came once the
          * plugin's cache was stale (an earlier one was a cached answer: seen on the phone at

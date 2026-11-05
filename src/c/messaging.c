@@ -2,47 +2,37 @@
 
 // ===== Private State =====
 
-// Fast pings while the next reading is due (FAST_PING_* in rat_scout.h); NULL when none is set.
-static AppTimer *s_fast_ping_timer = NULL;
+// The one timed ping for the current reading (DUE_PING_SECONDS); NULL when none is set.
+static AppTimer *s_due_ping_timer = NULL;
 
 // ===== Private Helpers =====
 
 /**
- * Fast ping timer: ping JS, and again in FAST_PING_INTERVAL_SECONDS while that is still inside
- * the window after the last reading. A new reading reschedules (schedule_fast_pings).
+ * Due ping timer: ask JS once for the reading that is due now.
  * @param data - Unused
  */
-static void fast_ping_callback(void *data) {
-    s_fast_ping_timer = NULL;
-    if (s_last_reading_timestamp <= 0) {
-        return;
-    }
+static void due_ping_callback(void *data) {
+    s_due_ping_timer = NULL;
     messaging_request_fetch();
-    time_t next = time(NULL) + FAST_PING_INTERVAL_SECONDS;
-    if (next <= s_last_reading_timestamp + FAST_PING_END_SECONDS) {
-        s_fast_ping_timer = app_timer_register(FAST_PING_INTERVAL_SECONDS * 1000, fast_ping_callback, NULL);
-    }
 }
 
 /**
- * Schedule the fast pings for a reading: the first FETCH_INTERVAL_SECONDS +
- * FETCH_INTERVAL_JITTER after it (at once if that has passed), none if the window is over.
- * Replaces any pings scheduled for an earlier reading. The minute tick handler takes over
- * after the window (s_next_fetch_time, set by the caller).
- * @param reading_ts - Reading time, epoch seconds
+ * Schedule the one timed ping for a reading, DUE_PING_SECONDS after it. Replaces the ping of an
+ * earlier reading. Nothing if that moment has passed: the tick handler's minute pings
+ * (s_next_fetch_time, set by the caller) cover it.
+ * @param reading_ts - Reading time, epoch seconds (0: none)
  */
-static void schedule_fast_pings(time_t reading_ts) {
-    if (s_fast_ping_timer) {
-        app_timer_cancel(s_fast_ping_timer);
-        s_fast_ping_timer = NULL;
+static void schedule_due_ping(time_t reading_ts) {
+    if (s_due_ping_timer) {
+        app_timer_cancel(s_due_ping_timer);
+        s_due_ping_timer = NULL;
     }
     time_t now = time(NULL);
-    if (now >= reading_ts + FAST_PING_END_SECONDS) {
+    if (reading_ts <= 0 || now >= reading_ts + DUE_PING_SECONDS) {
         return;
     }
-    time_t first = reading_ts + FETCH_INTERVAL_SECONDS + FETCH_INTERVAL_JITTER;
-    uint32_t delay_ms = first > now ? (uint32_t)(first - now) * 1000 : 1000;
-    s_fast_ping_timer = app_timer_register(delay_ms, fast_ping_callback, NULL);
+    s_due_ping_timer = app_timer_register((uint32_t)(reading_ts + DUE_PING_SECONDS - now) * 1000,
+                                          due_ping_callback, NULL);
 }
 
 /**
@@ -192,13 +182,13 @@ static void handle_glucose_message(DictionaryIterator *iterator) {
         s_last_reading_timestamp = timestamp_tuple->value->int32;
         persist_write_int(PERSIST_KEY_TIMESTAMP, s_last_reading_timestamp);
         if (s_last_reading_timestamp > 0) {
-            // Fast pings while the reading is due, then the tick handler's minute pings from
-            // one interval after the last fast ping.
-            schedule_fast_pings(s_last_reading_timestamp);
-            s_next_fetch_time = s_last_reading_timestamp + FAST_PING_END_SECONDS + FAST_PING_INTERVAL_SECONDS;
+            // One timed ping when the next reading is due; if it is still missing, the tick
+            // handler's minute pings from a minute later.
+            schedule_due_ping(s_last_reading_timestamp);
+            s_next_fetch_time = s_last_reading_timestamp + DUE_PING_SECONDS + 60;
         } else {
             // No valid timestamp — fall back to periodic fetch pattern
-            schedule_fast_pings(0);
+            schedule_due_ping(0);
             s_next_fetch_time = 0;
         }
         update_delta_display(0);  // 0 = let function call time() internally
@@ -400,11 +390,11 @@ void messaging_request_fetch(void) {
 }
 
 /**
- * Cancel the fast ping timer.
+ * Cancel the due ping timer.
  */
 void messaging_deinit(void) {
-    if (s_fast_ping_timer) {
-        app_timer_cancel(s_fast_ping_timer);
-        s_fast_ping_timer = NULL;
+    if (s_due_ping_timer) {
+        app_timer_cancel(s_due_ping_timer);
+        s_due_ping_timer = NULL;
     }
 }

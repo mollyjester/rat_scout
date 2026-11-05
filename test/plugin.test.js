@@ -392,8 +392,8 @@ test('bundle registers under the Android lockdown (throwing setTimeout/XMLHttpRe
 });
 
 test('frequent requests (face resubscribes on watch pings): fast only while a reading is due', function() {
-    // The face resubscribes on every watch ping while a reading is due (every 15 s from +305 s
-    // to +425 s, then each minute), on top of the host's own polls; each one runs the plugin.
+    // The face resubscribes on watch pings while a reading is due (once at +320 s, then each
+    // minute), on top of the host's own polls; each one runs the plugin. Worst case here.
     // Here: requests every 15 s from +50 s to +1000 s. Dexcom publishes B (reading time +300 s)
     // 20 s late, at +320 s, and never publishes the reading after B.
     var T0 = 1700000000;

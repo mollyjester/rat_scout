@@ -31,10 +31,9 @@ var READING_FRESH_SEC = 300;
 // in a 60 s host poll never skips a poll.
 var ATTEMPT_THROTTLE_MS = 55000;
 // While the next reading is due (the cached one READING_FRESH_SEC to FAST_WINDOW_SEC old) and a
-// Dexcom session exists, reading requests may come this often: the watch pings every 15 s in
-// that window (rat_scout.h FAST_PING_*), so a reading reaches it within about 15 s of Dexcom
-// publishing it. Logins are never sped up. At most 9 extra reading requests per reading, and
-// only while Dexcom has not published it yet.
+// Dexcom session exists, reading requests may come this often, so the watch's one due ping
+// (+320 s, rat_scout.h DUE_PING_SECONDS) is answered from Dexcom even right after a host poll
+// that found nothing. Logins are never sped up.
 var FAST_WINDOW_SEC = 435;
 var FAST_ATTEMPT_THROTTLE_MS = 12000;
 var EMPTY_VALID_MS = 60000;

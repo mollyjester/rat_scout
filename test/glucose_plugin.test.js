@@ -334,14 +334,14 @@ console.log('\nrefreshIfOverdue');
     h.data(reading(120, 5, TS));
     assert(h.sent.length === 1, 'the same reading again is skipped by the gate');
     h.t += 15000;
-    assert(h.gp.refreshIfOverdue(h.t), 'next 15 s watch ping after an answer without the new reading: resubscribes');
+    assert(h.gp.refreshIfOverdue(h.t), 'a ping 15 s after an answer without the new reading: resubscribes');
     h.data(reading(125, 5, TS + 300));
     assert(h.sent.length === 2 && h.sent[1].TIMESTAMP === TS + 300, 'the new reading is sent');
     assert(!h.gp.refreshIfOverdue(h.t + 1000), 'new reading: not due');
     h.t = (TS + 300 + DUE + 5) * 1000;
     assert(h.gp.refreshIfOverdue(h.t), 'due counts from the newest reading');
 
-    // Watch pings every 15 s from +305 to +425 s: each one resubscribes.
+    // Requests 15 s apart inside the window (host polls and the due ping): each one resubscribes.
     var q = live();
     var count = 0;
     for (var at = DUE + 5; at <= 425; at += 15) {
@@ -396,10 +396,10 @@ console.log('\nrefreshIfOverdue');
     var mt = /var FAST_ATTEMPT_THROTTLE_MS = (\d+);/.exec(src);
     assert(mt && +mt[1] <= GP.FAST_RESUBSCRIBE_MIN_MS, 'the plugin\'s fast throttle lets every fast resubscribe through');
     var hdr = fs.readFileSync(path.join(__dirname, '..', 'src', 'c', 'rat_scout.h'), 'utf8');
-    var pi = +/#define FAST_PING_INTERVAL_SECONDS\s+(\d+)/.exec(hdr)[1];
-    var pe = +/#define FAST_PING_END_SECONDS\s+(\d+)/.exec(hdr)[1];
-    assert(pi * 1000 >= GP.FAST_RESUBSCRIBE_MIN_MS, 'watch fast ping interval >= FAST_RESUBSCRIBE_MIN_MS');
-    assert(pe < GP.FAST_WINDOW_SEC, 'the last fast watch ping falls inside the fast window');
+    var dp = +/#define DUE_PING_SECONDS\s+(\d+)/.exec(hdr)[1];
+    assert(dp > GP.READING_DUE_SEC && dp > GP.PLUGIN_FRESH_SEC, 'the watch\'s due ping comes after the reading is due and the plugin cache is stale');
+    assert(dp < GP.FAST_WINDOW_SEC, 'the due ping falls inside the fast window');
+    assert(!/FAST_PING/.test(hdr), 'no fast watch ping cadence'); 
 
     var p = harness();
     p.gp.start();

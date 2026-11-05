@@ -294,11 +294,11 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
         update_steps();
     }
     
-    // Handle data fetching. While a reading is due, messaging.c's timer pings every
-    // FAST_PING_INTERVAL_SECONDS up to FAST_PING_END_SECONDS after the last reading; from
-    // s_next_fetch_time (just after that) ping every minute up to OVERDUE_PING_WINDOW_SECONDS,
-    // since each ping lets JS make the phone run the glucose plugin now (glucose_plugin.js
-    // refreshIfOverdue). After that, the 5-minute fallback (e.g. a sensor gap).
+    // Handle data fetching. messaging.c pings once DUE_PING_SECONDS after the last reading
+    // (a timer, to the second); if the reading is still missing, ping every minute from
+    // s_next_fetch_time (a minute later) up to OVERDUE_PING_WINDOW_SECONDS, since each ping lets
+    // JS make the phone run the glucose plugin now (glucose_plugin.js refreshIfOverdue). After
+    // that, the 5-minute fallback (e.g. a sensor gap).
     bool should_fetch = false;
     if (s_next_fetch_time > 0 && current_time >= s_next_fetch_time) {
         should_fetch = true;
