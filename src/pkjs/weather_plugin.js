@@ -8,6 +8,8 @@
 //
 // All watch messages go through the caller's send function (sendIfChanged → sendToPebble).
 
+var Permissions = require('./permissions');
+
 var WEATHER = { category: 'weather', item: 'location' };
 var UNITS = { category: 'preferences', item: 'units' };
 // Only what the face shows; no iconPixelSize, so the plugin draws no glyphs.
@@ -289,7 +291,11 @@ function create(deps) {
         }
         // The host serves an open subscription once the user approves (mobileapp
         // plugin/PluginClient.kt observe()), so it is kept.
-        if (code === 'PERMISSION_DENIED') lose(feed);
+        if (code === 'PERMISSION_DENIED') {
+            // weather/* needs Location of its callers (preview guide, "Permissions").
+            if (feed === weather) Permissions.logPermission(deps.Pebble, 'Location', 'Location', feed.label);
+            lose(feed);
+        }
         // Anything else: keep the last weather on the watch.
     }
 
@@ -328,8 +334,13 @@ function create(deps) {
         return true;
     }
 
+    var locationLogged = false;
+
     function startBoth() {
-        start(weather);
+        if (start(weather) && !locationLogged) {
+            locationLogged = true;
+            Permissions.logPermission(deps.Pebble, 'Location', 'Location', weather.label);
+        }
         start(units);
     }
 

@@ -24,7 +24,7 @@
 #   steps                      print the checklist (operator action + command per step).
 #
 # Options for install/logs: --seconds N (default 120), --expect unavailable|pending|plugin,
-#   --name NAME (log file name). All: --out DIR (default .device-check, gitignored; not under build/, which pack-plugin.py cleans).
+#   --name NAME (log file name). All: --out DIR (default .device-check, gitignored; not under build/, which pebble clean empties).
 #
 # Logs are redacted before they are written: UUIDs other than the app's, email
 # addresses, and IPv4 addresses with a port or in a URL are masked (a bare a.b.c.d is
@@ -245,7 +245,7 @@ case "$CMD" in
         analyze "${ARGS[0]:?log file}" "$EXPECT" ;;
     steps)
         cat <<'EOF'
-On-device checklist (Pebble app 1.16.x). "Operator" = done on the phone; "Run" = this script.
+On-device checklist (Pebble app 1.16.x or later; last run on 1.17.0.1). "Operator" = done on the phone; "Run" = this script.
 Start a session first: login, open the printed URL, paste the failed localhost:60000 address to `callback`.
 
 1. Plugin. Operator: plugin preview ON.              Run: install glucose

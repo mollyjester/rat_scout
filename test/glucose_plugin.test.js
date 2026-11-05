@@ -308,6 +308,8 @@ console.log('\nrefreshIfOverdue');
     var TS = 1700000000;
     var DUE = GP.READING_DUE_SEC;
     var GAP = GP.RESUBSCRIBE_MIN_MS;
+    var FAST = GP.FAST_RESUBSCRIBE_MIN_MS;
+    var WIN = GP.FAST_WINDOW_SEC;
     // Plugin mode, one reading at TS received at clock TS + 60 s.
     function live() {
         var h = harness();
@@ -317,48 +319,87 @@ console.log('\nrefreshIfOverdue');
         return h;
     }
     var h = live();
-    h.t = (TS + DUE) * 1000;
-    assert(!h.gp.refreshIfOverdue(h.t) && h.subs.length === 1, 'at ' + DUE + ' s: not overdue yet');
-    h.t = (TS + DUE + 1) * 1000;
+    h.t = (TS + DUE - 1) * 1000;
+    assert(!h.gp.refreshIfOverdue(h.t) && h.subs.length === 1, 'at ' + (DUE - 1) + ' s: not due yet');
+    h.t = (TS + DUE + 5) * 1000;
     var first = h.sub();
-    assert(h.gp.refreshIfOverdue(h.t) && h.subs.length === 2, 'overdue, quiet: resubscribes');
+    assert(h.gp.refreshIfOverdue(h.t) && h.subs.length === 2, 'due (first watch ping, +' + (DUE + 5) + ' s): resubscribes');
     assert(first.unsubscribed && h.sub().cfg.plugin === UUID && h.sub().cfg.item === 'glucose', 'old one unsubscribed; new one pinned to the plugin');
     assert(h.gp.mode() === 'plugin' && h.sent.length === 1, 'mode kept, nothing sent');
-    h.t += GAP - 1000;
-    assert(!h.gp.refreshIfOverdue(h.t) && h.subs.length === 2, 'rate limit: not again within ' + (GAP / 1000) + ' s');
+    h.t += FAST - 1000;
+    assert(!h.gp.refreshIfOverdue(h.t) && h.subs.length === 2, 'fast window: not again within ' + (FAST / 1000) + ' s');
     h.t += 1000;
-    assert(h.gp.refreshIfOverdue(h.t) && h.subs.length === 3, 'again after ' + (GAP / 1000) + ' s');
+    assert(h.gp.refreshIfOverdue(h.t) && h.subs.length === 3, 'fast window: again after ' + (FAST / 1000) + ' s');
+    h.t += 15000;
     h.data(reading(120, 5, TS));
     assert(h.sent.length === 1, 'the same reading again is skipped by the gate');
-    h.t += GAP;
+    h.t += 15000;
+    assert(h.gp.refreshIfOverdue(h.t), 'next 15 s watch ping after an answer without the new reading: resubscribes');
     h.data(reading(125, 5, TS + 300));
     assert(h.sent.length === 2 && h.sent[1].TIMESTAMP === TS + 300, 'the new reading is sent');
-    assert(!h.gp.refreshIfOverdue(h.t + 1000), 'new reading: not overdue');
-    h.t = (TS + 300 + DUE + 1) * 1000;
-    assert(h.gp.refreshIfOverdue(h.t), 'overdue counts from the newest reading');
+    assert(!h.gp.refreshIfOverdue(h.t + 1000), 'new reading: not due');
+    h.t = (TS + 300 + DUE + 5) * 1000;
+    assert(h.gp.refreshIfOverdue(h.t), 'due counts from the newest reading');
+
+    // Watch pings every 15 s from +305 to +425 s: each one resubscribes.
+    var q = live();
+    var count = 0;
+    for (var at = DUE + 5; at <= 425; at += 15) {
+        q.t = (TS + at) * 1000;
+        if (q.gp.refreshIfOverdue(q.t)) count++;
+        q.t += 800;
+        q.data(reading(120, 5, TS));
+    }
+    assert(count === 9, 'all 9 fast pings resubscribe (got ' + count + ')');
+
+    // After the fast window: back to one resubscribe per minute.
+    var l = live();
+    l.t = (TS + WIN) * 1000;
+    assert(l.gp.refreshIfOverdue(l.t), 'at the end of the fast window: resubscribes');
+    l.t += FAST;
+    assert(!l.gp.refreshIfOverdue(l.t), 'after the fast window: not within ' + (GAP / 1000) + ' s');
+    l.t = (TS + WIN) * 1000 + GAP;
+    assert(l.gp.refreshIfOverdue(l.t), 'after the fast window: again after ' + (GAP / 1000) + ' s');
 
     var e = live();
-    e.t = (TS + DUE + 30) * 1000;
+    e.t = (TS + WIN + 30) * 1000;
     e.data(reading(120, 5, TS));
     e.t += GAP - 1000;
-    assert(!e.gp.refreshIfOverdue(e.t), 'an envelope less than ' + (GAP / 1000) + ' s ago: no resubscribe');
+    assert(!e.gp.refreshIfOverdue(e.t), 'after the window, an envelope less than ' + (GAP / 1000) + ' s ago: no resubscribe');
     e.t += 1000;
     assert(e.gp.refreshIfOverdue(e.t), 'and ' + (GAP / 1000) + ' s after it: resubscribes');
+    var ef = live();
+    ef.t = (TS + DUE + 10) * 1000;
+    ef.data(reading(120, 5, TS));
+    ef.t += FAST - 1000;
+    assert(!ef.gp.refreshIfOverdue(ef.t), 'in the window, an envelope less than ' + (FAST / 1000) + ' s ago: no resubscribe');
+    ef.t += 1000;
+    assert(ef.gp.refreshIfOverdue(ef.t), 'and ' + (FAST / 1000) + ' s after it: resubscribes');
 
-    // Phone, 2026-11-02: a cached host answer at ts + 303 s held the 16:04 ping back a minute.
+    // Phone, 2026-11-02: a cached host answer just before the plugin cache went stale held a
+    // reading back a minute; such an envelope must not hold back the resubscribe.
     var c0 = live();
-    c0.t = (TS + 303) * 1000;
+    c0.t = (TS + GP.PLUGIN_FRESH_SEC - 2) * 1000;
     c0.data(reading(120, 5, TS));
-    c0.t = (TS + 355) * 1000;
+    c0.t = (TS + DUE + 5) * 1000;
     assert(c0.gp.refreshIfOverdue(c0.t), 'an envelope from before the plugin cache went stale does not hold it back');
     var c1 = live();
     c1.t = (TS + GP.PLUGIN_FRESH_SEC) * 1000;
     c1.data(reading(120, 5, TS));
-    c1.t += GAP - 1000;
+    c1.t += FAST - 1000;
     assert(!c1.gp.refreshIfOverdue(c1.t), 'an envelope from when the plugin could have called Dexcom does');
     var src = fs.readFileSync(path.join(__dirname, '..', 'src', 'plugin-src', 'main.js'), 'utf8');
     var m = /var READING_FRESH_SEC = (\d+);/.exec(src);
     assert(m && +m[1] === GP.PLUGIN_FRESH_SEC, 'PLUGIN_FRESH_SEC matches the plugin\'s READING_FRESH_SEC');
+    var mw = /var FAST_WINDOW_SEC = (\d+);/.exec(src);
+    assert(mw && +mw[1] === GP.FAST_WINDOW_SEC, 'FAST_WINDOW_SEC matches the plugin\'s');
+    var mt = /var FAST_ATTEMPT_THROTTLE_MS = (\d+);/.exec(src);
+    assert(mt && +mt[1] <= GP.FAST_RESUBSCRIBE_MIN_MS, 'the plugin\'s fast throttle lets every fast resubscribe through');
+    var hdr = fs.readFileSync(path.join(__dirname, '..', 'src', 'c', 'rat_scout.h'), 'utf8');
+    var pi = +/#define FAST_PING_INTERVAL_SECONDS\s+(\d+)/.exec(hdr)[1];
+    var pe = +/#define FAST_PING_END_SECONDS\s+(\d+)/.exec(hdr)[1];
+    assert(pi * 1000 >= GP.FAST_RESUBSCRIBE_MIN_MS, 'watch fast ping interval >= FAST_RESUBSCRIBE_MIN_MS');
+    assert(pe < GP.FAST_WINDOW_SEC, 'the last fast watch ping falls inside the fast window');
 
     var p = harness();
     p.gp.start();

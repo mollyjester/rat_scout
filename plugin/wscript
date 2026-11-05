@@ -1,0 +1,21 @@
+#
+# Rat Scout Glucose: a plugin-only pbw (projectType "plugin"). SDK 4.44+ bundles the plugin
+# script and the local configPage named in package.json, and validates the plugin block when
+# the project is configured. No watch binary. Same rules as upstream's plugin projects
+# (coredevices/pebble-apps, e.g. stocks/wscript).
+#
+top = '.'
+out = 'build'
+
+
+def options(ctx):
+    ctx.load('pebble_sdk')
+
+
+def configure(ctx):
+    ctx.load('pebble_sdk')
+
+
+def build(ctx):
+    ctx.load('pebble_sdk')
+    ctx.pbl_bundle(binaries=[])

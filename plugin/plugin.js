@@ -1057,11 +1057,19 @@ var LAST_ATTEMPT_KEY = 'ratscout.plugin.lastAttempt';
 var ACCOUNT_ID_KEY = 'accountId';
 var SESSION_ID_KEY = 'sessionId';
 
-// A new Dexcom reading is expected 300 s after the last; +10 s slack.
-var READING_FRESH_SEC = 310;
+// A new Dexcom reading is expected 300 s after the last: until then the cached one is served
+// without calling Dexcom.
+var READING_FRESH_SEC = 300;
 // At most one Dexcom call per this interval. 55 s rather than 60 s so jitter
 // in a 60 s host poll never skips a poll.
 var ATTEMPT_THROTTLE_MS = 55000;
+// While the next reading is due (the cached one READING_FRESH_SEC to FAST_WINDOW_SEC old) and a
+// Dexcom session exists, reading requests may come this often: the watch pings every 15 s in
+// that window (rat_scout.h FAST_PING_*), so a reading reaches it within about 15 s of Dexcom
+// publishing it. Logins are never sped up. At most 9 extra reading requests per reading, and
+// only while Dexcom has not published it yet.
+var FAST_WINDOW_SEC = 435;
+var FAST_ATTEMPT_THROTTLE_MS = 12000;
 var EMPTY_VALID_MS = 60000;
 var BUSY_VALID_MS = 30000;
 
@@ -1276,16 +1284,18 @@ function answer(respond, env, settings) {
         else respond.data(emptyEnvelope(t));
     }
 
+    var guard = DexcomGuard.create(storage, 'plugin', env.now);
+    var haveSession = !!storage.getItem(ACCOUNT_ID_KEY) && !!storage.getItem(SESSION_ID_KEY) &&
+        guard.sessionUsable(key);
+    var due = cacheOk && haveSession && t < (cache.ts + FAST_WINDOW_SEC) * 1000;
+    var throttle = due ? FAST_ATTEMPT_THROTTLE_MS : ATTEMPT_THROTTLE_MS;
+
     var lastAttempt = parseInt(storage.getItem(LAST_ATTEMPT_KEY), 10) || 0;
-    if (t - lastAttempt < ATTEMPT_THROTTLE_MS && t >= lastAttempt) {
+    if (t - lastAttempt < throttle && t >= lastAttempt) {
         console.log('Dexcom call throttled');
         answerSkipped();
         return Promise.resolve();
     }
-
-    var guard = DexcomGuard.create(storage, 'plugin', env.now);
-    var haveSession = !!storage.getItem(ACCOUNT_ID_KEY) && !!storage.getItem(SESSION_ID_KEY) &&
-        guard.sessionUsable(key);
     var locked = false;
 
     if (!haveSession) {
@@ -1403,6 +1413,8 @@ module.exports = {
     LAST_ATTEMPT_KEY: LAST_ATTEMPT_KEY,
     READING_FRESH_SEC: READING_FRESH_SEC,
     ATTEMPT_THROTTLE_MS: ATTEMPT_THROTTLE_MS,
+    FAST_WINDOW_SEC: FAST_WINDOW_SEC,
+    FAST_ATTEMPT_THROTTLE_MS: FAST_ATTEMPT_THROTTLE_MS,
     buildInstance: buildInstance,
     handleSourceRequest: handleSourceRequest,
     handleConfigMessage: handleConfigMessage

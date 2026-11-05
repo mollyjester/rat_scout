@@ -19,6 +19,7 @@
         ],
         "usesPermissions": [
             "Location",
+            "Health",
             {
                 "name": "Internet",
                 "parameters": {

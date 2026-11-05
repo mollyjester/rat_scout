@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Emulator smoke test for the plugin preview (manual; not part of the node test loop).
+# Emulator smoke test for the Rat Scout Glucose plugin (manual; not part of the node test loop).
 #
 # Builds build/rat-scout-glucose.pbw (the plugin) and build/rat-scout.pbw (the watchface),
 # then runs each case on a freshly wiped emulator: the plugin's storage is seeded (its

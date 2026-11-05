@@ -294,9 +294,10 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
         update_steps();
     }
     
-    // Handle data fetching. A reading is due at s_next_fetch_time (messaging.c); while it is
-    // overdue, ping every minute up to OVERDUE_PING_WINDOW_SECONDS after the last reading, since
-    // each ping lets JS make the phone run the glucose plugin now (glucose_plugin.js
+    // Handle data fetching. While a reading is due, messaging.c's timer pings every
+    // FAST_PING_INTERVAL_SECONDS up to FAST_PING_END_SECONDS after the last reading; from
+    // s_next_fetch_time (just after that) ping every minute up to OVERDUE_PING_WINDOW_SECONDS,
+    // since each ping lets JS make the phone run the glucose plugin now (glucose_plugin.js
     // refreshIfOverdue). After that, the 5-minute fallback (e.g. a sensor gap).
     bool should_fetch = false;
     if (s_next_fetch_time > 0 && current_time >= s_next_fetch_time) {
@@ -313,12 +314,7 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     }
     
     if (should_fetch) {
-        DictionaryIterator *iter;
-        AppMessageResult result = app_message_outbox_begin(&iter);
-        if (result == APP_MSG_OK && iter) {
-            dict_write_uint8(iter, 0, 0);
-            app_message_outbox_send();
-        }
+        messaging_request_fetch();
     }
 }
 
@@ -626,6 +622,7 @@ static void init(void) {
 
 static void deinit(void) {
     tick_timer_service_unsubscribe();
+    messaging_deinit();
     battery_state_service_unsubscribe();
     sounds_stop();
     sounds_deinit();

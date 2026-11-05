@@ -87,6 +87,12 @@ extern const int STATUS_BLACK_X;
 #define BATTERY_SEGMENT_HEIGHT  7
 #define FETCH_INTERVAL_SECONDS 300
 #define FETCH_INTERVAL_JITTER    5
+// While the next reading is due, ping JS from FETCH_INTERVAL_SECONDS + FETCH_INTERVAL_JITTER
+// after the last reading every FAST_PING_INTERVAL_SECONDS up to FAST_PING_END_SECONDS (an
+// AppTimer, messaging.c), so the phone checks Dexcom about every 15 s until the reading is
+// there; then the minute pings below take over.
+#define FAST_PING_INTERVAL_SECONDS 15
+#define FAST_PING_END_SECONDS     425
 #define FALLBACK_FETCH_MINUTES   5
 // Ping JS every minute until this long after the last reading (two reading intervals), then
 // fall back to FALLBACK_FETCH_MINUTES: each overdue ping lets JS resubscribe to the plugin.
@@ -214,6 +220,8 @@ void inbox_received_callback(DictionaryIterator *iterator, void *context);
 void inbox_dropped_callback(AppMessageResult reason, void *context);
 void outbox_failed_callback(DictionaryIterator *iterator, AppMessageResult reason, void *context);
 void outbox_sent_callback(DictionaryIterator *iterator, void *context);
+void messaging_request_fetch(void);
+void messaging_deinit(void);
 
 // sounds.c
 void sounds_init(void);

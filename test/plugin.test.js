@@ -71,7 +71,7 @@ test('happy path (mg/dL): every shape, glucose_mgdl is the raw value', function(
         assert(p.trend_code.longText.text === 'Flat', 'trend_code is raw Dexcom Trend');
         assert(p.reading_time.timestamp.value === 1700000000, 'reading_time epoch seconds');
         assert(p.status.shortText.text === 'ok', 'status ok');
-        assert(r.data.validUntilMs === (1700000000 + 310) * 1000, 'validUntilMs is reading + 310 s');
+        assert(r.data.validUntilMs === (1700000000 + 300) * 1000, 'validUntilMs is reading + 300 s');
         assert(h.store.accountId === 'acc-1' && h.store.sessionId === 'sess-1', 'session cached in shared keys');
         var c = JSON.parse(h.store['ratscout.plugin.lastReading']);
         assert(c.value === 120 && c.delta === 5 && c.ts === 1700000000, 'reading cached raw');
@@ -144,7 +144,7 @@ test('fresh cache: no fetch, validUntilMs from the reading', function() {
     }).then(function(r) {
         assert(f.calls.length === 0, 'no fetch while the reading is fresh');
         assert(props(r).glucose_mgdl.numericValue.value === 120, 'answers from cache');
-        assert(r.data.validUntilMs === 1700000310000, 'validUntilMs = (ts + 310) * 1000');
+        assert(r.data.validUntilMs === 1700000300000, 'validUntilMs = (ts + 300) * 1000');
     });
 });
 
@@ -391,10 +391,11 @@ test('bundle registers under the Android lockdown (throwing setTimeout/XMLHttpRe
     assert(typeof h.handlers.source === 'function', 'real bundle registers its source handler');
 });
 
-test('frequent requests (face resubscribes on overdue pings): at most one Dexcom call per 55 s', function() {
-    // The face resubscribes on watch pings while a reading is late, on top of the host's own
-    // polls; each one runs the plugin. Dexcom has reading A until 340 s after it, then B
-    // (300 s after A). Requests every 30 s from +50 s to +700 s.
+test('frequent requests (face resubscribes on watch pings): fast only while a reading is due', function() {
+    // The face resubscribes on every watch ping while a reading is due (every 15 s from +305 s
+    // to +425 s, then each minute), on top of the host's own polls; each one runs the plugin.
+    // Here: requests every 15 s from +50 s to +1000 s. Dexcom publishes B (reading time +300 s)
+    // 20 s late, at +320 s, and never publishes the reading after B.
     var T0 = 1700000000;
     var A = [{ WT: 'Date(' + (T0 * 1000) + ')', ST: '', DT: '', Value: 120, Trend: 'Flat' },
         { WT: 'Date(' + ((T0 - 300) * 1000) + ')', ST: '', DT: '', Value: 115, Trend: 'Flat' }];
@@ -404,7 +405,7 @@ test('frequent requests (face resubscribes on overdue pings): at most one Dexcom
     var fb = host.fakeDexcom({ readings: B });
     var calls = [];
     function fetch(url, o) {
-        var f = clock < (T0 + 340) * 1000 ? fa : fb;
+        var f = clock < (T0 + 320) * 1000 ? fa : fb;
         var r = f(url, o);
         calls.push({ t: clock, ep: f.calls[f.calls.length - 1].ep });
         return r;
@@ -412,7 +413,7 @@ test('frequent requests (face resubscribes on overdue pings): at most one Dexcom
     var h = host.load({ fetch: fetch, now: clock, settings: settings(), storage: { accountId: 'a0', sessionId: 's0' } });
     var seen = [];
     var chain = Promise.resolve();
-    for (var t = T0 + 50; t <= T0 + 700; t += 30) {
+    for (var t = T0 + 50; t <= T0 + 1000; t += 15) {
         (function(at) {
             chain = chain.then(function() {
                 clock = at * 1000;
@@ -423,18 +424,52 @@ test('frequent requests (face resubscribes on overdue pings): at most one Dexcom
             });
         })(t);
     }
+    function between(a, b) {
+        return reads.filter(function(c) { return c.t >= (T0 + a) * 1000 && c.t < (T0 + b) * 1000; });
+    }
+    var reads;
     return chain.then(function() {
-        var reads = calls.filter(function(c) { return c.ep === 'readings'; });
+        reads = calls.filter(function(c) { return c.ep === 'readings'; });
         assert(calls.every(function(c) { return c.ep === 'readings'; }), 'no logins: the session is reused');
+        assert(between(51, 300).length === 0, 'no Dexcom call while A is fresh (before +300 s)');
+        var firstB = seen.filter(function(x) { return x.ts === T0 + 300; })[0];
+        assert(firstB && firstB.t === T0 + 320, 'B served at +320 s, the first request after Dexcom published it');
+        assert(between(300, 321).length === 2, 'two reading requests for B (one too early, one that finds it)');
+        assert(between(321, 600).length === 0, 'no Dexcom call while B is fresh');
+        var fast = between(600, 735);
+        assert(fast.length === 9, 'the next reading is late: 9 requests in its fast window (got ' + fast.length + ')');
         var minGap = Infinity;
         for (var i = 1; i < reads.length; i++) minGap = Math.min(minGap, reads[i].t - reads[i - 1].t);
-        assert(minGap >= 55000, 'reading requests at least 55 s apart (closest ' + (minGap / 1000) + ' s)');
-        assert(!reads.some(function(c) { return c.t > (T0 + 50) * 1000 && c.t < (T0 + 310) * 1000; }), 'no Dexcom call while A is fresh');
-        assert(!reads.some(function(c) { return c.t > (T0 + 380) * 1000 && c.t < (T0 + 610) * 1000; }), 'no Dexcom call while B is fresh');
-        var firstB = seen.filter(function(x) { return x.ts === T0 + 300; })[0];
-        assert(firstB && firstB.t === T0 + 380, 'B served at the first unthrottled request after it appeared (+380 s)');
-        var forB = reads.filter(function(c) { return c.t >= (T0 + 310) * 1000 && c.t <= (T0 + 380) * 1000; }).length;
-        assert(forB === 2, 'two reading requests for B when Dexcom has it late (one too early, one that finds it)');
+        assert(minGap >= 12000, 'never more than one reading request per 12 s (closest ' + (minGap / 1000) + ' s)');
+        var slow = between(735, 1001);
+        var slowGap = Infinity;
+        for (var j = 1; j < slow.length; j++) slowGap = Math.min(slowGap, slow[j].t - slow[j - 1].t);
+        assert(slow.length > 1 && slowGap >= 55000, 'after the fast window: at least 55 s apart again (closest ' + (slowGap / 1000) + ' s)');
+    });
+});
+
+test('a due reading never speeds up logins', function() {
+    // A cached reading A at T0, but no Dexcom session: the login path keeps the 55 s throttle.
+    var T0 = 1700000000;
+    var clock = (T0 + 10) * 1000;
+    var f = host.fakeDexcom({ accountResponse: { status: 500, body: '{"Code":"SomethingTransient"}' } });
+    var first = host.fakeDexcom({});
+    var useFirst = true;
+    function fetch(url, o) { return (useFirst ? first : f)(url, o); }
+    var h = host.load({ fetch: fetch, now: clock, settings: settings() });
+    return h.request(REQ).then(function() {
+        assert(first.endpoints().indexOf('readings') !== -1, 'setup: logged in and cached A');
+        useFirst = false;
+        delete h.store.accountId;
+        delete h.store.sessionId;
+        var chain = Promise.resolve();
+        [305, 320, 335, 350].forEach(function(at) {
+            chain = chain.then(function() { h.setNow((T0 + at) * 1000); return h.request(REQ); });
+        });
+        return chain;
+    }).then(function() {
+        var logins = f.endpoints().filter(function(e) { return e === 'account'; }).length;
+        assert(logins === 1, 'one login attempt in 45 s of 15 s requests (got ' + logins + ')');
     });
 });
 

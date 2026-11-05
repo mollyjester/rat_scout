@@ -11,7 +11,12 @@
 //
 // All watch messages still go through the caller's sendToPebble queue.
 
+var Permissions = require('./permissions');
+
 var PLUGIN_UUID = '01523c90-aa11-4a82-8e00-58cc3e98472c';
+// The face's permission on the plugin (package.json usesPermissions), as Pebble.permissions.query
+// names it.
+var PERMISSION_KEY = PLUGIN_UUID + ':Glucose';
 var CATEGORY = 'health';
 var ITEM = 'glucose';
 
@@ -25,15 +30,21 @@ var NO_DATA_TYPE = 'No glucose data';
 // plugin preview turned off) with this message and code UNKNOWN (mobileapp libpebble3
 // plugin/JsPlugin.kt observe(): "$name was updated or removed; subscribe again").
 var SUBSCRIPTION_CLOSED = /subscribe again/;
-// A reading is due 300 s after the last one; the watch pings PKJS from +305 s (messaging.c).
-var READING_DUE_SEC = 305;
+// A reading is due 300 s after the last one; the watch pings PKJS from +305 s, every 15 s up
+// to +425 s, then every minute (messaging.c, rat_scout.h FAST_PING_*).
+var READING_DUE_SEC = 300;
 // The plugin answers from its cache, without calling Dexcom, until its reading is this old
 // (src/plugin-src/main.js READING_FRESH_SEC). An envelope from before that says nothing about
 // a newer reading, so it doesn't hold back a resubscribe.
-var PLUGIN_FRESH_SEC = 310;
+var PLUGIN_FRESH_SEC = 300;
 // The plugin calls Dexcom at most once per 55 s (src/plugin-src/main.js ATTEMPT_THROTTLE_MS), so
 // resubscribing sooner after an envelope or a resubscribe could only be answered from its cache.
 var RESUBSCRIBE_MIN_MS = 55000;
+// While the reading is due (up to this long after the last one) the plugin calls Dexcom up to
+// every 12 s (main.js FAST_WINDOW_SEC, FAST_ATTEMPT_THROTTLE_MS), so each 15 s watch ping may
+// resubscribe.
+var FAST_WINDOW_SEC = 435;
+var FAST_RESUBSCRIBE_MIN_MS = 12000;
 // Unavailable while still holding a subscription (grace expired, stall, PLUGIN_UNAVAILABLE, a
 // second soft error): resubscribe this often, since nothing else would. Not after
 // PERMISSION_DENIED: the host re-evaluates grants on the open subscription and serves it once
@@ -144,7 +155,9 @@ function create(deps) {
         // A glucose dictionary whose send failed (or timed out): resent on the next watch ping.
         unsent: null,
         // Set by INVALID_REQUEST: the host refused our request shape, so re-checking cannot help.
-        pinned: false
+        pinned: false,
+        // The Glucose permission's state is logged once, at the first subscription.
+        permissionLogged: false
     };
 
     function setMode(mode, why) {
@@ -231,6 +244,7 @@ function create(deps) {
         }
         if (state.mode === 'unavailable') return;
         if (code === 'PERMISSION_DENIED' || code === 'PLUGIN_UNAVAILABLE' || state.mode === 'pending') {
+            if (code === 'PERMISSION_DENIED') Permissions.logPermission(deps.Pebble, PERMISSION_KEY, 'Glucose', 'Glucose plugin');
             toUnavailable(code);
             return;
         }
@@ -306,6 +320,10 @@ function create(deps) {
             if (!quiet) toUnavailable('subscribe failed');
             return false;
         }
+        if (!state.permissionLogged) {
+            state.permissionLogged = true;
+            Permissions.logPermission(deps.Pebble, PERMISSION_KEY, 'Glucose', 'Glucose plugin');
+        }
         // A host that answered inside subscribeToSource has already set the mode.
         if (state.callbacks !== before) return true;
         setMode('pending', 'subscribed');
@@ -352,21 +370,24 @@ function create(deps) {
          * Reading overdue: resubscribe so the plugin runs now instead of at the host's next
          * poll, which counts only time the phone is awake and was seen to take about 6 min.
          * Run in fetchAllData() on every watch ping (the watch pings each minute while a
-         * reading is late, messaging.c / rat_scout.c). Only in plugin mode with a reading,
-         * more than READING_DUE_SEC after it, and at most once per RESUBSCRIBE_MIN_MS after
-         * a resubscribe or an envelope that came once the plugin's cache was stale (an earlier
-         * one was a cached answer: seen on the phone at ts + 303 s, which held a reading back
-         * a minute). The plugin's cache and throttle bound Dexcom calls.
+         * reading is due: every 15 s from +305 s to +425 s, then each minute, messaging.c /
+         * rat_scout.c). Only in plugin mode with a reading, at least READING_DUE_SEC after it,
+         * and at most once per FAST_RESUBSCRIBE_MIN_MS (before FAST_WINDOW_SEC) or
+         * RESUBSCRIBE_MIN_MS (after) since a resubscribe or an envelope that came once the
+         * plugin's cache was stale (an earlier one was a cached answer: seen on the phone at
+         * ts + 303 s, which held a reading back a minute). The plugin's cache and throttle bound
+         * Dexcom calls.
          * @param {number} t - Now, epoch ms
          * @returns {boolean} True if it resubscribed
          */
         refreshIfOverdue: function(t) {
             if (state.mode !== 'plugin' || !state.subscription || !state.lastReadingTs) return false;
             var overdue = Math.floor(t / 1000) - state.lastReadingTs;
-            if (overdue <= READING_DUE_SEC) return false;
+            if (overdue < READING_DUE_SEC) return false;
+            var minMs = overdue < FAST_WINDOW_SEC ? FAST_RESUBSCRIBE_MIN_MS : RESUBSCRIBE_MIN_MS;
             var staleAnswer = state.lastPluginOkMs >= (state.lastReadingTs + PLUGIN_FRESH_SEC) * 1000;
-            if ((staleAnswer && t - state.lastPluginOkMs < RESUBSCRIBE_MIN_MS) ||
-                t - state.lastResubscribeMs < RESUBSCRIBE_MIN_MS) {
+            if ((staleAnswer && t - state.lastPluginOkMs < minMs) ||
+                t - state.lastResubscribeMs < minMs) {
                 return false;
             }
             console.log('Glucose plugin: resubscribe (reading overdue ' + overdue + ' s)');
@@ -424,11 +445,14 @@ function create(deps) {
 
 module.exports = {
     PLUGIN_UUID: PLUGIN_UUID,
+    PERMISSION_KEY: PERMISSION_KEY,
     PLUGIN_GRACE_MS: PLUGIN_GRACE_MS,
     STALL_MS: STALL_MS,
     READING_DUE_SEC: READING_DUE_SEC,
     PLUGIN_FRESH_SEC: PLUGIN_FRESH_SEC,
     RESUBSCRIBE_MIN_MS: RESUBSCRIBE_MIN_MS,
+    FAST_WINDOW_SEC: FAST_WINDOW_SEC,
+    FAST_RESUBSCRIBE_MIN_MS: FAST_RESUBSCRIBE_MIN_MS,
     RECOVER_MIN_MS: RECOVER_MIN_MS,
     pluginAvailable: pluginAvailable,
     envelopeToDictionary: envelopeToDictionary,

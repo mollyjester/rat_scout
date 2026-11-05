@@ -1,6 +1,49 @@
 #include "rat_scout.h"
 
+// ===== Private State =====
+
+// Fast pings while the next reading is due (FAST_PING_* in rat_scout.h); NULL when none is set.
+static AppTimer *s_fast_ping_timer = NULL;
+
 // ===== Private Helpers =====
+
+/**
+ * Fast ping timer: ping JS, and again in FAST_PING_INTERVAL_SECONDS while that is still inside
+ * the window after the last reading. A new reading reschedules (schedule_fast_pings).
+ * @param data - Unused
+ */
+static void fast_ping_callback(void *data) {
+    s_fast_ping_timer = NULL;
+    if (s_last_reading_timestamp <= 0) {
+        return;
+    }
+    messaging_request_fetch();
+    time_t next = time(NULL) + FAST_PING_INTERVAL_SECONDS;
+    if (next <= s_last_reading_timestamp + FAST_PING_END_SECONDS) {
+        s_fast_ping_timer = app_timer_register(FAST_PING_INTERVAL_SECONDS * 1000, fast_ping_callback, NULL);
+    }
+}
+
+/**
+ * Schedule the fast pings for a reading: the first FETCH_INTERVAL_SECONDS +
+ * FETCH_INTERVAL_JITTER after it (at once if that has passed), none if the window is over.
+ * Replaces any pings scheduled for an earlier reading. The minute tick handler takes over
+ * after the window (s_next_fetch_time, set by the caller).
+ * @param reading_ts - Reading time, epoch seconds
+ */
+static void schedule_fast_pings(time_t reading_ts) {
+    if (s_fast_ping_timer) {
+        app_timer_cancel(s_fast_ping_timer);
+        s_fast_ping_timer = NULL;
+    }
+    time_t now = time(NULL);
+    if (now >= reading_ts + FAST_PING_END_SECONDS) {
+        return;
+    }
+    time_t first = reading_ts + FETCH_INTERVAL_SECONDS + FETCH_INTERVAL_JITTER;
+    uint32_t delay_ms = first > now ? (uint32_t)(first - now) * 1000 : 1000;
+    s_fast_ping_timer = app_timer_register(delay_ms, fast_ping_callback, NULL);
+}
 
 /**
  * Process vibration and threshold settings from incoming message
@@ -149,9 +192,13 @@ static void handle_glucose_message(DictionaryIterator *iterator) {
         s_last_reading_timestamp = timestamp_tuple->value->int32;
         persist_write_int(PERSIST_KEY_TIMESTAMP, s_last_reading_timestamp);
         if (s_last_reading_timestamp > 0) {
-            s_next_fetch_time = s_last_reading_timestamp + FETCH_INTERVAL_SECONDS + FETCH_INTERVAL_JITTER;
+            // Fast pings while the reading is due, then the tick handler's minute pings from
+            // one interval after the last fast ping.
+            schedule_fast_pings(s_last_reading_timestamp);
+            s_next_fetch_time = s_last_reading_timestamp + FAST_PING_END_SECONDS + FAST_PING_INTERVAL_SECONDS;
         } else {
             // No valid timestamp — fall back to periodic fetch pattern
+            schedule_fast_pings(0);
             s_next_fetch_time = 0;
         }
         update_delta_display(0);  // 0 = let function call time() internally
@@ -335,4 +382,29 @@ void outbox_failed_callback(DictionaryIterator *iterator, AppMessageResult reaso
 void outbox_sent_callback(DictionaryIterator *iterator, void *context)
 {
     // Intentionally silent — avoid flash I/O on every successful send
+}
+
+// ===== Public API =====
+
+/**
+ * Ask JS for fresh data: an empty outbound message (key 0) that JS answers with fetchAllData().
+ * Skipped if the outbox is busy; the next ping retries.
+ */
+void messaging_request_fetch(void) {
+    DictionaryIterator *iter;
+    AppMessageResult result = app_message_outbox_begin(&iter);
+    if (result == APP_MSG_OK && iter) {
+        dict_write_uint8(iter, 0, 0);
+        app_message_outbox_send();
+    }
+}
+
+/**
+ * Cancel the fast ping timer.
+ */
+void messaging_deinit(void) {
+    if (s_fast_ping_timer) {
+        app_timer_cancel(s_fast_ping_timer);
+        s_fast_ping_timer = NULL;
+    }
 }
