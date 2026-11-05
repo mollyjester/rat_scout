@@ -1,11 +1,15 @@
 # Developing Pebble plugins (preview, November 2026)
 
 A practical guide to building a phone-side **plugin** and a watchface that consumes it, for the
-versions available on 2026-11-01. It complements the official guide with what we learned
+versions available on 2026-11-01, updated on 2026-11-05 for SDK 4.44 and app 1.17.0.1. It complements the official guide with what we learned
 building Rat Scout's `health/glucose` plugin and running it on a real phone.
 
-> **Preview.** The API will change. Don't publish apps that use or offer plugins to the
-> appstore; publishing plugins is limited to invited developers. Sideload only.
+> **Status (2026-11-05).** Pebble announced plugins as live in the latest SDK and on CloudPebble
+> and invited developers to upload plugins (x.com/ericmigi/status/2118415004076756997, 18:47 UTC).
+> The same day the official guide still said "Plugins are a preview ... Do not publish apps that
+> use plugins to the appstore yet", Publishing Plugins said publishing is "limited to invited
+> developers for now", and the appstore's Plugins page called them a dev preview. In this repo,
+> publishing is the owner's decision; sideload for testing.
 
 Every statement here is either cited (official guide, upstream source with file and line) or
 was observed on a device. Anything else is marked **UNVERIFIED**.
@@ -14,14 +18,14 @@ was observed on a device. Anything else is marked **UNVERIFIED**.
 
 | Component | Version used | Notes |
 |---|---|---|
-| Pebble mobile app | **1.16.0.5**, Android (beta channel) | The preview needs 1.16.x. Turn it on in **Settings → Plugins → Plugins / permissions preview** (off by default). iOS: UNVERIFIED |
-| Official guide | `developer.repebble.com/guides/plugins/preview`, updated 2026-10-30 | Describes app 1.16.0.5; items marked **Next release** aren't in it yet |
+| Pebble mobile app | **1.16.0.5**, then **1.17.0.1** (2026-11-05), Android | Plugins need 1.16.x or later. Turn it on in **Settings → Plugins → Plugins / permissions preview** (off by default). iOS: UNVERIFIED |
+| Official guide | `developer.repebble.com/guides/plugins/preview`, fetched 2026-11-05 | Describes app 1.17.0.1; items marked **Next release** aren't in it yet. New since the 2026-10-30 version we first used: `pluginUuid` on envelopes, the `RATE_LIMITED` error code, `Pebble.permissions.query`, `Pebble.readSource`/`subscribeSource` inside plugins, `WebSocket`, Settings → Plugins → Preferred sources. The runtime still has no XHR or timers ("Nothing else") |
 | pebble-tool | **5.1.2** (PyPI) | 5.1.0+ is required. Run it on the same Python minor version as the SDK venv (3.13 here), or `pebble build` fails with "SRE module mismatch" |
 | pypkjs (emulator JS) | **3.0.3** | Has a plugin host: see §8 for how it differs from the phone |
-| Pebble SDK | **4.33.1** | The newest on `sdk.repebble.com`. It **cannot build a plugin pbw**; see §7 |
-| Watch firmware | not involved | Plugins run only on the phone; a watch-side (C / Alloy) API is listed under the guide's "Future". The watchapp reaches its plugin's data through PKJS and AppMessage, so normal SDK 4.33.1 watch APIs apply |
+| Pebble SDK | **4.44** (released 2026-11-04) | The first SDK that builds plugin pbws; see §7. 4.33.1 could not |
+| Watch firmware | not involved | Plugins run only on the phone; a watch-side (C / Alloy) API is listed under the guide's "Future". The watchapp reaches its plugin's data through PKJS and AppMessage, so normal SDK 4.43.1 watch APIs apply |
 | Examples | `github.com/coredevices/pebble-apps` | Renamed from `pebble-plugins` (the old URL redirects). No LICENSE file as of 2026-11-01 |
-| Phone app source | `github.com/coredevices/mobileapp` @ `dbc937e` (2026-10-30) | Cited below. It may be ahead of 1.16.0.5 |
+| Phone app source | `github.com/coredevices/mobileapp` @ `dbc937e` (2026-10-30), and `f127b2a` (2026-11-05) where noted | Cited below. It may be ahead of the app versions used |
 
 ## 2. The model in one page
 
@@ -32,7 +36,7 @@ Taken from the official guide.
 - **Shapes:** `shortText` (about 7 characters), `longText`, `numericValue` (`value`, `unit`, optional `min`/`max`), `timestamp` (epoch seconds), `boolean`, `icon` and `image` (4-bpp palettised, only when the request asks for `iconPixelSize`), plus `series.<shape>`.
   - **Every shape of a property must be the same reading.** Rat Scout's `glucose.longText` is "120 mg/dL", not "120 mg/dL →": the trend is its own property.
 - **How a source is chosen:** apps ask for a category and item, not a plugin. The phone serves the caller's named plugin if it serves the source, else the user's choice for that source in the app, else built-ins first (mobileapp `PluginRegistry.kt` `findSourcePlugin`). Plugins serving the same source are meant to replace each other, so read a shared source (`weather/location`, `preferences/units`) **without** `plugin`: Rat Scout's weather does (`src/pkjs/weather_plugin.js`). Pin with `plugin: "<uuid>"` only where one provider defines the source, as Rat Scout's own `health/glucose`.
-- **The user's choice applies when you subscribe.** For weather it is Settings → Weather → "Weather provider" in the app (`WatchSettingsScreen.kt:1460-1469`, `setPreferredSourcePlugin`). Changing it does not move an open subscription: on 1.16.0.5 Rat Scout's subscription stayed on MET Norway, with no error, until the face subscribed again.
+- **The user's choice applies when you subscribe.** It is **Settings → Plugins → Preferred sources** in the app (guide, "Which plugin answers"); for weather, Settings → Weather → "Weather provider" writes the same preference (mobileapp `f127b2a`: `PluginPreferencesScreens.kt:366` and `WatchSettingsScreen.kt:1527`, both `setPreferredSourcePlugin`). Phone-verified on 1.17.0.1: with MET Norway preferred in Preferred sources, a new subscription got `plugin=MET Norway Weather`. Changing it does not move an open subscription: on 1.16.0.5 and 1.17.0.1 Rat Scout's subscription stayed on MET Norway, with no error, until the face subscribed again.
 - **Units travel with the number.** Phone-verified for weather on 1.16.0.5: MET Norway sent `19 °C`, `16.7 m/s`; the built-in Weather `17 °C`, `19 mph`. A `numericValue` carries its `unit`, and providers of the same source differ: for `weather/location`, MET Norway sends °C and m/s, the built-in Weather the app's temperature unit and mph (mobileapp `WeatherPlugin.kt:131`, `:253`). Convert from the reported unit; the user's preferred units are in `preferences/units` (built-in Preferences: `temperature` `°C`/`°F`, `wind_speed` `km/h`/`mph`/`m/s`/`knots`, `PreferencesPlugin.kt`).
 - **Defining a category:** names are free-form. If an existing category fits, reuse its names; otherwise define your own and document it, as Rat Scout does for `health/glucose`.
 - **Lifetime:** a plugin **runs only when needed** (a subscription, an action, or its open settings page), starts fresh for every request, and keeps state in `localStorage`, which it shares with your PKJS.
@@ -97,10 +101,12 @@ The consuming watchface (`package.json`) declares only what it uses, plus the pr
 ]
 ```
 
-- **`manifestVersion: 2`** in `appinfo.json` is required on both sides. Without it the pbw is a "legacy app": `enumeratePlugins()` returns nothing and every request fails with `PERMISSION_DENIED`. SDK 4.33.1 doesn't write it (§7).
+- **`manifestVersion: 2`** in `appinfo.json` is required on both sides. Without it the pbw is a "legacy app": `enumeratePlugins()` returns nothing and every request fails with `PERMISSION_DENIED`. SDK 4.44 writes it by default (§7); 4.33.1 didn't.
+- **`Pebble.permissions.query(key)`** (guide, "Checking a permission") answers `granted`, `prompt` or `denied` without counting as a use. Rat Scout logs it for `Location` and for its plugin's `Glucose` (`src/pkjs/permissions.js`). The host keys a permission another plugin defines as `<plugin uuid>:<name>` (mobileapp `permissions/PluginDefinedPermissions.kt` `pluginPermissionKey`); on 1.17.0.1 `query` answered `granted` for it, and an unrecognised key answers `denied` (`AppPermissions.kt` `decideAsking`), so the phone accepts that key.
+- **`Health`:** declare it if the watchapp reads health data, although the phone doesn't enforce it yet (guide). Rat Scout reads steps, so it does.
 - **Declare every domain the app uses,** PKJS's as well as the plugin's. When the user turns the preview on, the permission system applies to the whole app.
 - **Your own plugin's permission:** on the phone, `{ "name": "Glucose", "plugin": "<own uuid>" }` showed up as "Read your glucose readings (via Rat Scout)" and was granted. A pbw installed under a *new* uuid answered `PERMISSION_DENIED … waiting for approval` until the user approved it. Whether leaving the declaration out breaks things is UNVERIFIED.
-- **`kind`:** the guide lists `read`, `write`, `exfiltrating` and `dangerous`. The SDK validator in PebbleOS PR #2483 and pypkjs `plugins/manifest.py` accept only the first three. Use `read` for read-only data.
+- **`kind`:** the guide lists `read`, `write`, `exfiltrating` and `dangerous`. SDK 4.44 (`sdk_helpers.py` `validate_plugin`) and pypkjs `plugins/manifest.py` accept only the first three. Use `read` for read-only data.
 - **Declare every shape you emit.** The phone drops undeclared shapes (guide). Next release: undeclared *property names* in a request are dropped too.
 - **`configPage`** (a bundled settings page) replaces the legacy `showConfiguration` flow when it's set. Clay keeps working if you don't set it: on 1.16.0.5 Rat Scout's Clay page opened and saved in a manifestVersion 2 pbw.
 
@@ -148,7 +154,7 @@ iOS's JavaScriptCore. iOS itself wasn't tested.
 
 - **Fresh per request:** keep nothing in variables between runs. Use `localStorage`. It is shared with the PKJS of the same pbw only (seen in the emulator and on the phone); a plugin-only pbw has its own.
 - **Credentials:** use `Pebble.secureStorage` (`await getItem/setItem/removeItem`), which only the plugin can read. Fill it from the plugin's own settings page (§5.3). Rat Scout keeps the Dexcom password there and the login, region and units in `localStorage`.
-- **One self-contained file.** The packager copies `plugin.script` into the pbw unchanged: there's no `require()` and no bundler (PR #2483). Rat Scout concatenates its modules into a small IIFE module table (`scripts/build-plugin.js`) and commits the result.
+- **One self-contained file.** The packager copies `plugin.script` into the pbw unchanged: there's no `require()` and no bundler (SDK 4.44 bundles the file as is). Rat Scout concatenates its modules into a small IIFE module table (`scripts/build-plugin.js`) and commits the result.
 - **`console.log` shows in `pebble logs`** as `plugin>` lines. The phone streams them to the developer connection (`plugin/PluginLogs.kt`), and they also arrived through CloudPebble.
 - **Return data, not errors, for "no data".** Keep `respond.error` for real faults; an empty `instances: []` keeps the caller's subscription healthy.
 - **Keep sessions across runs.** Store login tokens in `localStorage` and drop them only on a login or session failure. Rat Scout first cleared them on *any* failure, so every 60 s poll became a full login while Dexcom had no reading.
@@ -222,11 +228,9 @@ From mobileapp `dbc937e` (`libpebble3/src/commonMain/kotlin/io/rebble/libpebblec
 
 ## 7. Building the pbws
 
-- **SDK 4.33.1 can't build a plugin pbw.** `pebble build` copies the `plugin` and `usesPermissions` blocks into `appinfo.json`, but it doesn't set `manifestVersion`, doesn't add the script to the pbw, and doesn't validate `definesPermissions`.
-- **The fix exists but isn't released.** PebbleOS PR #2483 (merged 2026-10-19) adds all three, plus `"projectType": "plugin"` for plugin-only pbws. No SDK on the server contains it yet.
-- **Until then, post-process the pbw:**
-  - **Upstream:** `scripts/pack-plugin-pbw.py` in `coredevices/pebble-apps`. Note that it opens `build/<package.json name>.pbw`, while `pebble build` names the pbw after the *directory*.
-  - **Rat Scout:** `python3 -I scripts/pack-plugin.py` builds the watchface and sets `manifestVersion: 2` (`build/rat-scout.pbw`; a consumer needs it too), and builds the plugin-only pbw from `plugin/` with no SDK involved: `appinfo.json` from `plugin/package.json`, plus `plugin.js` and `config.html` (`build/rat-scout-glucose.pbw`). It validates `definesPermissions` as PR #2483 does.
+- **Use SDK 4.44 or later** with pebble-tool 5.1.0 or later (guide, "Packaging and sideloading"). Its pbws are `manifestVersion: 2` by default; it bundles `plugin.script` and a local `configPage` and validates the `plugin` block at configure time (SDK 4.44 changelog). `manifestVersion: 1` together with `plugin`, `usesPermissions` or `configPage` fails the build.
+- **Plugin-only pbw:** a project with `"projectType": "plugin"` and a 4-line `wscript` that calls `ctx.pbl_bundle(binaries=[])` (upstream pebble-apps `stocks/wscript`; Rat Scout's `plugin/wscript`). Without a `wscript` the SDK answers "This project is very outdated". It prints a harmless "feature 'message_keys' does not exist".
+- **Rat Scout:** `python3 -I scripts/pack-plugin.py` runs `pebble build` in the root and in `plugin/`, checks both are `manifestVersion: 2`, and copies them to `build/rat-scout.pbw` and `build/rat-scout-glucose.pbw`. Before SDK 4.44 it post-processed the pbws by hand; the SDK's plugin pbw has the same files, with an identical `plugin.js`.
 - **Bump the version when you change the script too, to be sure.** On 2026-11-02 Rat Scout reinstalled a changed `plugin.js` at the same version: the phone kept the old registration (no retirement; the face's subscription stayed open). Whether that alone made the new script run is UNVERIFIED (the run that would show it wasn't captured). Bumping to 1.0.1 retired the old plugin at once (the face got "subscribe again" and resubscribed in the same second), and the plugin's **View Source** then showed the new script, identical to the committed bundle.
 - **Bump the version when you change the manifest.** The phone re-registers a plugin only when its locker version changes (`LockerPluginLoader.kt:60`), so a reinstall at the same version keeps the old manifest, `script` path included. The script itself is read from the cached pbw on every run.
 
@@ -286,11 +290,12 @@ Rat Scout's plugin builds into `plugin/plugin.js` with `node scripts/build-plugi
 | The face kept a stale reading for 11 min after the preview was turned off | The phone closed the subscription with `UNKNOWN` "… subscribe again", which the face counted as a soft error | Treat that message as "subscription closed": detect again at once (§6) |
 | A start-up log line never appeared | `pebble install --logs` attaches after `ready` | Don't rely on lines logged at `ready` (§8) |
 | Readings reached the watch 1–5 min late, one skipped, although the plugin asked for 60 s polls | The host's poll timeout counts only awake time (§6.1); a sleeping phone polled about every 6 min | The watch pings PKJS every minute while a reading is late (up to 10 min after it); PKJS resubscribes (at most once per 55 s), and the host reads at once. Keep the plugin's cache and throttle so this can't raise upstream load |
+| Readings still reached the watch about 55 s after their Dexcom time | The watch's due ping waited for the next minute tick; Dexcom often publishes within ~15 s (readings found 13 s and 18 s after their time) | An AppTimer pings every 15 s from 305 s to 425 s after the last reading; PKJS may resubscribe and the plugin may call Dexcom every 12 s in that window, only with a session. Phone, 2026-11-05 (1.17.0.1), 30 min: 21, 21, 7, 5, 6, 6 s after the Dexcom time; 1.3 Dexcom requests per reading |
 
 ## 10. References
 
-- Official guide: https://developer.repebble.com/guides/plugins/preview/ (2026-10-30) and https://developer.repebble.com/guides/plugins/publishing-plugins/
+- Official guide: https://developer.repebble.com/guides/plugins/preview/ (2026-10-30; re-read 2026-11-05) and https://developer.repebble.com/guides/plugins/publishing-plugins/
 - Examples: https://github.com/coredevices/pebble-apps (`stocks` is the simplest plugin; `weather-face` consumes one from ES5 PKJS; `plugin-test` bundles a plugin with a watchapp)
-- SDK support: https://github.com/coredevices/PebbleOS/pull/2483
+- SDK support: SDK 4.44 (changelog https://developer.repebble.com/sdk/changelogs/4.44/index.html), from https://github.com/coredevices/PebbleOS/pull/2483
 - Phone host source: https://github.com/coredevices/mobileapp (`libpebble3/.../plugin/`, `.../js/JsEngine.android.kt`, `.../locker/Locker.kt`)
 - In this repo: design and verification status in [.github/ARCHITECTURE.md](../.github/ARCHITECTURE.md) ("Plugin (preview)", "Verification status"); commands in [README.md](../README.md)

@@ -10,7 +10,7 @@
 - Clay test buttons must behave identically to the Save Settings button plus their specific test trigger. The mechanism in `src/pkjs/clay-config.js` is `attachFlagButton(id, flagKey, flagValue)`: on click it serializes the current form, sets the flag (`_vibeTest` / `_soundTest` / `_overlayTest`), and POSTs to `pebblejs://close#`. The `webviewclosed` handler in `src/pkjs/index.js` parses the flag, calls `clay.getSettings(e.response)` to persist all settings, calls `sendSettings()` to push them to the watch, then queues the test command. Always preserve this save-equivalent ordering when adding new test buttons.
 
 ## General
-- Language: C (Pebble SDK 4.x, tested with 4.33.1 / pebble-tool 5.1.1 on Python 3.13) + JavaScript (PebbleKit JS, ES5; the plugin is ES5 + Promise)
+- Language: C (Pebble SDK 4.x, SDK 4.44 or later for plugins; tested with 4.44 / pebble-tool 5.1.2 on Python 3.13) + JavaScript (PebbleKit JS, ES5; the plugin is ES5 + Promise)
 - Build: `pebble build` (waf). Clean build: `pebble clean && pebble build`. Always verify build is clean after changes.
 - Tests: `for f in test/*.test.js; do node "$f" || exit 1; done` — all suites must pass, no warnings. Run after any JS change. (`node test/*.test.js` runs only the first file: Node passes the rest as argv.)
 - **README.md must be updated whenever there is a functional change to the watchface** (new features, removed features, changed settings, changed platforms, changed architecture).
@@ -99,7 +99,8 @@ Every non-trivial function gets a block comment:
 - Never log credentials, Dexcom account or session IDs, API keys, or device coordinates: logs are read from live phones (`scripts/device-check.sh`). Log presence instead ("Session ID received").
 - Never try wrong passwords, failing logins or lockout against the real Dexcom service (emulator or phone). Dexcom's lockout thresholds are permanently UNVERIFIED by decision. Use the mocked fetch in `test/helpers/plugin_host.js`; `scripts/plugin-smoke.sh` uses fake credentials and blocks the network.
 - Keep `Internet` domains per pbw: Dexcom domains only in `plugin/package.json`, weather/astronomy only in `package.json`.
-- Never publish either pbw (`build/rat-scout.pbw`, `build/rat-scout-glucose.pbw`) to the appstore (preview guide: "Don't ship anything that uses/offers plugins to the app store yet"); sideload only.
+- Publishing either pbw (`build/rat-scout.pbw`, `build/rat-scout-glucose.pbw`) is the owner's decision: never run `pebble publish` unless the owner asks. Sideload for testing. Status on 2026-11-05: Pebble announced plugins as live and invited uploads (x.com/ericmigi/status/2118415004076756997), while the plugins guide still says "Do not publish apps that use plugins to the appstore yet" and the appstore calls them a dev preview.
+- Timing constants that must agree across the watch, PKJS and the plugin (`rat_scout.h` `FAST_PING_*`, `glucose_plugin.js` `READING_DUE_SEC`/`PLUGIN_FRESH_SEC`/`FAST_*`, `main.js` `READING_FRESH_SEC`/`FAST_*`) are cross-checked in `test/glucose_plugin.test.js`; change them together.
 - Design (modes, envelopes, localStorage keys, guard, verification status): `.github/ARCHITECTURE.md`, "Plugin (preview)". Build and packaging commands: README, "Plugin pbws".
 
 ## Testing Conventions

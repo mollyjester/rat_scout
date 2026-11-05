@@ -11,7 +11,7 @@ Rat Scout displays real-time Dexcom Share blood glucose readings on your Pebble 
 ## Features
 
 ### Glucose Monitoring
-- **Real-time glucose display** with automatic 5-minute update cycle; while a reading is late the watch asks the phone every minute (up to 10 minutes after the last reading, then every 5 minutes)
+- **Real-time glucose display** with automatic 5-minute update cycle; when the next reading is due the watch asks the phone every 15 s (from 305 s to 425 s after the last reading), then every minute up to 10 minutes after it, then every 5 minutes. On the phone a new reading reached the watch 5–21 s after its Dexcom time (30-minute run, 2026-11-05; before: 53–56 s)
 - **Glucose delta**: rate of change (±) from previous reading
 - **Time since reading**: minutes elapsed since last CGM data
 - **Configurable units**: mg/dL or mmol/L
@@ -28,7 +28,7 @@ Rat Scout displays real-time Dexcom Share blood glucose readings on your Pebble 
 - **Multi-region Dexcom**: US, Outside-US (OUS), and Japan servers (set in the plugin)
 
 ### Weather (phone app weather plugin)
-- **From the phone app's weather source** (`weather/location`): the plugin you chose for weather in the Pebble app (for example [MET Norway Weather](https://github.com/coredevices/pebble-plugins/tree/main/met-weather)), else the built-in Weather. The face never names a plugin, so plugins serving weather replace each other without a face update. Needs the plugin preview (app 1.16.x) and the `Location` permission, which weather plugins require of their readers
+- **From the phone app's weather source** (`weather/location`): the plugin you chose for `weather/location` in the Pebble app (**Settings → Plugins → Preferred sources**; for example [MET Norway Weather](https://github.com/coredevices/pebble-plugins/tree/main/met-weather)), else the built-in Weather. The face never names a plugin, so plugins serving weather replace each other without a face update. Needs plugins enabled in the Pebble app (1.16.x or later) and the `Location` permission, which weather plugins require of their readers
 - **Temperature & wind speed** in the units set in the Pebble app (built-in Preferences plugin, `preferences/units`: °C/°F; km/h, mph, m/s or knots). Each plugin says which unit its numbers are in (MET Norway: °C and m/s; built-in Weather: your temperature unit and mph), and the face converts them
 - **Umbrella indicator**: on when it rains or snows now, in any hour left today, or today's chance of precipitation is above 30%
 - **"--"** when no plugin serves the weather or the units, or the weather permission is denied. Other plugin errors keep the last weather. Unchanged weather isn't re-sent to the watch
@@ -58,33 +58,33 @@ Rat Scout displays real-time Dexcom Share blood glucose readings on your Pebble 
 - **Enable/disable**: can be toggled independently of vibration alerts
 ### Other
 - **Battery indicator**: visual bar with charging animation
-- **Step count**: daily steps from Pebble Health (on supported platforms), shown at launch and updated every 5 minutes
+- **Step count**: daily steps from Pebble Health (on supported platforms), shown at launch and updated every 5 minutes. The face declares the `Health` permission, which the phone doesn't enforce yet (plugins guide, "Permissions")
 - **Persistent state**: data persists across app restarts
 - **Platforms**: Emery (Pebble Time 2) and Flint (Pebble 2 Duo)
 
 ### Plugin (preview)
-Rat Scout ships as two pbws (see [Plugin pbws](#plugin-pbws-preview-sideload-only)):
+Rat Scout ships as two pbws (see [Plugin pbws](#plugin-pbws)):
 
 - **Rat Scout Glucose** (`build/rat-scout-glucose.pbw`): a plugin-only pbw that serves the latest Dexcom reading as `health/glucose` (glucose in its own units and in mg/dL, delta, trend arrow and reading time), so Rat Scout, other watchfaces, apps and Index can show it. It holds the Dexcom account, set on its own settings page.
 - **Rat Scout** (`build/rat-scout.pbw`): the watchface. It reads glucose only from the plugin; without it (not installed, preview off, permission not granted, or failing) the watch shows "---". There is no direct-Dexcom fallback.
 
-Both need the **Pebble mobile app 1.16.x with the plugin preview enabled** (**Settings → Plugins → Plugins / permissions preview**; off by default). The legacy `pebble build` pbw (`build/<dir>.pbw`) can't read plugins.
+Both need the **Pebble mobile app 1.16.x or later with plugins enabled** (**Settings → Plugins → Plugins / permissions preview**; off by default). Tested on 1.16.0.5 and 1.17.0.1 (Android).
 
-The plugin calls Dexcom at most once every 55 s, reuses a reading until the next one is due (5 minutes), and pauses logins for 15 minutes if Dexcom refuses the password (an hour if Dexcom reports too many attempts), until you change the credentials. It keeps its Dexcom session when Dexcom just has no new reading, so it doesn't log in again on every poll. Design details: [.github/ARCHITECTURE.md](.github/ARCHITECTURE.md#plugin-preview--healthglucose).
+The plugin reuses a reading until the next one is due (5 minutes), then calls Dexcom at most once every 12 s for about 2 minutes while it waits for the new reading (only with an existing Dexcom session; logins are never sped up), and at most once every 55 s otherwise. It pauses logins for 15 minutes if Dexcom refuses the password (an hour if Dexcom reports too many attempts), until you change the credentials. It keeps its Dexcom session when Dexcom just has no new reading, so it doesn't log in again on every poll. Design details: [.github/ARCHITECTURE.md](.github/ARCHITECTURE.md#plugin-preview--healthglucose).
 
-> **Sideload only — do not publish.** Plugins are an unstable preview. Never publish either pbw to the appstore (no `pebble publish`); install them only by sideloading.
+> **Publishing is the owner's decision.** On 2026-11-05 Pebble announced plugins as live in the SDK and invited developers to upload them ([post](https://x.com/ericmigi/status/2118415004076756997)), while the [plugins guide](https://developer.repebble.com/guides/plugins/preview/) and the appstore's Plugins page still call them a (dev) preview and the guide still says not to publish yet. Don't run `pebble publish` for either pbw unless the owner asks; sideload for testing.
 
 ## Requirements
 
 - **Pebble 2 Duo or Pebble Time 2 smartwatch**
 - **Dexcom Share account** with a connected CGM transmitter
-- **Pebble app 1.16.x** on your phone with the plugin preview enabled (glucose comes from the Rat Scout Glucose plugin)
+- **Pebble app 1.16.x or later** on your phone with plugins enabled (glucose comes from the Rat Scout Glucose plugin)
 - **Internet connection** on phone for API access
 
 ## Setup
 
 1. In the Pebble app, turn on **Settings → Plugins → Plugins / permissions preview**.
-2. Sideload both pbws, the plugin first: `build/rat-scout-glucose.pbw`, then `build/rat-scout.pbw` (see [Plugin pbws](#plugin-pbws-preview-sideload-only)).
+2. Sideload both pbws, the plugin first: `build/rat-scout-glucose.pbw`, then `build/rat-scout.pbw` (see [Plugin pbws](#plugin-pbws)).
 3. Open **Apps → Plugins → Rat Scout Glucose → Settings**, enter the Dexcom login, password, region and units, and Save. Its page asks only for Internet access to the three Dexcom domains.
 4. Approve "Read your glucose readings (via Rat Scout Glucose)" when the Pebble app asks on Rat Scout's behalf. Until then the face shows "---".
 
@@ -156,7 +156,7 @@ src/
 │   ├── overlay.c            # Transient overlay notification banner (Quick View Alerts)
 │   ├── glucose.c            # Glucose update rendering and BG threshold alert logic
 │   ├── sounds.c             # Alert melodies (low/high BG, hourly chime)
-│   ├── messaging.c          # AppMessage handler: settings ingestion, data dispatch
+│   ├── messaging.c          # AppMessage handler: settings ingestion, data dispatch, fetch pings
 │   ├── draw_procs.c         # Custom GPath and drawing procedures
 │   ├── layout.c             # Layer positioning and watchface layout
 │   └── ui_helpers.c         # Shared UI utility functions
@@ -174,6 +174,7 @@ src/
     ├── glucose_plugin.js     # Subscribes to the plugin; unavailable/pending/plugin modes
     ├── legacy_cleanup.js     # Purges Dexcom data older versions stored in the face
     ├── weather_plugin.js     # Subscribes to weather/location and preferences/units
+    ├── permissions.js        # Logs permission states (Pebble.permissions.query)
     ├── geolocation.js        # ipgeolocation.io astronomy API client
     ├── astronomy.js          # Astronomy time calculations (next sun/moon event logic)
     ├── garbage.js            # Garbage bag schedule
@@ -181,6 +182,7 @@ src/
     └── config.json           # Clay settings UI definition
 plugin/                       # The Rat Scout Glucose pbw (plugin-only)
 ├── package.json              # Its manifest: own uuid, Dexcom domains, plugin block, configPage
+├── wscript                   # SDK build rules for a plugin-only project
 ├── plugin.js                 # GENERATED bundle (node scripts/build-plugin.js); never edit
 └── config.html               # Its settings page (Dexcom account, units)
 ```
@@ -196,9 +198,9 @@ Phone JS (face) ─→ subscription to the plugin ─→ glucose dictionary  ←
                                                             Settings ──────────┘
 ```
 
-PKJS subscribes to the Rat Scout Glucose plugin (`health/glucose`) and shows "---" (mode `unavailable`) when the plugin API is absent, the plugin isn't listed, the permission is denied, the plugin fails, sends nothing within 30 s of subscribing, or is silent for more than 11 minutes. One transient error keeps the shown reading; a second leads to "---". While unavailable without a subscription it checks for the plugin again on every watch request (at least every 5 minutes), so installing the plugin or turning the preview on while the face runs switches to it without restarting the face. When a reading is overdue (more than 5 minutes old) and the plugin hasn't answered for about a minute since its cached reading went stale, a watch request resubscribes, which makes the phone run the plugin at once instead of at its next poll (the phone's 60 s poll counts only time the phone is awake and was seen to take about 6 minutes). It does this at most about once a minute, and the plugin's cache and throttle still allow at most one Dexcom call per 55 s (`src/pkjs/glucose_plugin.js`; modes and triggers in [.github/ARCHITECTURE.md](.github/ARCHITECTURE.md#glucose-source-selection-srcpkjsglucose_pluginjs)). How a manifestVersion 2 pbw behaves on phone apps older than 1.16 is UNVERIFIED.
+PKJS subscribes to the Rat Scout Glucose plugin (`health/glucose`) and shows "---" (mode `unavailable`) when the plugin API is absent, the plugin isn't listed, the permission is denied, the plugin fails, sends nothing within 30 s of subscribing, or is silent for more than 11 minutes. One transient error keeps the shown reading; a second leads to "---". While unavailable without a subscription it checks for the plugin again on every watch request (at least every 5 minutes), so installing the plugin or turning the preview on while the face runs switches to it without restarting the face. When a reading is due (5 minutes old), each watch request resubscribes, which makes the phone run the plugin at once instead of at its next poll (the phone's 60 s poll counts only time the phone is awake and was seen to take about 6 minutes). Up to 435 s after the last reading it does this at most every 12 s (the watch asks every 15 s then), later at most about once a minute; the plugin's cache and throttle bound Dexcom calls (one per 12 s while the reading is due and a session exists, else one per 55 s) (`src/pkjs/glucose_plugin.js`; modes and triggers in [.github/ARCHITECTURE.md](.github/ARCHITECTURE.md#glucose-source-selection-srcpkjsglucose_pluginjs)). How a manifestVersion 2 pbw behaves on phone apps older than 1.16 is UNVERIFIED.
 
-Weather comes from two subscriptions that name no plugin, so the phone picks the provider: `weather/location` (the plugin chosen for weather in the Pebble app, else the built-in Weather) and `preferences/units` (built-in Preferences). The face converts each plugin's numbers from the unit it reports into the app's units, sends "--" while either source has no plugin or the weather permission is denied, checks for a missing source on every watch request, and subscribes again at once when the phone retires the serving plugin (another plugin chosen, or the plugin updated or removed). Each answer is logged as `Weather data: plugin=<name> temperature=<value> <unit> wind=<value> <unit>` and `Weather units: plugin=<name> temperature=<unit> wind=<unit>` (no place names or coordinates; `src/pkjs/weather_plugin.js`). A change of Weather provider in the app reaches the face when it subscribes again, e.g. when the face restarts.
+Weather comes from two subscriptions that name no plugin, so the phone picks the provider: `weather/location` (the plugin chosen for it in **Settings → Plugins → Preferred sources**, else the built-in Weather) and `preferences/units` (built-in Preferences). The face converts each plugin's numbers from the unit it reports into the app's units, sends "--" while either source has no plugin or the weather permission is denied, checks for a missing source on every watch request, and subscribes again at once when the phone retires the serving plugin (another plugin chosen, or the plugin updated or removed). Each answer is logged as `Weather data: plugin=<name> temperature=<value> <unit> wind=<value> <unit>` and `Weather units: plugin=<name> temperature=<unit> wind=<unit>` (no place names or coordinates; `src/pkjs/weather_plugin.js`). A change of the preferred source reaches the face when it subscribes again, e.g. when the face restarts (phone-verified on 1.16.0.5 and 1.17.0.1: the open subscription stays on the old plugin). The app's Settings → Weather → "Weather provider" sets the same preference. On start, and when a source answers `PERMISSION_DENIED`, the face logs the state of its `Glucose` and `Location` permissions (`Pebble.permissions.query`, `src/pkjs/permissions.js`): `granted`, waiting for approval, or turned off.
 
 Glucose, weather and astronomy data are sent as separate messages. A message queue (`src/pkjs/message_queue.js`) keeps one `sendAppMessage` call in flight at a time; a send with no answer within 30 s counts as failed and the queue moves on. Weather and astronomy are sent only when they changed (a failed send is retried on the next watch request); a glucose message whose send failed is also resent on the next watch request. The settings message is re-sent when the night thresholds or the garbage bag change with the time of day. While glucose shows "---" with the subscription still open (no data for 11 minutes, the plugin failing), the face resubscribes every 5 minutes, except while the Glucose permission is waiting for your approval; saving Rat Scout's settings also retries a plugin that rejected the request.
 
@@ -223,7 +225,7 @@ Outside the dev container, follow the [official SDK install guide](https://devel
 # Clean build first, specific platform, pre-seeded settings:
 ./scripts/run-emulator.sh --build --platform emery --settings scripts/settings.json
 
-# Install the plugin-aware watchface instead of the legacy project build
+# Install the watchface pbw the packer copies to a fixed name
 # (install build/rat-scout-glucose.pbw with `pebble install --emulator` for glucose):
 python3 -I scripts/pack-plugin.py && ./scripts/run-emulator.sh --pbw build/rat-scout.pbw
 
@@ -253,10 +255,10 @@ For developing plugins with the current app, SDK and tools (versions, the Androi
 ./scripts/device-check.sh screenshot
 ```
 
-Needs the Pebble mobile app 1.16.x with the plugin preview enabled. `install face|glucose` builds both pbws (`pack-plugin.py`) and installs `build/rat-scout.pbw` or `build/rat-scout-glucose.pbw`. Each command installs or captures logs for `--seconds` (default 120), running pebble from an empty temporary directory (pebble-tool 5.1.1/5.1.2 can crash on a PKJS log that arrives while it loads the project's sourcemap), then summarises the watch (C), `pkjs>` and `plugin>` log lines: the glucose modes seen, plugin envelopes, gate sends, duplicates the gate skipped, Dexcom logins and reading fetches, plugin error codes, overdue resubscribes, permission and crash lines, and for each new reading the delay from its Dexcom time to the send (log times read as UTC), readings skipped between sends, and reading fetches per new reading. It fails on a crash, on the plugin path resending the last reading, when the final mode differs from `--expect`, when it never reaches `Connected.` (the developer connection is off or the Pebble app isn't running), or when pebble stops before `--seconds` (the phone's developer connection dropped: pebble prints `Disconnected.` and exits; or it failed at once, e.g. not logged in). `analyze` on a saved log warns about a `Disconnected.` line.
+Needs the Pebble mobile app 1.16.x or later with plugins enabled. `install face|glucose` builds both pbws (`pack-plugin.py`) and installs `build/rat-scout.pbw` or `build/rat-scout-glucose.pbw`. Each command installs or captures logs for `--seconds` (default 120), running pebble from an empty temporary directory (pebble-tool 5.1.1/5.1.2 can crash on a PKJS log that arrives while it loads the project's sourcemap), then summarises the watch (C), `pkjs>` and `plugin>` log lines: the glucose modes seen, plugin envelopes, gate sends, duplicates the gate skipped, Dexcom logins and reading fetches, plugin error codes, overdue resubscribes, permission and crash lines, and for each new reading the delay from its Dexcom time to the send (log times read as UTC), readings skipped between sends, and reading fetches per new reading. It fails on a crash, on the plugin path resending the last reading, when the final mode differs from `--expect`, when it never reaches `Connected.` (the developer connection is off or the Pebble app isn't running), or when pebble stops before `--seconds` (the phone's developer connection dropped: pebble prints `Disconnected.` and exits; or it failed at once, e.g. not logged in). `analyze` on a saved log warns about a `Disconnected.` line.
 
 - **Transport:** the CloudPebble proxy by default (`pebble --phone` with no IP), which works when this machine can't reach the phone. It needs `pebble login`. In a container your browser can't reach, run `login`, open the URL, then paste the `http://localhost:60000/?...` address the browser fails to load into `callback`. With a reachable phone use `--phone-ip IP`; on Android over USB use `--adb`.
-- **Privacy:** logs are written to `.device-check/` (gitignored; not under `build/`, which the plugin packer cleans), with UUIDs other than the app's, email addresses and IPv4 addresses with a port or in a URL masked; `REDACT=word1,word2` masks more (e.g. a Dexcom login that isn't an email address). The app never logs Dexcom account or session IDs or device coordinates.
+- **Privacy:** logs are written to `.device-check/` (gitignored; not under `build/`, which the packer cleans), with UUIDs other than the app's, email addresses and IPv4 addresses with a port or in a URL masked; `REDACT=word1,word2` masks more (e.g. a Dexcom login that isn't an email address). The app never logs Dexcom account or session IDs or device coordinates.
 - **Safety:** this uses the real Dexcom account set on the plugin's settings page. The wrong-password step stays off-device (mocked unit tests only).
 
 See [docs/noVNC.md](docs/noVNC.md) for viewing the emulator in a browser, stopping it, seeding Clay settings, fixing the location and taking screenshots.
@@ -277,7 +279,7 @@ pebble kill && pebble wipe                                             # reset a
 
 ## Building
 
-Requires Pebble SDK 4.x (tested with SDK 4.33.1 / pebble-tool 5.1.1 on Python 3.13). Settings UI uses [`@rebble/clay`](https://github.com/pebble-dev/clay), the maintained Clay fork with flint/emery support.
+Requires Pebble SDK 4.44 or later (plugin support; tested with SDK 4.44 / pebble-tool 5.1.2 on Python 3.13). Settings UI uses [`@rebble/clay`](https://github.com/pebble-dev/clay), the maintained Clay fork with flint/emery support.
 
 ```bash
 npm ci
@@ -285,27 +287,26 @@ pebble build
 for f in test/*.test.js; do node "$f" || exit 1; done
 ```
 
-The legacy `pebble build` pbw can't read plugins, so it always shows "---" for glucose; install the two pbws below instead.
+`pebble build` in the project root builds the watchface (`build/<checkout dir>.pbw`, `manifestVersion: 2`, SDK 4.44's default). The plugin is a separate SDK project in `plugin/` (`projectType: "plugin"`, `plugin/wscript`). Both builds show warnings that are harmless: the linker's "LOAD segment with RWX permissions" (also with SDK 4.33.1) and, for the plugin, "feature 'message_keys' does not exist".
 
-### Plugin pbws (preview, sideload only)
+### Plugin pbws
 
-`pebble build` produces a **legacy** watchface pbw (`build/work.pbw`, named after the checkout directory): SDK 4.33.1 has no plugin support, so the pbw has no `manifestVersion` and can't read plugins. To build the two pbws:
+To build both pbws:
 
 ```bash
 node scripts/build-plugin.js           # after editing src/plugin-src/ or src/pkjs/glucose.js
 node scripts/build-plugin.js --check   # exit 1 if plugin/plugin.js is stale
-python3 -I scripts/pack-plugin.py      # clean build + build/rat-scout.pbw and build/rat-scout-glucose.pbw
-python3 -I scripts/pack-plugin.py --selftest   # packer self test on in-memory pbws
+python3 -I scripts/pack-plugin.py      # clean builds of both projects + build/rat-scout.pbw and build/rat-scout-glucose.pbw
 pebble install --phone <phone_ip> build/rat-scout-glucose.pbw   # the plugin first
 pebble install --phone <phone_ip> build/rat-scout.pbw
 ```
 
-- `build/rat-scout.pbw`: the `pebble build` output with `manifestVersion: 2` (a watchapp needs it to read plugins), no plugin.
-- `build/rat-scout-glucose.pbw`: plugin-only, built from `plugin/` without the SDK: `appinfo.json` (from `plugin/package.json`), `plugin.js` and `config.html`.
+- `build/rat-scout.pbw`: copy of the root `pebble build` output (`manifestVersion: 2`, which a watchapp needs to read plugins), no plugin.
+- `build/rat-scout-glucose.pbw`: copy of `plugin/build/plugin.pbw`: `appinfo.json`, `plugin.js` and `config.html`, no watch binary. SDK 4.44 bundles the script and the local `configPage` and validates the `plugin` block when the project is configured.
 
-`pack-plugin.py` refuses to run if `plugin/plugin.js` is stale, validates `definesPermissions`, and copies the watchface pbw unchanged once a future SDK sets `manifestVersion` itself; `--no-build` packs the existing build output. SDK 4.33.1 was the newest on the SDK server on 2026-10-30. The results are for sideloading only (see [Plugin (preview)](#plugin-preview)).
+`pack-plugin.py` refuses to run if `plugin/plugin.js` is stale, runs `pebble clean` + `pebble build` in both projects, refuses a pbw that isn't `manifestVersion: 2` (built with an SDK older than 4.44), and copies both to the fixed names that `device-check.sh`, `plugin-smoke.sh` and `run-emulator.sh` use; `--no-build` copies the existing build outputs. Publishing: see [Plugin (preview)](#plugin-preview).
 
-pebble-tool 5.1.1 runs `waf` with the SDK's own venv but passes its own `sys.path` as `PYTHONPATH` (`pebble_tool/commands/sdk/project/__init__.py`), so pebble-tool and the SDK venv must use the same Python minor version; otherwise `pebble build` fails with `SRE module mismatch`. Reinstall with `uv tool install --force --python <the SDK venv's python> pebble-tool==5.1.1`.
+pebble-tool 5.1.x runs `waf` with the SDK's own venv but passes its own `sys.path` as `PYTHONPATH` (`pebble_tool/commands/sdk/project/__init__.py`), so pebble-tool and the SDK venv must use the same Python minor version; otherwise `pebble build` fails with `SRE module mismatch`. Reinstall with `uv tool install --force --python <the SDK venv's python> pebble-tool==5.1.2`.
 
 ## Credits
 
