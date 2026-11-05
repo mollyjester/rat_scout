@@ -374,13 +374,29 @@ void outbox_sent_callback(DictionaryIterator *iterator, void *context)
     // Intentionally silent — avoid flash I/O on every successful send
 }
 
+/**
+ * The Pebble app on the phone connected or disconnected. On connect, ping once: pings were
+ * skipped while it was away, and a reading may be due or overdue by now.
+ * @param connected - True if the Pebble app is connected now
+ */
+static void app_connection_handler(bool connected) {
+    if (connected) {
+        messaging_request_fetch();
+    }
+}
+
 // ===== Public API =====
 
 /**
  * Ask JS for fresh data: an empty outbound message (key 0) that JS answers with fetchAllData().
- * Skipped if the outbox is busy; the next ping retries.
+ * Skipped while the Pebble app on the phone is not connected (Bluetooth off, phone out of
+ * range): such a ping can't be delivered, and the reconnect ping (pebble_app_connection_handler
+ * below) catches up. Skipped if the outbox is busy; the next ping retries.
  */
 void messaging_request_fetch(void) {
+    if (!connection_service_peek_pebble_app_connection()) {
+        return;
+    }
     DictionaryIterator *iter;
     AppMessageResult result = app_message_outbox_begin(&iter);
     if (result == APP_MSG_OK && iter) {
@@ -390,9 +406,19 @@ void messaging_request_fetch(void) {
 }
 
 /**
- * Cancel the due ping timer.
+ * Subscribe to Pebble app connection events (call after app_message_open).
+ */
+void messaging_init(void) {
+    connection_service_subscribe((ConnectionHandlers){
+        .pebble_app_connection_handler = app_connection_handler
+    });
+}
+
+/**
+ * Unsubscribe from connection events and cancel the due ping timer.
  */
 void messaging_deinit(void) {
+    connection_service_unsubscribe();
     if (s_due_ping_timer) {
         app_timer_cancel(s_due_ping_timer);
         s_due_ping_timer = NULL;

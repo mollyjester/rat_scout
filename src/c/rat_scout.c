@@ -615,6 +615,8 @@ static void init(void) {
 
     // Open AppMessage
     app_message_open(APPMESSAGE_INBOX, APPMESSAGE_OUTBOX);
+    // Pings only while the phone's Pebble app is connected, and one on reconnect
+    messaging_init();
 
     // Register speaker finish callback
     sounds_init();

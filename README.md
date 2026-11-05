@@ -11,7 +11,7 @@ Rat Scout displays real-time Dexcom Share blood glucose readings on your Pebble 
 ## Features
 
 ### Glucose Monitoring
-- **Real-time glucose display** with automatic 5-minute update cycle; when the next reading is due the watch asks the phone once, 320 s after the last reading (timed to the second), then every minute up to 10 minutes after it if the reading is still missing, then every 5 minutes. On the phone a new reading reached the watch 20–22 s after its Dexcom time with one watch ping per reading (30-minute run, 2026-11-05; before: 43–56 s)
+- **Real-time glucose display** with automatic 5-minute update cycle; when the next reading is due the watch asks the phone once, 320 s after the last reading (timed to the second), then every minute up to 10 minutes after it if the reading is still missing, then every 5 minutes. No pings while the phone is out of reach, and one as soon as it reconnects. On the phone a new reading reached the watch 20–22 s after its Dexcom time with one watch ping per reading (30-minute run, 2026-11-05; before: 43–56 s)
 - **Glucose delta**: rate of change (±) from previous reading
 - **Time since reading**: minutes elapsed since last CGM data
 - **Configurable units**: mg/dL or mmol/L
