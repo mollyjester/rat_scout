@@ -14,6 +14,7 @@ Rat Scout connects to the Dexcom Share API to display real-time blood glucose re
 - **Real-time glucose display** with automatic 5-minute update cycle
 - **Glucose delta**: rate of change (±) from previous reading
 - **Time since reading**: minutes elapsed since last CGM data
+- **Dexcom outages don't blank the watch**: when a fetch fails for a temporary reason (no answer, timeout, server error, no recent readings), the watch keeps its last reading and ages it as usual (the value up to 20 minutes old, then "---" with the age, then "---" after 60 minutes). It shows "---" at once only when Dexcom refuses the login, or the Dexcom account or region in the settings differs from the one that produced the last reading
 - **Configurable units**: mg/dL or mmol/L
 - **Threshold vibration alerts**: distinct vibration patterns for high and low BG
   - High: short-long pattern
