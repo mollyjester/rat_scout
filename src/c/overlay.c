@@ -30,7 +30,7 @@ static GBitmap  *s_overlay_image = NULL;
 static char      s_overlay_text[48];
 // Whether the overlay banner is currently being shown
 static bool      s_overlay_visible = false;
-// Font used for message text; loaded once in overlay_init, freed in overlay_deinit
+// Font used for message text; the face's, passed to overlay_init (not owned here)
 static GFont     s_overlay_font = NULL;
 
 // ===== Private helpers =====
@@ -104,8 +104,8 @@ static void overlay_draw_proc(Layer *layer, GContext *ctx) {
         s_overlay_text, s_overlay_font,
         GRect(0, 0, text_area_w, text_area_h),
         GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter);
-    // Centre the ink visually: FONT_HUMAROID_20 ascenders are taller than its descenders,
-    // so the ink sits 1px low within the line-height box. Shift up by 1 to equalise margins.
+    // Centre the ink visually: FONT_HUMAROID_20's ink sits low within its line-height box,
+    // so the text is shifted up by 6 px (tuned by eye).
     int text_y = OVERLAY_BORDER + (text_area_h - text_size.h) / 2 - 6;
     if (text_y < OVERLAY_BORDER) text_y = OVERLAY_BORDER;
     GRect text_rect = GRect(2, text_y, text_area_w, text_size.h);
@@ -131,9 +131,11 @@ static void overlay_draw_proc(Layer *layer, GContext *ctx) {
  * starts hidden. Must be called last during window load so the overlay
  * renders on top of all other layers in the z-order.
  * @param parent_layer - Root window layer to attach the overlay to
+ * @param font - FONT_HUMAROID_20, loaded and unloaded by the caller; overlay_deinit must run
+ *               before it is unloaded
  */
-void overlay_init(Layer *parent_layer) {
-    s_overlay_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_HUMAROID_20));
+void overlay_init(Layer *parent_layer, GFont font) {
+    s_overlay_font = font;
     GRect pb = layer_get_bounds(parent_layer);
     GRect overlay_rect = GRect(0, pb.size.h - OVERLAY_HEIGHT, pb.size.w, OVERLAY_HEIGHT);
     s_overlay_layer = layer_create(overlay_rect);
@@ -160,10 +162,7 @@ void overlay_deinit(void) {
         layer_destroy(s_overlay_layer);
         s_overlay_layer = NULL;
     }
-    if (s_overlay_font) {
-        fonts_unload_custom_font(s_overlay_font);
-        s_overlay_font = NULL;
-    }
+    s_overlay_font = NULL;
 }
 
 /**
@@ -225,6 +224,10 @@ void overlay_show(AlertKind kind, const char *msg) {
  */
 void overlay_hide(void) {
     if (!s_overlay_layer) return;
+    if (s_overlay_timer) {
+        app_timer_cancel(s_overlay_timer);
+        s_overlay_timer = NULL;
+    }
     s_overlay_visible = false;
     if (s_overlay_image) {
         gbitmap_destroy(s_overlay_image);

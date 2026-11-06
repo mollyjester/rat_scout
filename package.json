@@ -17,13 +17,28 @@
         "capabilities": [
             "configurable"
         ],
+        "usesPermissions": [
+            "Location",
+            "Health",
+            {
+                "name": "Internet",
+                "parameters": {
+                    "domains": [
+                        "api.ipgeolocation.io"
+                    ]
+                }
+            },
+            {
+                "name": "Glucose",
+                "plugin": "01523c90-aa11-4a82-8e00-58cc3e98472c"
+            }
+        ],
         "targetPlatforms": ["flint", "emery"],
         "watchapp": {
             "watchface": true
         },
         "messageKeys": [
             "MSG_TYPE",
-            "DEX_REGION",
             "BG_UNITS",
             "BG_SHOW_DELTA",
             "BG_SHOW_TIMEDELTA",
@@ -39,7 +54,6 @@
             "MOON_PHASE",
             "SUN_IS_RISING",
             "MOON_IS_RISING",
-            "WEATHER_UNITS",
             "WEATHER_TEMP",
             "WEATHER_WIND",
             "WEATHER_UMBRELLA",

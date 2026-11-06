@@ -1,9 +1,12 @@
-var Dexcom = require('./dexcom');
 var Geolocation = require('./geolocation');
-var Weather = require('./weather');
 var Astronomy = require('./astronomy');
 var Garbage = require('./garbage');
 var Glucose = require('./glucose');
+var GlucosePlugin = require('./glucose_plugin');
+var WeatherPlugin = require('./weather_plugin');
+var LegacyCleanup = require('./legacy_cleanup');
+var MessageQueue = require('./message_queue');
+var WatchSettings = require('./watch_settings');
 var Clay = require('@rebble/clay');
 var clayConfig = require('./config.json');
 var customFn = require('./clay-config');
@@ -21,7 +24,6 @@ var MSG_TYPE_SOUND_TEST   = 6;
 
 // Retry cancellation guards (Fix 8)
 var astronomyRetryPending = false;
-var weatherRetryPending   = false;
 
 // Last known GPS position (used to pass coordinates to astronomy API)
 var lastKnownLat = undefined;
@@ -36,21 +38,23 @@ var CONFIG = {
     TIME_CACHE_KEYS: {
         ASTRONOMY_DATA: 'cachedAstronomyData',
         ASTRONOMY_FETCH_TIME: 'lastAstronomyFetchTime',
-        WEATHER_DATA: 'cachedWeatherData',
-        WEATHER_FETCH_TIME: 'lastWeatherFetchTime',
-        WEATHER_LOCATION: 'lastWeatherLocation'
-    },
-    STORAGE_KEYS: {
-        ACCOUNT_ID: 'accountId',
-        SESSION_ID: 'sessionId'
+        ASTRONOMY_LOCATION: 'lastAstronomyLocation',
+        ASTRONOMY_FAIL_TIME: 'lastAstronomyFailTime'
     },
     DEFAULT_BG_UNITS: 'mg/dL',
     MMOL_CONVERSION_FACTOR: 18.0182,
     MAX_FETCH_RETRIES: 2,
     REQUEST_TIMEOUT_MS: 15000,
-    DEFAULT_WEATHER_INTERVAL_MIN: 60,
     SIGNIFICANT_LOCATION_CHANGE_KM: 5,
-    GEOLOCATION_MAX_AGE_MS: 300000
+    GEOLOCATION_MAX_AGE_MS: 300000,
+    // How old a last known position may be for the "did we move?" check on a fresh cache. The
+    // phone app answers from its last known location when it is younger than maximumAge, without
+    // a new fix (mobileapp libpebble3 AndroidSystemGeolocation.kt getCurrentPosition).
+    LOCATION_CHECK_MAX_AGE_MS: 60 * 60 * 1000,
+    LOCATION_CHECK_TIMEOUT_MS: 5000,
+    // After all astronomy retries failed, wait this long before trying the API again (watch
+    // pings come every minute while a reading is late).
+    ASTRONOMY_FAIL_BACKOFF_MS: 15 * 60 * 1000
 };
 
 /**
@@ -66,125 +70,142 @@ function getSettings() {
     }
 }
 
-/**
- * Message queue to prevent concurrent sendAppMessage calls.
- * Pebble can only handle one in-flight message at a time.
- */
-var messageQueue = [];
-var isSending = false;
+// Watch messages: one in flight at a time, with a timeout (message_queue.js).
+var messageQueue = MessageQueue.create({
+    sendAppMessage: function(dict, onOk, onFail) { Pebble.sendAppMessage(dict, onOk, onFail); }
+});
+
+// Astronomy is re-sent from cache on every watch ping, weather on every plugin answer; only send
+// what changed.
+var changeFilter = MessageQueue.createChangeFilter();
 
 /**
- * Process the next message in the queue
+ * Send a message to the watch through the queue.
+ * @param {Object} dictionary - Data to send
+ * @param {string} messageType - Type of message for logging
+ * @param {Function} onFailure - Optional: called if the send fails or times out
  */
-function processMessageQueue() {
-    if (isSending || messageQueue.length === 0) return;
-    
-    isSending = true;
-    var msg = messageQueue.shift();
-    
-    Pebble.sendAppMessage(msg.dictionary,
-        function() {
-            console.log(msg.messageType + ' sent to Pebble successfully');
-            isSending = false;
-            processMessageQueue();
-        },
-        function() {
-            console.error('Error sending ' + msg.messageType + ' to Pebble');
-            isSending = false;
-            processMessageQueue();
-        }
-    );
+function sendToPebble(dictionary, messageType, onFailure) {
+    messageQueue.push(dictionary, messageType || 'data', onFailure);
 }
 
 /**
- * Helper to send message to Pebble with consistent error handling.
- * Messages are queued to avoid concurrent sendAppMessage calls.
+ * Send a weather or astronomy dictionary unless it equals the last one of its kind.
+ * A failed send is forgotten, so the next ping sends it again.
+ * @param {string} kind - 'weather' or 'astronomy'
  * @param {Object} dictionary - Data to send
  * @param {string} messageType - Type of message for logging
  */
-function sendToPebble(dictionary, messageType) {
-    messageType = messageType || 'data';
-    
-    messageQueue.push({ dictionary: dictionary, messageType: messageType });
-    processMessageQueue();
-}
-
-/**
- * Check whether a settings value has been filled in (not empty/undefined).
- * @param {*} value - Settings value to check
- * @returns {boolean} True if value is present and non-empty
- */
-function hasSettingValue(value) {
-    return value !== undefined && value !== '';
-}
-
-/**
- * Check whether the current hour falls inside the configured night window.
- * Handles windows that cross midnight (e.g. start=22, end=7).
- * @returns {boolean} True if night thresholds are configured and currently active
- */
-function isNightWindow() {
-    var nightStart = parseInt(appSettings.BG_NIGHT_START, 10);
-    var nightEnd = parseInt(appSettings.BG_NIGHT_END, 10);
-
-    if (isNaN(nightStart) || isNaN(nightEnd)) return false;
-
-    if (!hasSettingValue(appSettings.BG_NIGHT_LOW_THRESHOLD) &&
-        !hasSettingValue(appSettings.BG_NIGHT_HIGH_THRESHOLD)) return false;
-
-    var hour = new Date().getHours();
-
-    if (nightStart <= nightEnd) {
-        return hour >= nightStart && hour < nightEnd;
+function sendIfChanged(kind, dictionary, messageType) {
+    if (!changeFilter.changed(kind, dictionary)) {
+        console.log(messageType + ' unchanged, not sent');
+        return;
     }
-    // Crosses midnight (e.g. 22 -> 7)
-    return hour >= nightStart || hour < nightEnd;
+    sendToPebble(dictionary, messageType, function() { changeFilter.forget(kind); });
 }
 
 /**
- * Build and send settings to the watchface
+ * Distance between two coordinates (haversine), km.
+ * @param {number} lat1 - Latitude of first point
+ * @param {number} lon1 - Longitude of first point
+ * @param {number} lat2 - Latitude of second point
+ * @param {number} lon2 - Longitude of second point
+ * @returns {number} Distance in kilometers
+ */
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    var R = 6371; // Earth's radius in kilometers
+    var dLat = (lat2 - lat1) * Math.PI / 180;
+    var dLon = (lon2 - lon1) * Math.PI / 180;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+}
+
+/**
+ * Whether the phone moved more than SIGNIFICANT_LOCATION_CHANGE_KM from a stored location.
+ * Uses the last known position (no new fix while it is younger than LOCATION_CHECK_MAX_AGE_MS).
+ * @param {string} storageKey - localStorage key of {latitude, longitude}
+ * @param {Function} callback - callback(moved): false when unknown (no stored location, no fix)
+ */
+function checkMoved(storageKey, callback) {
+    var stored = null;
+    try {
+        stored = JSON.parse(window.localStorage.getItem(storageKey));
+    } catch (e) {
+        stored = null;
+    }
+    if (!stored || typeof stored.latitude !== 'number' || typeof stored.longitude !== 'number') {
+        callback(false);
+        return;
+    }
+    navigator.geolocation.getCurrentPosition(
+        function(pos) {
+            var km = calculateDistance(stored.latitude, stored.longitude, pos.coords.latitude, pos.coords.longitude);
+            if (km > CONFIG.SIGNIFICANT_LOCATION_CHANGE_KM) console.log('Moved ' + Math.round(km) + ' km since the cached data');
+            callback(km > CONFIG.SIGNIFICANT_LOCATION_CHANGE_KM);
+        },
+        function() { callback(false); },
+        { timeout: CONFIG.LOCATION_CHECK_TIMEOUT_MS, maximumAge: CONFIG.LOCATION_CHECK_MAX_AGE_MS }
+    );
+}
+
+// Time-of-day part (thresholds, garbage bag) of the last settings sent; see refreshTimedSettings.
+var lastTimedSettings = null;
+
+/**
+ * Build and send settings to the watchface (watch_settings.js).
  */
 function sendSettings() {
-    var useNight = isNightWindow();
-
-    var lowThreshold = useNight && hasSettingValue(appSettings.BG_NIGHT_LOW_THRESHOLD)
-        ? appSettings.BG_NIGHT_LOW_THRESHOLD
-        : appSettings.BG_LOW_THRESHOLD;
-
-    var highThreshold = useNight && hasSettingValue(appSettings.BG_NIGHT_HIGH_THRESHOLD)
-        ? appSettings.BG_NIGHT_HIGH_THRESHOLD
-        : appSettings.BG_HIGH_THRESHOLD;
-
-    var dictionary = {
-        "MSG_TYPE": MSG_TYPE_SETTINGS,
-        "BG_SHOW_DELTA": appSettings.BG_SHOW_DELTA ? 1 : 0,
-        "BG_SHOW_TIMEDELTA": appSettings.BG_SHOW_TIMEDELTA ? 1 : 0,
-        "BG_UNITS": appSettings.BG_UNITS || CONFIG.DEFAULT_BG_UNITS,
-        "HOURLY_VIBRATION": appSettings.HOURLY_VIBRATION ? 1 : 0,
-        "BG_VIBRATION": appSettings.BG_VIBRATION ? 1 : 0,
-        "BG_LOW_THRESHOLD": Math.round((parseFloat(lowThreshold) || 0) * 10),
-        "BG_HIGH_THRESHOLD": Math.round((parseFloat(highThreshold) || 0) * 10),
-        "DATE_FORMAT": appSettings.DATE_FORMAT || "dd.mm",
-        "GARBAGE_BAG": Garbage.computeGarbageBag(appSettings),
-        "ALERT_OVERLAY_ENABLE": appSettings.ALERT_OVERLAY_ENABLE ? 1 : 0,
-        "ALERT_OVERLAY_DURATION": parseInt(appSettings.ALERT_OVERLAY_DURATION, 10) || 10,
-        "BG_LOW_SOUND": appSettings.BG_LOW_SOUND ? 1 : 0,
-        "BG_HIGH_SOUND": appSettings.BG_HIGH_SOUND ? 1 : 0,
-        "HOURLY_SOUND": appSettings.HOURLY_SOUND ? 1 : 0
-    };
-    
-    sendToPebble(dictionary, 'Settings');
+    var dictionary = WatchSettings.build(appSettings, new Date(), MSG_TYPE_SETTINGS);
+    lastTimedSettings = WatchSettings.timedPart(dictionary);
+    sendToPebble(dictionary, 'Settings', function() { lastTimedSettings = null; });
 }
 
 /**
- * Fetch all watchface data (glucose reading, weather, and astronomy)
- * Astronomy is fetched independently based on its daily cache,
- * not on every glucose cycle, to reduce unnecessary API calls.
+ * The night thresholds and the garbage bag depend on the time of day, and the watch only gets
+ * them in a settings message. Run on every watch ping: send settings again when they changed.
+ */
+function refreshTimedSettings() {
+    var dictionary = WatchSettings.build(appSettings, new Date(), MSG_TYPE_SETTINGS);
+    if (WatchSettings.timedPart(dictionary) === lastTimedSettings) return;
+    console.log('Thresholds or garbage bag changed with the time of day: sending settings');
+    sendSettings();
+}
+
+// Glucose comes only from the Rat Scout Glucose plugin ("---" while it is unavailable).
+var glucoseSource = GlucosePlugin.create({
+    Pebble: Pebble,
+    Glucose: Glucose,
+    settings: function() { return appSettings; },
+    msgType: MSG_TYPE_GLUCOSE,
+    send: sendToPebble
+});
+
+// Weather comes from whichever plugin serves weather/location, in the units of preferences/units
+// ("--" while either is unavailable).
+var weatherSource = WeatherPlugin.create({
+    Pebble: Pebble,
+    msgType: MSG_TYPE_WEATHER,
+    send: function(dict) { sendIfChanged('weather', dict, 'Weather'); }
+});
+
+/**
+ * Fetch astronomy and look after the glucose and weather subscriptions. Astronomy is
+ * fetched independently based on its daily cache, not on every cycle, to reduce
+ * unnecessary API calls. Glucose and weather arrive through plugin subscriptions; an
+ * overdue reading resubscribes so the glucose plugin runs now.
  */
 function fetchAllData() {
-    Glucose.fetchGlucoseReading(appSettings, CONFIG, sendToPebble, function() { /* no-op: astronomy decoupled */ }, Dexcom, MSG_TYPE_GLUCOSE);
-    // Fetch weather independently (sent as separate message)
-    fetchAndSendWeather();
+    var now = Date.now();
+    glucoseSource.checkStall(now);
+    glucoseSource.retryUnsent();
+    glucoseSource.recheck();
+    glucoseSource.recoverIfStuck(now);
+    glucoseSource.refreshIfOverdue(now);
+    refreshTimedSettings();
+    weatherSource.recheck();
     // Fetch astronomy independently — only hits the API when cache is stale (daily)
     fetchAndSendAstronomy();
 }
@@ -192,8 +213,11 @@ function fetchAllData() {
 // Listen for when the watchface is opened
 Pebble.addEventListener('ready', function() {
     console.log('PebbleKit JS ready!');
+    LegacyCleanup.purgeLegacyDexcomData(window.localStorage);
     appSettings = getSettings();
     sendSettings();
+    glucoseSource.start();
+    weatherSource.start();
     fetchAllData();
 });
 
@@ -201,8 +225,8 @@ Pebble.addEventListener('ready', function() {
 Pebble.addEventListener('appmessage', function() {
     console.log('AppMessage received!');
     appSettings = getSettings();
-    // Settings are only sent on startup and after config save.
-    // Skipping sendSettings() here avoids an extra Bluetooth message every 5 minutes.
+    // Settings are sent on startup, after config save, and from fetchAllData() when the
+    // time-of-day part (night thresholds, garbage bag) changed; not on every ping.
     fetchAllData();
 });
 
@@ -250,6 +274,9 @@ Pebble.addEventListener('webviewclosed', function(e) {
         // so any test command that follows sees the current configuration.
         appSettings = getSettings();
         sendSettings();
+        // Re-read the plugin so a unit/delta change is re-sent even if the reading is unchanged.
+        glucoseSource.onSettingsChanged();
+        weatherSource.onSettingsChanged();
 
         // Queue test commands after settings so they arrive in order
         if (vibePattern > 0) {
@@ -306,6 +333,14 @@ function shouldRefreshAstronomyData() {
 function cacheAstronomyData(cacheData) {
     window.localStorage.setItem(CONFIG.TIME_CACHE_KEYS.ASTRONOMY_DATA, JSON.stringify(cacheData));
     window.localStorage.setItem(CONFIG.TIME_CACHE_KEYS.ASTRONOMY_FETCH_TIME, String(Date.now()));
+    window.localStorage.removeItem(CONFIG.TIME_CACHE_KEYS.ASTRONOMY_FAIL_TIME);
+    // Where the times are for, so a move invalidates them (IP-based lookups store none).
+    if (typeof lastKnownLat === 'number' && typeof lastKnownLon === 'number') {
+        window.localStorage.setItem(CONFIG.TIME_CACHE_KEYS.ASTRONOMY_LOCATION,
+            JSON.stringify({ latitude: lastKnownLat, longitude: lastKnownLon }));
+    } else {
+        window.localStorage.removeItem(CONFIG.TIME_CACHE_KEYS.ASTRONOMY_LOCATION);
+    }
 }
 
 /**
@@ -317,7 +352,7 @@ function useCachedAstronomyData() {
     
     if (!cachedData) {
         console.log('No cached astronomy data available');
-        sendToPebble({
+        sendIfChanged('astronomy', {
             "MSG_TYPE": MSG_TYPE_ASTRONOMY,
             "SUNTIME": "N/A",
             "MOONTIME": "N/A",
@@ -363,7 +398,7 @@ function useCachedAstronomyData() {
         }
         
         console.log('Using cached astronomy data');
-        sendToPebble({
+        sendIfChanged('astronomy', {
             "MSG_TYPE": MSG_TYPE_ASTRONOMY,
             "SUNTIME": times.sunTime || "N/A",
             "MOONTIME": times.moonTime || "N/A",
@@ -374,7 +409,7 @@ function useCachedAstronomyData() {
         return true;
     } catch (e) {
         console.error('Error parsing cached data: ' + e.message);
-        sendToPebble({
+        sendIfChanged('astronomy', {
             "MSG_TYPE": MSG_TYPE_ASTRONOMY,
             "SUNTIME": "N/A",
             "MOONTIME": "N/A",
@@ -411,7 +446,7 @@ function handleTodayAstronomyData(todayData, apiKey, attemptCount) {
                 // Cache tomorrow's sunrise if needed
                 if (times.needsTomorrowSunData) {
                     cacheData.tomorrowSunrise = tomorrowData.sunrise;
-                    if (tomorrowData.sunrise && !tomorrowData.sunrise.includes('N/A')) {
+                    if (tomorrowData.sunrise && tomorrowData.sunrise.indexOf('N/A') === -1) {
                         times.sunTime = tomorrowData.sunrise;
                         console.log('Using tomorrow sunrise: ' + times.sunTime);
                     }
@@ -424,10 +459,10 @@ function handleTodayAstronomyData(todayData, apiKey, attemptCount) {
                     
                     var moonEvent = Astronomy.determineTomorrowMoonEvent(todayData.moonrise, todayData.moonset);
                     
-                    if (moonEvent.needMoonrise && tomorrowData.moonrise && !tomorrowData.moonrise.includes('N/A')) {
+                    if (moonEvent.needMoonrise && tomorrowData.moonrise && tomorrowData.moonrise.indexOf('N/A') === -1) {
                         times.moonTime = tomorrowData.moonrise;
                         console.log('Using tomorrow moonrise: ' + times.moonTime);
-                    } else if (moonEvent.needMoonset && tomorrowData.moonset && !tomorrowData.moonset.includes('N/A')) {
+                    } else if (moonEvent.needMoonset && tomorrowData.moonset && tomorrowData.moonset.indexOf('N/A') === -1) {
                         times.moonTime = tomorrowData.moonset;
                         console.log('Using tomorrow moonset: ' + times.moonTime);
                     }
@@ -462,7 +497,7 @@ function handleTodayAstronomyData(todayData, apiKey, attemptCount) {
  * @param {Object} times - Formatted sun/moon times
  */
 function completeAstronomyUpdate(times) {
-    sendToPebble({
+    sendIfChanged('astronomy', {
         "MSG_TYPE": MSG_TYPE_ASTRONOMY,
         "SUNTIME": times.sunTime || "N/A",
         "MOONTIME": times.moonTime || "N/A",
@@ -487,7 +522,7 @@ function fetchAndSendAstronomy(attemptCount) {
     // If no API key, send N/A astronomy data
     if (!apiKey) {
         console.log('No astronomy API key configured, sending N/A astronomy');
-        sendToPebble({
+        sendIfChanged('astronomy', {
             "MSG_TYPE": MSG_TYPE_ASTRONOMY,
             "SUNTIME": "N/A",
             "MOONTIME": "N/A",
@@ -497,19 +532,43 @@ function fetchAndSendAstronomy(attemptCount) {
         return;
     }
     
-    // Check if we need fresh data
-    if (!shouldRefreshAstronomyData()) {
+    // Today's cache, unless the phone moved since (or it lacks tomorrow's data when needed)
+    if (attemptCount === 0 && !shouldRefreshAstronomyData()) {
         console.log('Checking cached astronomy data');
-        var cacheUsed = useCachedAstronomyData();
-        
-        // If cache didn't have tomorrow's data when needed, fetch fresh data
-        if (!cacheUsed) {
-            console.log('Cache incomplete, fetching fresh astronomy data');
-        } else {
-            return;
-        }
+        checkMoved(CONFIG.TIME_CACHE_KEYS.ASTRONOMY_LOCATION, function(moved) {
+            if (!moved && useCachedAstronomyData()) return;
+            console.log(moved ? 'Location changed, fetching fresh astronomy data' : 'Cache incomplete, fetching fresh astronomy data');
+            fetchFreshAstronomy(apiKey, 0);
+        });
+        return;
     }
-    
+    fetchFreshAstronomy(apiKey, attemptCount);
+}
+
+/**
+ * Record that every astronomy attempt failed and show the cache, if any.
+ */
+function astronomyFailed() {
+    console.log('Max retries reached (' + CONFIG.MAX_FETCH_RETRIES + '), falling back to cache');
+    window.localStorage.setItem(CONFIG.TIME_CACHE_KEYS.ASTRONOMY_FAIL_TIME, String(Date.now()));
+    useCachedAstronomyData();
+}
+
+/**
+ * Fetch astronomy data from the API (no cache check), with retries.
+ * @param {string} apiKey - ipgeolocation.io API key
+ * @param {number} attemptCount - Retry counter (starts at 0)
+ */
+function fetchFreshAstronomy(apiKey, attemptCount) {
+    var failedAt = parseInt(window.localStorage.getItem(CONFIG.TIME_CACHE_KEYS.ASTRONOMY_FAIL_TIME), 10) || 0;
+    var sinceFail = Date.now() - failedAt;
+    if (attemptCount === 0 && sinceFail >= 0 && sinceFail < CONFIG.ASTRONOMY_FAIL_BACKOFF_MS) {
+        console.log('Astronomy API failed ' + Math.round(sinceFail / 60000) + ' min ago; using cache until ' +
+            (CONFIG.ASTRONOMY_FAIL_BACKOFF_MS / 60000) + ' min have passed');
+        useCachedAstronomyData();
+        return;
+    }
+
     // Fetch fresh astronomy data with retry tracking.
     // Use navigator.geolocation to get coordinates so that any location
     // override (e.g. --loc flag in the emulator script) is propagated to
@@ -521,7 +580,8 @@ function fetchAndSendAstronomy(attemptCount) {
             var lon = pos.coords.longitude;
             lastKnownLat = lat;
             lastKnownLon = lon;
-            console.log('Astronomy using coordinates: ' + lat + ', ' + lon);
+            // No coordinates in logs: they are read from live phones (scripts/device-check.sh).
+            console.log('Astronomy using device coordinates');
             Geolocation.fetchAstronomyData(apiKey, lat, lon,
                 function(todayData) {
                     console.log('Today astronomy data received');
@@ -539,8 +599,7 @@ function fetchAndSendAstronomy(attemptCount) {
                             fetchAndSendAstronomy(attemptCount + 1);
                         }, 2000);
                     } else {
-                        console.log('Max retries reached (' + CONFIG.MAX_FETCH_RETRIES + '), falling back to cache');
-                        useCachedAstronomyData();
+                        astronomyFailed();
                     }
                 }
             );
@@ -565,8 +624,7 @@ function fetchAndSendAstronomy(attemptCount) {
                             fetchAndSendAstronomy(attemptCount + 1);
                         }, 2000);
                     } else {
-                        console.log('Max retries reached (' + CONFIG.MAX_FETCH_RETRIES + '), falling back to cache');
-                        useCachedAstronomyData();
+                        astronomyFailed();
                     }
                 }
             );
@@ -574,136 +632,3 @@ function fetchAndSendAstronomy(attemptCount) {
         { timeout: CONFIG.REQUEST_TIMEOUT_MS, maximumAge: CONFIG.GEOLOCATION_MAX_AGE_MS }
     );
 }
-
-/**
- * Calculate distance between two GPS coordinates using Haversine formula
- * @param {number} lat1 - Latitude of first point
- * @param {number} lon1 - Longitude of first point
- * @param {number} lat2 - Latitude of second point
- * @param {number} lon2 - Longitude of second point
- * @returns {number} Distance in kilometers
- */
-function calculateDistance(lat1, lon1, lat2, lon2) {
-    var R = 6371; // Earth's radius in kilometers
-    var dLat = (lat2 - lat1) * Math.PI / 180;
-    var dLon = (lon2 - lon1) * Math.PI / 180;
-    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-}
-
-/**
- * Fetch weather data from OpenWeatherMap and send to Pebble
- * Caches for configurable interval to avoid excessive API calls and GPS lookups.
- * Checks cache timestamp BEFORE requesting GPS to save phone battery.
- * Invalidates cache if location changes significantly (> 5km).
- * @param {number} attemptCount - Internal retry counter
- */
-function fetchAndSendWeather(attemptCount) {
-    weatherRetryPending = false;
-    attemptCount = attemptCount || 0;
-    
-    var apiKey = appSettings.OWM_API_KEY;
-    if (!apiKey) {
-        console.log('No OpenWeatherMap API key configured, skipping weather');
-        return;
-    }
-    
-    // --- Check cache validity by timestamp FIRST, before any GPS call ---
-    var cachedData = window.localStorage.getItem(CONFIG.TIME_CACHE_KEYS.WEATHER_DATA);
-    var lastFetchTime = window.localStorage.getItem(CONFIG.TIME_CACHE_KEYS.WEATHER_FETCH_TIME);
-    var weatherIntervalMs = (parseInt(appSettings.WEATHER_INTERVAL) || CONFIG.DEFAULT_WEATHER_INTERVAL_MIN) * 60 * 1000;
-    
-    if (cachedData && lastFetchTime) {
-        var elapsed = Date.now() - parseInt(lastFetchTime);
-        if (elapsed < weatherIntervalMs) {
-            // Cache is fresh — send cached data without GPS lookup
-            try {
-                var cached = JSON.parse(cachedData);
-                console.log('Using cached weather data (age: ' + Math.round(elapsed / 60000) + 'min)');
-                sendWeatherToPebble(cached);
-                return;
-            } catch (e) {
-                console.error('Error parsing cached weather: ' + e.message);
-                // Fall through to fresh fetch
-            }
-        }
-    }
-    
-    // --- Cache is stale or missing — now request GPS and fetch fresh data ---
-    navigator.geolocation.getCurrentPosition(
-        function(pos) {
-            var currentLat = pos.coords.latitude;
-            var currentLon = pos.coords.longitude;
-            
-            var units = appSettings.WEATHER_UNITS || 'metric';
-            
-            console.log('Fetching fresh weather data (attempt ' + (attemptCount + 1) + ')');
-            Weather.fetchWeatherData(apiKey, units,
-                function(data) {
-                    // Cache weather data with location
-                    window.localStorage.setItem(CONFIG.TIME_CACHE_KEYS.WEATHER_DATA, JSON.stringify(data));
-                    window.localStorage.setItem(CONFIG.TIME_CACHE_KEYS.WEATHER_FETCH_TIME, String(Date.now()));
-                    window.localStorage.setItem(CONFIG.TIME_CACHE_KEYS.WEATHER_LOCATION, JSON.stringify({
-                        latitude: data.latitude,
-                        longitude: data.longitude
-                    }));
-                    sendWeatherToPebble(data);
-                },
-                function(error) {
-                    console.error('Weather fetch error (attempt ' + (attemptCount + 1) + '): ' + error);
-                    
-                    if (attemptCount < CONFIG.MAX_FETCH_RETRIES) {
-                        weatherRetryPending = true;
-                        setTimeout(function() {
-                            if (!weatherRetryPending) return;
-                            weatherRetryPending = false;
-                            fetchAndSendWeather(attemptCount + 1);
-                        }, 2000);
-                    } else {
-                        console.log('Max weather retries reached, trying cached data');
-                        if (cachedData) {
-                            try {
-                                sendWeatherToPebble(JSON.parse(cachedData));
-                            } catch (e) {
-                                console.error('Error using expired weather cache: ' + e.message);
-                            }
-                        }
-                    }
-                }
-            );
-        },
-        function(err) {
-            // Geolocation error - fall back to cache if available
-            console.error('Geolocation error: ' + err.message);
-            if (cachedData) {
-                try {
-                    var cached = JSON.parse(cachedData);
-                    console.log('Using cached weather data (geolocation unavailable)');
-                    sendWeatherToPebble(cached);
-                } catch (e) {
-                    console.error('Error using cached weather: ' + e.message);
-                }
-            }
-        },
-        { timeout: CONFIG.REQUEST_TIMEOUT_MS, maximumAge: CONFIG.GEOLOCATION_MAX_AGE_MS }
-    );
-}
-
-/**
- * Send weather data to Pebble watchface
- * @param {Object} data - Weather data { temp, windSpeed, needsUmbrella }
- */
-function sendWeatherToPebble(data) {
-    var dictionary = {
-        "MSG_TYPE": MSG_TYPE_WEATHER,
-        "WEATHER_TEMP": String(data.temp),
-        "WEATHER_WIND": String(data.windSpeed),
-        "WEATHER_UMBRELLA": data.needsUmbrella ? 1 : 0
-    };
-    
-    sendToPebble(dictionary, 'Weather');
-}
-

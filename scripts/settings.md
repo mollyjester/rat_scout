@@ -18,9 +18,6 @@ The **Default** columns below are Clay's `defaultValue`, which applies only when
 
 | Key | Clay default | If missing |
 |-----|--------------|------------|
-| `DEX_LOGIN` | `""` | no glucose fetch |
-| `DEX_PASSWORD` | `""` | no glucose fetch |
-| `DEX_REGION` | `"ous"` | `"ous"` |
 | `BG_UNITS` | `"mg/dL"` | `"mg/dL"` |
 | `BG_SHOW_DELTA` | `true` | **off** |
 | `BG_SHOW_TIMEDELTA` | `true` | **off** |
@@ -36,9 +33,6 @@ The **Default** columns below are Clay's `defaultValue`, which applies only when
 | `DATE_FORMAT` | `"dd.mm"` | `"dd.mm"` |
 | `HOURLY_VIBRATION` | `false` | off |
 | `HOURLY_SOUND` | `false` | off |
-| `OWM_API_KEY` | `""` | weather skipped |
-| `WEATHER_UNITS` | `"metric"` | `"metric"` |
-| `WEATHER_INTERVAL` | `"60"` | 60 minutes |
 | `ASTRO_API_KEY` | `""` | astronomy shows N/A |
 | `GARBAGE_PICKUP_TIME` | `"9"` | 9 |
 | `GARBAGE_ORGANIC_DAYS` | `[true,false,true,false,true,false,false]` | **no days** |
@@ -49,21 +43,9 @@ The **Default** columns below are Clay's `defaultValue`, which applies only when
 
 ---
 
-## Dexcom Account
+## Not here: the Dexcom account
 
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `DEX_LOGIN` | string | `""` | Dexcom account username / phone number |
-| `DEX_PASSWORD` | string | `""` | Dexcom account password |
-| `DEX_REGION` | string | `"ous"` | Dexcom server region |
-
-**`DEX_REGION` values:**
-
-| Value | Meaning |
-|-------|---------|
-| `"ous"` | Outside US (default) |
-| `"us"` | United States |
-| `"jp"` | Japan |
+The Dexcom login, password and region are not Clay settings. They are set on the Rat Scout Glucose plugin's own settings page (`plugin/config.html`) and stored in the plugin's storage (its localStorage, the password in `Pebble.secureStorage`), which the watchface cannot read: [`.github/ARCHITECTURE.md`, "Plugin storage keys"](../.github/ARCHITECTURE.md#plugin-storage-keys). The plugin has its own units setting for its `glucose`/`delta` values; the watchface formats the plugin's mg/dL values with `BG_UNITS` below. Older versions stored `DEX_LOGIN`, `DEX_PASSWORD` and `DEX_REGION` in `clay-settings`; the watchface deletes them on start (`src/pkjs/legacy_cleanup.js`). `--settings` only writes the watchface's `clay-settings`; `pebble wipe` clears the emulator's stored app data.
 
 ---
 
@@ -114,34 +96,6 @@ Optional. When set, these override the general thresholds during the configured 
 |-------|---------|
 | `"dd.mm"` | 11.05 (default) |
 | `"mm.dd"` | 05.11 |
-
----
-
-## Weather
-
-Requires a free [OpenWeatherMap](https://openweathermap.org/api) API key.
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `OWM_API_KEY` | string | `""` | OpenWeatherMap API key |
-| `WEATHER_UNITS` | string | `"metric"` | Temperature and wind speed units |
-| `WEATHER_INTERVAL` | string | `"60"` | How often to fetch weather (minutes) |
-
-**`WEATHER_UNITS` values:**
-
-| Value | Units |
-|-------|-------|
-| `"metric"` | °C, m/s (default) |
-| `"imperial"` | °F, mph |
-
-**`WEATHER_INTERVAL` values:**
-
-| Value | Meaning |
-|-------|---------|
-| `"30"` | Every 30 minutes |
-| `"60"` | Every hour (default) |
-| `"120"` | Every 2 hours |
-| `"180"` | Every 3 hours |
 
 ---
 

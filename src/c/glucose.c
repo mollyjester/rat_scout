@@ -16,6 +16,20 @@ typedef enum {
 } BgZone;
 static BgZone s_bg_zone = BG_ZONE_NORMAL;
 
+/**
+ * Set the BG zone and persist it, writing flash only when it changes.
+ * @param zone - New zone
+ */
+static void set_bg_zone(BgZone zone) {
+    if (zone == s_bg_zone) return;
+    s_bg_zone = zone;
+    if (zone == BG_ZONE_NORMAL) {
+        persist_delete(PERSIST_KEY_BG_ZONE);
+    } else {
+        persist_write_int(PERSIST_KEY_BG_ZONE, zone);
+    }
+}
+
 // Time delta buffer (only used within update_delta_display)
 static char s_time_delta_buffer[BUFFER_TIME_DELTA];
 
@@ -59,6 +73,8 @@ void update_delta_display(time_t current_time) {
         persist_delete(PERSIST_KEY_BG_DELTA);
         persist_delete(PERSIST_KEY_TIMESTAMP);
         s_last_reading_timestamp = 0;
+        // No reading for an hour: a high or low after this is a new episode and alerts again.
+        set_bg_zone(BG_ZONE_NORMAL);
         
         snprintf(s_bg_buffer, sizeof(s_bg_buffer), "---");
         text_layer_set_text(s_glucose_layer, s_bg_buffer);
@@ -112,15 +128,20 @@ void update_delta_display(time_t current_time) {
  * reading enters a HIGH or LOW zone. Each side-effect (vibration, sound,
  * overlay) is gated independently on its own user toggle.
  * Values are compared in x10 scale to handle mmol/L decimals.
+ * A reading STALE_THRESHOLD_MINUTES or older (shown as "---" anyway, e.g. the last one
+ * delivered after the phone was out of range) neither alerts nor changes the zone, so a fresh
+ * reading in the same zone still alerts.
  * @param bg_str - The formatted glucose value string (e.g. "120" or "6.7")
+ * @param reading_ts - The reading's time, epoch seconds (0 = unknown: no alert)
  */
-void check_bg_threshold_vibration(const char *bg_str) {
+void check_bg_threshold_vibration(const char *bg_str, time_t reading_ts) {
     // Skip zone detection only when EVERY BG alert side-effect is disabled.
     // Previously this short-circuited on !s_bg_vibration alone, which silently
     // disabled the BG sound and overlay alerts whenever Threshold Vibration
     // was off — even though the user had explicitly enabled the sound/overlay.
     if (!s_bg_vibration && !s_bg_high_sound && !s_bg_low_sound && !s_overlay_enabled) return;
     if (!bg_str || bg_str[0] == '\0') return;
+    if (reading_ts <= 0 || time(NULL) - reading_ts >= STALE_THRESHOLD_MINUTES * 60) return;
 
     // Parse BG string to x10 integer (e.g. "120" -> 1200, "6.7" -> 67)
     int bg_x10 = 0;
@@ -200,6 +221,18 @@ void check_bg_threshold_vibration(const char *bg_str) {
                 overlay_show(ALERT_KIND_BG_LOW, msg);
             }
         }
-        s_bg_zone = new_zone;
+        set_bg_zone(new_zone);
     }
+}
+
+/**
+ * Restore the BG zone saved before the last exit, so relaunching the face while BG is still
+ * high or low doesn't alert again. Call after the reading timestamp is restored: without a
+ * reading (none yet, or wiped after an hour) the zone starts normal.
+ */
+void glucose_restore_zone(void) {
+    s_bg_zone = BG_ZONE_NORMAL;
+    if (s_last_reading_timestamp <= 0 || !persist_exists(PERSIST_KEY_BG_ZONE)) return;
+    int zone = persist_read_int(PERSIST_KEY_BG_ZONE);
+    if (zone == BG_ZONE_HIGH || zone == BG_ZONE_LOW) s_bg_zone = (BgZone)zone;
 }

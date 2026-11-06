@@ -7,7 +7,12 @@ Before stating any technical behavior as fact (SDK semantics, hardware sharing, 
 
 ```
 rat_scout/
-├── package.json          # Pebble app manifest: UUID, platforms, messageKeys, resources
+├── package.json          # Watchface manifest: UUID, platforms, messageKeys, resources, permissions
+├── plugin/               # The Rat Scout Glucose pbw (plugin-only, own uuid)
+│   ├── package.json      # Its manifest: projectType plugin, Dexcom domains, plugin block, configPage
+│   ├── wscript           # SDK 4.44 build rules for a plugin-only project (as upstream pebble-apps stocks/wscript)
+│   ├── plugin.js         # GENERATED plugin script (plugin.script); never edit
+│   └── config.html       # Its settings page (Dexcom login, password, region, units)
 ├── wscript               # Waf build script (pebble build entry point)
 ├── resources/
 │   ├── fonts/
@@ -27,38 +32,270 @@ rat_scout/
 │   │   ├── overlay.c      # Transient overlay banner (Quick View Alerts feature)
 │   │   ├── glucose.c      # BG rendering, delta display, threshold vibration logic
 │   │   ├── sounds.c       # Polyphonic alert melodies (low/high BG, hourly chime) via Speaker API
-│   │   ├── messaging.c    # AppMessage inbox/outbox callbacks, settings/data dispatch
+│   │   ├── messaging.c    # AppMessage inbox/outbox callbacks, settings/data dispatch, fetch pings (one timed due ping per reading)
 │   │   ├── draw_procs.c   # Custom GPath and layer draw procedures (battery, status bar, corners)
 │   │   ├── layout.c       # Layer position constants and create_text_layer / create_icon_layer helpers
 │   │   └── ui_helpers.c   # Shared utilities: persist_write_string_if_changed, destroy_icon_layer, etc.
 │   ├── common/
 │   │   └── utils.js       # Shared JS utilities (used by pkjs modules)
+│   ├── plugin-src/        # Plugin sources (ES5 + Promise); bundled into plugin/plugin.js
+│   │   ├── main.js        # health/glucose source handler, cache, throttle; settings-page handler
+│   │   ├── settings.js    # Plugin settings: localStorage + Pebble.secureStorage (password)
+│   │   ├── dexcom.js      # Dexcom Share API client (auth + glucose fetch)
+│   │   ├── dexcom_guard.js # Dexcom login guard
+│   │   └── xhr_shim.js    # XMLHttpRequest subset on fetch, so dexcom.js runs unchanged
 │   └── pkjs/
 │       ├── index.js        # PebbleKit JS entry: app lifecycle, settings, message queue, data fetching
 │       ├── config.json     # Clay settings UI definition (all user-facing settings)
 │       ├── clay-config.js  # Clay custom function: attaches click handlers for test buttons
-│       ├── dexcom.js       # Dexcom Share API client (auth + glucose fetch)
-│       ├── weather.js      # OpenWeatherMap API client (current + forecast, smart cache)
+│       ├── glucose.js      # BG/delta formatters + sendNoGlucoseData (also bundled into the plugin)
+│       ├── glucose_plugin.js # Glucose source: subscription to the plugin, modes, watchdog, gate
+│       ├── legacy_cleanup.js # Purges Dexcom data older versions left in the face's localStorage
+│       ├── message_queue.js # Watch message queue (one in flight, 30 s timeout) + change filter
+│       ├── watch_settings.js # Settings dictionary (night window, garbage bag)
+│       ├── weather_plugin.js # Weather source: weather/location + preferences/units subscriptions, units, umbrella
+│       ├── permissions.js  # Logs permission states via Pebble.permissions.query (diagnostic)
 │       ├── geolocation.js  # ipgeolocation.io astronomy API client
 │       ├── astronomy.js    # Astronomy time calculations (next sun/moon event, phase)
 │       └── garbage.js      # Garbage bag schedule computation
+├── docs/
+│   ├── plugins.md         # Developing plugins for the current app/SDK/tools: sandbox, packaging, testing, pitfalls
+│   └── noVNC.md           # Viewing and driving the emulator in a browser
 ├── test/
+│   ├── helpers/plugin_host.js  # Loads the plugin bundle in a vm with mock host APIs
 │   ├── astronomy.test.js
 │   ├── clay-config.test.js
 │   ├── dexcom.test.js
+│   ├── dexcom_guard.test.js
+│   ├── glucose_plugin.test.js
+│   ├── plugin.test.js
+│   ├── permissions.test.js
 │   ├── garbage.test.js
 │   ├── glucose.test.js
+│   ├── legacy_cleanup.test.js
+│   ├── message_queue.test.js
+│   ├── watch_settings.test.js
 │   ├── utils.test.js
 │   └── weather.test.js
 └── scripts/
-    ├── run-emulator.sh        # Convenience wrapper: pebble install --emulator
+    ├── run-emulator.sh        # Convenience wrapper: pebble install --emulator (--pbw for another pbw)
+    ├── build-plugin.js        # Bundles src/plugin-src/ into plugin/plugin.js (--check verifies)
+    ├── pack-plugin.py         # pebble build in both projects; copies to build/rat-scout.pbw + build/rat-scout-glucose.pbw
+    ├── plugin-smoke.sh        # Emulator smoke test for the plugin (manual; network blocked)
+    ├── device-check.sh        # On-device checklist: install/logs/screenshot over CloudPebble, log analysis
     ├── browser_override.py    # Override browser for Pebble config in Codespaces
     ├── settings.json          # Template for run-emulator.sh --settings
     └── settings.md            # Reference for every settings key
 ```
 
 ## Target Platforms
-aplite, basalt, diorite, emery, flint
+flint, emery (`package.json` `targetPlatforms`; `pebble build` builds only these).
+
+## Permissions (`usesPermissions`)
+Declared per pbw in `pebble.usesPermissions`, for the phone app's plugin-era permission system.
+
+Watchface (`package.json`):
+
+| Permission | Why |
+|---|---|
+| `Health` | Steps (`health_service_sum_today`, `rat_scout.c` `update_steps`). The plugins guide: "Health isn't enforced yet: health data is read on the watch ... Declare it anyway if you use health data." |
+| `Location` | `navigator.geolocation` in `index.js` (astronomy), and reading `weather/location`: weather plugins require it of their callers (`callerPermissions: ["Location"]` in the built-in Weather, mobileapp `WeatherPlugin.kt:113`, and MET Norway's manifest; enforced in `PluginClient.kt` `observe()` via `requiredOfCaller`) |
+| `Internet` → `api.ipgeolocation.io` | `geolocation.js` |
+| `Glucose` (plugin: `01523c90-aa11-4a82-8e00-58cc3e98472c`) | Reading the Rat Scout Glucose plugin. The user approves it on the phone ("Read your glucose readings (via Rat Scout Glucose)"); until then the subscription gets `PERMISSION_DENIED` |
+
+Plugin (`plugin/package.json`):
+
+| Permission | Why |
+|---|---|
+| `Internet` → `share2.dexcom.com`, `shareous1.dexcom.com`, `share.dexcom.jp` | Dexcom Share regions (`src/plugin-src/dexcom.js` base URLs) |
+
+- They only take effect when the pbw is marked `manifestVersion: 2` and the user has plugins enabled (Pebble plugins preview guide, "Permissions" and "Declaring": "only in place when plugins are enabled"; "Without that it's a legacy app"). A legacy pbw keeps the old implicit internet + location access.
+- SDK 4.44 builds every pbw as `manifestVersion: 2` by default (SDK 4.44 changelog), so plain `pebble build` output reads plugins (see [Build](#build)).
+- Keep `Internet` limited to domains the JS actually requests. `pebble convert-manifest --dry-run` also lists hosts found in comments and help text (github.com, ipgeolocation.io); those are never requested and are deliberately not declared.
+
+## Plugin (preview) — `health/glucose`
+**Rat Scout Glucose** is a separate plugin-only pbw (`plugin/`, uuid `01523c90-aa11-4a82-8e00-58cc3e98472c`; Pebble plugins, mobile app 1.16.x or later, off by default behind Settings → Plugins → Plugins / permissions preview) that serves the latest Dexcom reading to Rat Scout and any other watchface, app or Index. Category contract (our own; no published `health` category exists yet):
+
+Status (2026-11-05): SDK 4.44 builds plugins and Pebble announced them as live, inviting uploads (x.com/ericmigi/status/2118415004076756997); the plugins guide, Publishing Plugins ("limited to invited developers for now") and the appstore's Plugins page still call them a (dev) preview, and the app still hides them behind "Plugins / permissions preview". Publishing is the owner's decision.
+
+`health/glucose`, one instance, `instanceId: "dexcom"`, `supportsMultiple: false`, `suggestedRefreshIntervalSec: 60`, caller permission `Glucose` (defined by the plugin, kind `read`, label "Read your glucose readings").
+
+| Property | Shapes | Notes |
+|---|---|---|
+| `name` | shortText | "Dexcom" |
+| `status` | shortText, longText | shortText `ok` (longText "Latest reading") on every reading instance; shortText `busy` (longText "Signing in to Dexcom") on an instance that has only `name` and `status`, sent when Dexcom was not called because another run holds the login lock and no reading for these credentials is cached |
+| `glucose` | numericValue, shortText, longText | Plugin's units (`ratscout.settings.units`, default mg/dL), formatted by glucose.js `formatBGValue`. numericValue range: mg/dL min 40, max 400; mmol/L min 2.2, max 22.2. Long: value and units ("120 mg/dL"); every shape is the same reading, so the trend stays in `trend` (preview guide, "Shapes") |
+| `delta` | numericValue, shortText | User's units, glucose.js `formatBGDelta` ("+5"). Omitted when the reading has no numeric delta (single reading) |
+| `glucose_mgdl` | numericValue | Raw Dexcom mg/dL (`unit: "mg/dL"`), no min/max: the lossless value Rat Scout's PKJS reads (it formats in its own Clay `BG_UNITS`) |
+| `delta_mgdl` | numericValue | Raw mg/dL delta (`unit: "mg/dL"`). Omitted together with `delta` |
+| `trend` | shortText, longText | Arrow (dexcom.js `TREND_ARROWS`, as pydexcom: `None` → empty, `NotComputable` → `?`, `RateOutOfRange` → `-`) and a description |
+| `trend_code` | longText | Raw Dexcom `Trend` |
+| `reading_time` | timestamp | Epoch seconds |
+
+Answers:
+- No login or password set, Dexcom failure, login paused (`badcreds`) → `instances: []`, `validUntilMs` now + 60 s. A failure at the login steps or a failed session clears `accountId`/`sessionId`; a failure after a successful login (no readings, a readings timeout or network error) keeps them, so the next poll reads without logging in (`dexcom_guard.js` `keepsSession`).
+- Wrong category/item → `respond.error('INVALID_REQUEST')`; an exception while handling the Dexcom result → `respond.error('UNKNOWN')` (`main.js`), releasing the login lock if this request took it.
+- Reading younger than 300 s (`READING_FRESH_SEC`; cached, same credentials) → served from cache, no Dexcom call; `validUntilMs = max(now + 60 s, (ts + 300) * 1000)`.
+- Dexcom is called at most once per 55 s (`ATTEMPT_THROTTLE_MS`, `ratscout.plugin.lastAttempt`; 55 rather than 60 so jitter in a 60 s poll never skips one), except while the next reading is due: with a cached reading for these credentials that is younger than 435 s (`FAST_WINDOW_SEC`) **and** a Dexcom session, at most once per 12 s (`FAST_ATTEMPT_THROTTLE_MS`). The watch pings once at `ts + 320` (see Overdue refresh); the 12 s throttle lets that ping reach Dexcom even right after a host poll found nothing. Logins are never sped up (no session → 55 s) (`test/plugin.test.js` "frequent requests", "a due reading never speeds up logins").
+- Login lock held (younger than 45 s, and not dated in the future), or throttled → cached reading for these credentials if any (any age, same `validUntilMs` rule); else the `busy` instance (`validUntilMs` now + 30 s) while the lock is held, or `instances: []` when the last attempt finished without a reading.
+
+Runtime: a plugin "is started fresh for each request" (preview guide), so all state is in the plugin's localStorage. The plugin has its own uuid, so it shares no localStorage with the watchface and does not read the face's `clay-settings`.
+
+Settings (`src/plugin-src/settings.js`): set on the plugin's own settings page, `plugin/config.html` (`configPage`, bundled in the pbw). The page calls `Pebble.sendMessage('plugin', {type: 'load'|'save'})`, answered by `handleConfigMessage` (`main.js`):
+- Login, region and units in the plugin's localStorage (`ratscout.settings.login`, `ratscout.settings.region`, `ratscout.settings.units`); the password in `Pebble.secureStorage` under `dexcom.password`. Region defaults to `ous`, units to `mg/dL`.
+- `load` returns `{login, region, units, hasPassword}`: the page never receives the password. An empty password on save keeps the stored one.
+- `save` stores and calls `Pebble.refreshSources(['health/glucose'])` (if present). Only when the login, the region or the password changed does it remove `accountId`, `sessionId` and `ratscout.plugin.lastAttempt`, so the new account is tried at once; saving units or the same account again keeps them, so repeated saves can't bypass the 55 s throttle. A new password (different from the stored one) bumps `ratscout.settings.credVersion`.
+- `Settings.load` and `Settings.save` run inside a promise chain, so a throwing `secureStorage` still answers the request (`UNKNOWN`) or the page (`ok: false`).
+
+HTTP: `src/plugin-src/dexcom.js` uses XMLHttpRequest; the preview guide documents only `fetch` ("Nothing else"), so the bundle binds `src/plugin-src/xhr_shim.js` as `XMLHttpRequest` in bundle scope (never as a global), and `setTimeout`/`clearTimeout` to the runtime's if present, else no-ops. Phone-side availability of XHR and setTimeout is UNVERIFIED; the emulator has both (`pypkjs/plugins/js_plugin.py` installs Timers and XHRExtension), which is why the shim is used unconditionally.
+
+### Glucose source selection (`src/pkjs/glucose_plugin.js`)
+The watchface reads BG only from the Rat Scout Glucose plugin (`PLUGIN_UUID`); it never contacts Dexcom ("plugin only", no direct fallback).
+
+| Mode | Watch shows | Entered when |
+|---|---|---|
+| `unavailable` | "---" (sent through the gate, `deps.send` type `No glucose data`) | no `Pebble.subscribeToSource`/`enumeratePlugins`, `enumeratePlugins` throws or does not list `PLUGIN_UUID` with `health/glucose`, `subscribeToSource` throws (on start or resubscribe), or see errors below, grace expiry, the stall watchdog |
+| `pending` | nothing new yet | `ready`, or a re-check: subscribed with `plugin: PLUGIN_UUID`; grace timer 30 s |
+| `plugin` | the subscription's envelopes | any `onData` (empty included: it shows the host is alive), also from `unavailable` while the subscription is kept |
+
+Errors (`onError(err)`, by `err.code` only, missing code = `UNKNOWN`; whether `err.message` carries the plugin's text is UNVERIFIED; the message is logged). Ignored while `unavailable`, except `INVALID_REQUEST`:
+
+| Code | Action |
+|---|---|
+| `INVALID_REQUEST` | unsubscribe, `unavailable`, pinned (no re-check) until Rat Scout's settings are saved (`onSettingsChanged` lifts the pin and detects again) |
+| message "… was updated or removed; subscribe again" (code `UNKNOWN`) | the phone closed the subscription because it retired the plugin (plugin updated or removed, or the plugin preview turned off; mobileapp `plugin/JsPlugin.kt` `observe()`). Drop it and detect again: still listed → subscribe at once (`pending`, the shown reading stays); not listed → `unavailable`, "---" at once, and the re-check resubscribes later |
+| `PERMISSION_DENIED`, `PLUGIN_UNAVAILABLE` | `unavailable`, keep the subscription (the guide: `PERMISSION_DENIED` lasts until the user answers; an error does not end a subscription) |
+| anything else while `pending` | `unavailable`, keep the subscription |
+| anything else in `plugin` | count (reset by any `onData`); the first keeps the shown reading; `unavailable` at the 2nd consecutive error or if no envelope for more than 11 min |
+
+- **Grace:** still `pending` 30 s after subscribing → `unavailable`.
+- **Recovery:** `recoverIfStuck(now)` runs in `fetchAllData()`. While `unavailable` *with* a subscription (grace expiry, stall watchdog, `PLUGIN_UNAVAILABLE`, a second soft error) nothing else would resubscribe, so it does, at most every 5 min (`RECOVER_MIN_MS`, counted from entering `unavailable` or the last resubscribe). Not after `PERMISSION_DENIED`: the host re-evaluates grants on the open subscription and serves it once the user approves (mobileapp `plugin/PluginClient.kt` `observe()`). The mode stays `unavailable` until an envelope arrives.
+- **Synchronous answers:** `tryStart` enters `pending` and starts the grace timer only if no callback ran inside `subscribeToSource` (a callback counter). Android answers asynchronously (`SourceDispatcher.subscribe` launches a coroutine); other hosts weren't checked.
+- **Re-check:** `recheck()` runs at the top of `fetchAllData()` after the stall watchdog, only while `unavailable` without a subscription and not pinned. It repeats the detection and subscribes if the plugin is listed now, e.g. when the user installs the plugin or turns the preview on while the face runs. Detection is a local `enumeratePlugins()` call, so a re-check on every watch ping costs nothing; a re-check that still finds nothing logs and sends nothing.
+- **Overdue refresh:** `refreshIfOverdue(now)` runs in `fetchAllData()` after the re-check. In `plugin` mode with a subscription and a reading, once that reading is at least 300 s old (`READING_DUE_SEC`) it unsubscribes and subscribes again (`Glucose plugin: resubscribe (reading overdue N s)`), at most once per 12 s (`FAST_RESUBSCRIBE_MIN_MS`) while the reading is younger than 435 s (`FAST_WINDOW_SEC`, = `main.js`), else once per 55 s (`RESUBSCRIBE_MIN_MS`, the plugin's normal Dexcom throttle). The interval counts from the last resubscribe (`onSettingsChanged` counts too) and from the last envelope that arrived after the plugin's cache went stale (`ts + 300`, `PLUGIN_FRESH_SEC` = `main.js` `READING_FRESH_SEC`; an earlier envelope was a cached answer, which on the phone held a reading back a minute). The phone host reads at once on a new subscription, while its own poll waits 60 s of *awake* time, which took about 6 min on the phone (docs/plugins.md §6.1). The watch pings once at `ts + 320` s (a timer), then every minute from `ts + 380` to `ts + 600` while the reading is missing (see Gate). The mode, the gate and `lastPluginOkMs` are untouched, so a repeat of the shown reading is skipped and the stall watchdog still counts from the last real envelope; no grace timer starts; errors on the new subscription follow the table above. Callbacks of a replaced subscription are ignored (a generation counter set before subscribing). Never in `pending` or `unavailable`, before the first reading, or after `INVALID_REQUEST`. Dexcom load stays bounded by the plugin (Answers above). `test/glucose_plugin.test.js` checks that the watch's `DUE_PING_SECONDS`, these constants and the plugin's agree.
+  - **Why one timed ping at +320 s:** the old delay (~55 s) was the watch's due ping (`ts + 305`) waiting for the next minute tick. Dexcom usually publishes 5–20 s after the reading time (phone, 2026-11-05: 4 of 6 readings were there at +305 s, all 6 by +320 s). A first version pinged every 15 s from +305 to +425 s (21, 21, 7, 5, 6, 6 s on the phone, 8 pings in 30 min) but allowed 9 pings in 2 min whenever Dexcom is late; rejected for watch battery. The single ping keeps the watch at no more pings than before (one per reading when Dexcom is on time).
+- **Permission log:** at the first subscription and on `PERMISSION_DENIED` the face logs the state of its `Glucose` permission (`src/pkjs/permissions.js`, see [Permission states](#permission-states-srcpkjspermissionsjs)).
+- **Stall watchdog:** `checkStall(now)` at the top of `fetchAllData()` (runs on `ready`, `webviewclosed` and every watch ping, at least every 5 min, `rat_scout.c` tick handler). In `plugin` mode with no envelope for more than 11 min → `unavailable` (subscription kept). A later envelope returns to `plugin`. An old reading timestamp alone (sensor gap) never triggers it.
+- **Envelope → watch:** an instance with `glucose_mgdl` + `reading_time` becomes `{current: {_value, _delta: delta_mgdl or null, _datetime}}` passed to `Glucose.buildGlucoseDictionary`, formatted in the face's Clay `BG_UNITS` (no mmol round trip); without `delta_mgdl`, `BGDELTA` is `""` (it used to be the string `"null"`, or `"0.0"` in mmol/L). `status: busy` sends nothing (the watch keeps its value). Anything else sends `"---"` with `TIMESTAMP 0`.
+- **Gate:** every glucose dictionary (plugin data and `unavailable`'s "---") goes through one gate; one whose `BG` and `TIMESTAMP` equal the last sent is dropped (`Glucose gate: skipped duplicate ts=…`), which stops repeat host refreshes. A send that fails or times out in the queue is forgotten by the gate (unless something newer was sent since) and kept: `retryUnsent()`, first in `fetchAllData()` after the stall watchdog, resends it on the next watch ping, which shows the watch is reachable (`Glucose gate: send failed ts=…`, `Glucose gate: retrying ts=…`). A newer send replaces it. Catch-up polling: every glucose message with a reading schedules one due ping (`messaging.c` `schedule_due_ping`: an AppTimer at `ts + DUE_PING_SECONDS` = 320; none if that has passed; a newer reading replaces it) and sets `s_next_fetch_time = ts + 380`; from then the tick handler pings every minute until `ts + 600` (`OVERDUE_PING_WINDOW_SECONDS`), then every 5 min (`FALLBACK_FETCH_MINUTES`) until a newer reading arrives. All pings go through `messaging_request_fetch()`: skipped while the phone's Pebble app is not connected (`connection_service_peek_pebble_app_connection()`; Bluetooth off or phone out of range), and one ping is sent when it connects again (`messaging_init()` subscribes `pebble_app_connection_handler`, so a reading that came due meanwhile is fetched at once); skipped while the outbox is busy (the next ping retries); `messaging_deinit()` cancels the timer. Watch pings drive the re-check, the watchdog and the overdue refresh. Alerts fire only on a zone change (`glucose.c`, `new_zone != s_bg_zone`).
+- **Settings saved:** `onSettingsChanged()` clears the gate and resubscribes, so the next envelope is re-formatted and sent (`BGDELTA`/`BG_SHOW_TIMEDELTA` only arrive in glucose messages, `messaging.c`). The host reads at once on a new subscription: mobileapp `plugin/JsPlugin.kt:124-135` requests before its first wait (pypkjs `plugins/base.py` `observe()` does the same), and on the phone the resubscribe delivered within about 1 s.
+- **Legacy cleanup:** on `ready`, `src/pkjs/legacy_cleanup.js` removes `DEX_LOGIN`, `DEX_PASSWORD`, `DEX_REGION` from the face's `clay-settings` (Clay keeps stored keys otherwise) and the old session, cache and guard keys (`accountId`, `sessionId`, `ratscout.plugin.*`, `ratscout.auth.*`) that versions fetching Dexcom in the face left there. Unit-tested only (`test/legacy_cleanup.test.js`); its phone log line was not captured.
+- All watch messages still go through `sendToPebble()`.
+
+### Weather source (`src/pkjs/weather_plugin.js`)
+The face reads weather from plugins only, through two subscriptions that **never name a plugin** (no `plugin` field): plugins serving the same source replace each other, and the phone picks the provider (mobileapp `PluginRegistry.kt` `findSourcePlugin`: the caller's named plugin, else the user's choice for the source in the app, else built-ins first).
+
+| Subscription | Served by | Asked for |
+|---|---|---|
+| `weather/location` | The user's chosen weather plugin (e.g. MET Norway Weather), else the built-in Weather | `temperature`, `wind_speed`, `condition_code`, `daily_precipitation`, `hourly_condition_code`; no `iconPixelSize` (no glyphs) |
+| `preferences/units` | Built-in Preferences (`PreferencesPlugin.kt`) | `temperature` (`°C`/`°F`), `wind_speed` (`km/h`/`mph`/`m/s`/`knots`) |
+
+- **Instance:** the first one (the user's first weather location), as upstream `weather-face` does.
+- **Units:** each `numericValue` carries its unit and the plugins differ: MET Norway always `°C` and `m/s` (met-weather `src/plugin/index.js:369`, `:525`, pebble-plugins `0e348c2`); the built-in Weather the app's temperature unit and always `mph` for wind (`WeatherPlugin.kt:131`, `:253`, `:311`, mobileapp `dbc937e`). The face converts from the reported unit into `preferences/units` and rounds; a value in a unit it doesn't know (or without one) shows "--".
+- **Umbrella:** current `condition_code`, or any hour of `hourly_condition_code` from now to the end of today, in `light_rain`, `heavy_rain`, `light_snow`, `heavy_snow`, `rain_and_snow` (the vocabulary both plugins use: `WeatherPlugin.kt` `conditionCodeOf`, met-weather `conditionCode`); or today's `daily_precipitation` above 30%. Series index today from their `start` (a local midnight) and `stepSec`. A property the plugin leaves out counts as no.
+- **"--" / "--" / no umbrella** (through the change filter): a source not listed by `enumeratePlugins()` (shown and logged once until one appears), `subscribeToSource` throwing, `PERMISSION_DENIED` (the subscription is kept: the host serves it once approved), `INVALID_REQUEST` (unsubscribed until Rat Scout's settings are saved), no instance, or one of the two answers still missing.
+- **Other errors** (e.g. MET's `PLUGIN_UNAVAILABLE` "Could not reach MET Norway.") are logged; the watch keeps the last weather.
+- **Provider choice:** **Settings → Plugins → Preferred sources** in the app sets the user's choice for `weather/location` (plugins guide, "Which plugin answers"). Settings → Weather → "Weather provider" writes the same preference (mobileapp `f127b2a`: `WatchSettingsScreen.kt:1527` and `PluginPreferencesScreens.kt:366` both call `setPreferredSourcePlugin`). The phone applies it when a subscription is made, not to an open one (phone-verified on 1.16.0.5 and 1.17.0.1: no error, no new data), so a change reaches the face when it subscribes again: the face restarting, or one of the cases below.
+- **Permission log:** when `weather/location` is first subscribed, and when it answers `PERMISSION_DENIED`, the face logs the state of `Location` (`src/pkjs/permissions.js`, see [Permission states](#permission-states-srcpkjspermissionsjs)).
+- **"… subscribe again"** (code `UNKNOWN`: the phone retired the serving plugin, e.g. updated, removed or the preview turned off): unsubscribe, detect again, subscribe at once; callbacks of the old subscription are ignored (generation counter).
+- **Watch pings** (`fetchAllData()` → `recheck()`): subscribe to a source that had no plugin, and render again, so a failed send (forgotten by the change filter) is retried and the umbrella follows the hours left today.
+- **Cadence:** the host polls `weather/location` per the plugin's `suggestedRefreshIntervalSec` (MET 1800 s; awake time only, see docs/plugins.md §6.1). MET caches its forecast until MET's `Expires`; the built-in Weather reads what the app last fetched and never fetches itself (`WeatherPlugin.kt`).
+- **Log:** `Weather data: plugin=<name> temperature=<value> <unit> wind=<value> <unit>` and `Weather units: plugin=<name> temperature=<unit> wind=<unit>`; the name is looked up from `enumeratePlugins()` because `scripts/device-check.sh` masks UUIDs other than the face's. No place names or coordinates.
+- Weather settings in Clay no longer exist (no API key, units or interval).
+
+### Plugin pbws
+- Both are SDK projects (SDK 4.44 or later): the watchface in the root, the plugin in `plugin/` (`projectType: "plugin"`, `plugin/wscript` as upstream pebble-apps `stocks/wscript`). SDK 4.44 builds pbws as `manifestVersion: 2` by default, bundles `plugin.script` and a local `configPage`, and validates the `plugin` block at configure time (permission name alphanumeric, not `InvokeAction`, a label, `kind` in `read`/`write`/`exfiltrating`; `waflib/extras/sdk_helpers.py` `validate_plugin`). The plugins guide also lists `dangerous`; SDK 4.44 rejects it, so we use `read`.
+- `python3 -I scripts/pack-plugin.py` checks the bundle (`build-plugin.js --check`), runs `pebble clean` + `pebble build` in both projects (skipped with `--no-build`), refuses a pbw without `manifestVersion: 2`, then copies:
+  - `build/<dir>.pbw` → `build/rat-scout.pbw`: the watchface (a watchapp needs `manifestVersion: 2` to read plugins; plugins guide, "Writing a watchface or app that uses plugins"), no plugin.
+  - `plugin/build/plugin.pbw` → `build/rat-scout-glucose.pbw`: `appinfo.json`, `plugin.js`, `config.html`, no watch binary.
+  The fixed names are what `device-check.sh`, `plugin-smoke.sh` and `run-emulator.sh` install.
+- On 2026-11-05 the SDK 4.44 plugin pbw had the same three files as the earlier hand-built one, with an identical `plugin.js`; its appinfo adds only `name` and an empty `capabilities`.
+
+### Permission states (`src/pkjs/permissions.js`)
+`logPermission(Pebble, key, label, prefix)` calls `Pebble.permissions.query(key)` (plugins guide, "Checking a permission") and logs `<prefix>: permission <label> granted`, `… waiting for approval: allow it on Rat Scout's page in the Pebble app` (`prompt`) or `… turned off for Rat Scout: …` (`denied`). Diagnostic only: nothing depends on the answer, and a query doesn't count as a use. No-op without the API.
+- Glucose: key `<plugin uuid>:Glucose`, the host's key for a permission another plugin defines (mobileapp `permissions/PluginDefinedPermissions.kt` `pluginPermissionKey`); queried at the first subscription and on `PERMISSION_DENIED`. The uuid is never logged. Phone-verified on 1.17.0.1: answered `granted` (an unrecognised key answers `denied`).
+- Weather: key `Location`, queried when `weather/location` is first subscribed and on its `PERMISSION_DENIED` (`preferences/units` needs no permission).
+
+### Verification status
+Emulator = pebble-tool 5.1.1 (Python 3.13) / pypkjs 3.0.3 on flint, via `scripts/plugin-smoke.sh` (all checks pass with the two-pbw split: no-account, cached-reading, network-blocked, no-plugin; not re-run with SDK 4.44 builds). Phone = Pebble app 1.16.0.5 (Android, beta channel) with a flint, plugin preview on, via `scripts/device-check.sh` over CloudPebble (2026-11-01; Dexcom had no current reading during these runs, so only the "---" path was exercised on the phone); from 2026-11-05 app 1.17.0.1 on the same phone and flint; `scripts/device-check.sh steps` lists the on-device checklist (README, "Plugin check on a real phone").
+
+Until 2026-11-01 the plugin was embedded in the watchface pbw (`src/plugin/index.js`, `build/rat-scout-plugin.pbw`), shared the face's localStorage and `clay-settings`, and the face fell back to fetching Dexcom directly. Rows marked "(embedded design)" were verified then and still apply to the plugin's runtime; the face's direct path no longer exists.
+
+Log lines the checks rely on (PKJS): `Glucose source: mode=<mode>`, `Glucose plugin data: N instance(s)`, `Glucose plugin error: <code>`, `Glucose gate: plugin send|skipped duplicate ts=<TIMESTAMP>`, `<type> sent to Pebble successfully`; plugin: `No Dexcom account set on the Rat Scout Glucose settings page`, dexcom.js `Getting account ID...`, `Session ID received`, `Fetching glucose readings...`. pebble-tool tags plugin output `plugin>` (`pebble_tool/util/logs.py` `PLUGIN_LOG_MARKER`). Lines the face logs at `ready` can precede the log stream (smoke test and phone), so no check relies on them.
+
+| Item | Status |
+|---|---|
+| SDK 4.44 behaviour described in [Build](#build) and [Plugin pbws](#plugin-pbws) | Verified 2026-11-05: face and plugin build; face pbw `manifestVersion: 2`; plugin pbw holds appinfo, `plugin.js`, `config.html`. Validation read from the SDK's `sdk_helpers.py`, not exercised with a bad manifest |
+| A published SDK with plugin support | SDK 4.44, released 2026-11-04 (`sdk.repebble.com`; changelog: "Added build support for phone-side plugins") |
+| App 1.17.0.1 with the existing plugin and face | Phone-verified 2026-11-05 (flint): a new reading reached the watch 43 s after its Dexcom time (old timing), 1 Dexcom request, no errors; after reinstalling the face `mode=plugin` within 1 s; weather and units served |
+| Timed due ping (+320 s), 15–30 s target | Phone-verified 2026-11-05, 30-minute run (22:42–23:13 UTC, app 1.17.0.1, flint): 7 new readings, none skipped, delay from Dexcom reading time to the watch 21, 20, 22, 20, 20, 22, 21 s; 7 watch pings (one per reading) and 7 Dexcom reading requests, no logins, no errors. Earlier version with 15 s pings (rejected for battery): Phone-verified 2026-11-05, 30-minute run (19:34–20:05 UTC, app 1.17.0.1, flint): 6 new readings, none skipped, delay from Dexcom reading time to the watch 21, 21, 7, 5, 6 and 6 s (old timing: 53–56 s). The first two needed one early attempt (Dexcom published 5–20 s after the reading time), the other four were found at the first fast ping (+305 s). 9 Dexcom reading requests for 7 readings (1.3 per reading), no errors, no "---". One `SessionNotValid` from Dexcom at 19:48 was answered with a single re-login (the existing session-error path). Unit tests: `test/glucose_plugin.test.js`, `test/plugin.test.js` |
+| `Pebble.permissions.query` logging | Phone-verified (1.17.0.1, 2026-11-05): `Glucose plugin: permission Glucose granted` and `Weather: permission Location granted`; an unrecognised key would answer `denied` (mobileapp `permissions/AppPermissions.kt` `decideAsking`: no permission kind → Denied), so the phone accepts the `<plugin uuid>:Glucose` key. `prompt`/`denied` hints: unit tests only (`test/permissions.test.js`) |
+| Host loads the plugin-only pbw; the face reads it across uuids | Emulator-verified (`pypkjs/runner/__init__.py` `_load_plugin`; smoke cases no-account, cached-reading, network-blocked). Phone-verified: the plugin's page lists only the three Dexcom domains; the face subscribed and reached `mode=plugin` |
+| Face without the plugin installed | Emulator-verified (case no-plugin: `unavailable`, "---", no subscription, no Dexcom request) |
+| Detection, `pending` → `plugin`, envelope → watch, gate, host refresh every 60 s | Emulator-verified (screenshot of case cached-reading shows 6.7 +0.3 from a seeded 120/+5 mg/dL). Phone-verified, split design, 2026-11-02 with live readings: a new reading fetched by the plugin and sent once (repeats skipped by the gate, cached answers between readings with no Dexcom call); the watch showed 10.5 mmol/L −0.4. Earlier the empty-reading envelope: "---" sent once. The phone re-read about every 60 s, with occasional gaps of several minutes |
+| 30-minute run, live readings | Phone-verified 2026-11-02 (25 min in `plugin` mode): 4 Dexcom reading requests and no logins for 4 new readings, each sent once (a Clay settings close re-sent the current one on purpose), no errors, no crashes. Delay from Dexcom reading time to the watch 1–5 min; one reading skipped because the phone did not poll the plugin for about 6 min, three times (12:07→12:13, 12:13→12:19, 12:24→after 12:30), although `suggestedRefreshIntervalSec` is 60. The host's poll timeout counts only awake time (Android `SystemClock`: `System.nanoTime`, `Object.wait` and `Handler` stop in deep sleep; mobileapp `plugin/JsPlugin.kt:132`, `di/LibPebbleModule.kt:354`); that this caused the gaps is a hypothesis consistent with the log (docs/plugins.md §6.1) |
+| Overdue refresh (`refreshIfOverdue`) and minute pings while overdue (timing before 2026-11-05: first ping at the minute tick after ts + 305, 55 s throttles) | Phone-verified 2026-11-02, 30-minute run (15:35–16:05 UTC, same phone, app 1.16.0.5, flint): 6 new readings, none skipped, delay from Dexcom reading time to the watch 24, 51, 57, 55, 56 and 117 s (baseline run: 115, 298, skipped, 54, 55 s). 4 overdue resubscribes, each answered within 1 s with a Dexcom read; 6 reading requests and no logins for 6 readings; no errors, no resends. The host's own polls stayed irregular (none 15:49:02→15:54:01). The 117 s case: a cached host answer at 16:03:09 (6 s before the reading was due in the plugin) blocked the resubscribe at the 16:04:01 ping (envelope less than 55 s ago); the 16:05:02 ping resubscribed; fixed since (only envelopes after `ts + 310` count). Re-run with the fix, 16:32–17:02 UTC, no disconnect: 6 new readings, none skipped, delay 55, 55, 56, 53, 56, 56 s; each found by the resubscribe at the first due ping (6 resubscribes, answered within 1 s); 6 reading requests and no logins for 6 readings; no errors, no resends; the host's own polls stopped after 16:37. The remaining ~55 s is the watch's due time (`ts + 305`) rounded up to the next minute tick, not the host. The minute pings while overdue (part B) were never needed in either run, so they are still unverified on the phone |
+| Clay units/delta change in plugin mode | Phone-verified: switching to mg/dL and turning the delta off re-sent the current reading at once (189 mg/dL, no delta), without waiting for the next reading |
+| Plugin preview turned off while the face runs | Phone-verified: the phone closed the subscription with `UNKNOWN ("Rat Scout Glucose was updated or removed; subscribe again")`. The face first treated it as a soft error and kept the last reading until the 11 min watchdog showed "---" (12 min); it now detects again at once on that message. Phone-verified after the fix: "---" about 40 s after the preview was turned off (the phone notices a retired plugin at its next poll, at most `suggestedRefreshIntervalSec` later); turning the preview back on, the next watch request resubscribed and a live reading reached the watch 1 s later |
+| Plugin settings page (`configPage`, `Pebble.sendMessage('plugin', …)`) | Phone-verified (1.16.0.5): loaded, saved, and on reload showed the login, "Saved (leave empty to keep)" for the password, and the chosen units |
+| Password from `Pebble.secureStorage` | Emulator-verified (seeded `plugin-secure-storage/<uuid>.json`; case network-blocked tried to log in). Phone-verified: the plugin logged in with the stored password and answered (no current reading, so "---") |
+| Plugin storage separate from the face's | pypkjs keys a plugin's store off the pbw uuid (`js_plugin.py`); the smoke test seeds each uuid's store separately. Phone: not inspected directly; the face no longer reads any Dexcom key |
+| Shim on fetch, including a rejected fetch at the account step | Emulator-verified (case 3: "Network error fetching account ID" → "---", no login pause) |
+| `XMLHttpRequest` / `setTimeout` in the phone's plugin runtime | Phone-verified: **not available, and touching them throws.** Android runs plugins in a WebView whose `LOCKDOWN_JS` turns `setTimeout`, `clearTimeout`, `XMLHttpRequest`, `window`, `self` and more into throwing getters (mobileapp `libpebble3/.../js/JsEngine.android.kt`); `typeof` does not guard against them, and `evaluateJavascript` swallows the error, which showed as `PLUGIN_UNAVAILABLE (no source handler registered)`. The bundle probes host globals inside try/catch (`scripts/build-plugin.js`); `test/helpers/plugin_host.js` applies the same lockdown. The fetch shim works on the phone |
+| `fetch` accepting `User-Agent` | Not needed: dexcom.js sends no custom User-Agent (pydexcom's recorded traffic works with the client default) |
+| `onError` paths (`PERMISSION_DENIED`, `TIMEOUT`, ...) | Unit tests only. The emulator logs a plugin's `respond.error` and skips it instead of calling `onError` (`js_plugin.py` `_parse_envelope`), grants every caller permission (`javascript/plugins.py`), and `pebble emu-permission` only knows `WatchMicrophone` |
+| The face's `Glucose` permission on the plugin | Phone-verified: the face got `PERMISSION_DENIED (… waiting for approval of <uuid>:Glucose)` until the user approved, then `mode=plugin` |
+| `enumeratePlugins` with plugins disabled, or on app < 1.16 | Phone-verified (1.16.0.5, embedded design) with the preview off: the plugin is not listed (mobileapp `LockerPluginLoader` registers plugins only while `enablePlugins` is on); the face now shows "---" (`unavailable`). App < 1.16: UNVERIFIED |
+| Clay's `openURL` settings page in a manifestVersion 2 pbw | Phone-verified (1.16.0.5, preview on, embedded design): opens and saves |
+| Legacy purge (`legacy_cleanup.js`) on `ready` | Unit tests only (`test/legacy_cleanup.test.js`): its log line was not captured on the phone because the log stream started after `ready` |
+| Phone host reading immediately on (re)subscribe | Phone-verified: first envelope within about 1 s on subscribe, and after a Clay settings change (resubscribe) |
+| Phone dropping undeclared shapes | Not exercised (emulator does not validate); `test/plugin.test.js` keeps every shape declared |
+| How Dexcom reports a wrong password | Secondary source: pydexcom's recorded Dexcom traffic (`tests/cassettes`, 2025-04-19) shows HTTP 500 `{"Code":"AccountPasswordInvalid"}` at both login steps; pydexcom also maps `SSO_InternalError` "Cannot Authenticate by AccountName/AccountId" and the lockout code `SSO_AuthenticateMaxAttemptsExceeded` (`dexcom.py` `_handle_error_code`). Never tried by us |
+| Lockout/rate-limit thresholds and duration; whether a new login invalidates older sessions | UNVERIFIED, permanently: never tested against the real service |
+| Atomicity of localStorage between concurrent plugin runs | UNVERIFIED; the guard is best-effort |
+| Re-check: preview turned on while the face runs | Phone-verified (embedded design): on the next watch request the face subscribed and reached `plugin` within 1 s, no face switch. Split design: re-check from `unavailable` is unit-tested; on the phone it is step 3 of `device-check.sh steps` |
+| Plugin logs over the developer connection | Phone-verified: `plugin>` lines arrive through CloudPebble (mobileapp `plugin/PluginLogs.kt`) |
+| The Dexcom session kept while no reading exists | Phone-verified (embedded design): one login, then reading requests only, next poll after 60 s. The session used to be dropped on every failure, which meant a full login per poll |
+| Preferred sources on app 1.17.0.1 | Phone-verified 2026-11-05: with `weather/location` set to MET Norway in Settings → Plugins → Preferred sources, the open subscription did not switch (no data, no error in 150 s); after reinstalling the face, `plugin=MET Norway Weather temperature=18.7 °C wind=3.1 m/s` |
+| Weather from `weather/location` + `preferences/units` without a named plugin; unit conversion; umbrella; "--" cases; re-detection on "subscribe again" | Phone-verified 2026-11-02/03 (app 1.16.0.5, flint), conversion and provider choice: with MET Norway as the app's Weather provider the face got `plugin=MET Norway Weather temperature=19 °C wind=16.7 m/s` and the watch showed 19 / 17 (units °C, m/s); with the built-in Weather (Pebble) it got `plugin=Weather temperature=17 °C wind=19 mph` and showed 17 / 8 (19 mph = 8.5 m/s). The Weather provider setting (Settings → Weather, `WatchSettingsScreen.kt:1460-1469`) is the user's choice for `weather/location` and applies when the face subscribes: switching it sent no "subscribe again" and the open subscription stayed on MET until the face restarted. Switching back to MET Norway and reloading the face: `plugin=MET Norway Weather temperature=19.1 °C wind=15.6 m/s`, watch 19 / 16. Then the built-in Weather as the source with MET Norway as its provider (the same forecast relayed): `plugin=Weather temperature=19 °C wind=35 mph`, watch 19 / 16 again (35 mph = 15.6 m/s), so the face shows the same reading whichever plugin serves it. Umbrella, "--" cases and "subscribe again": unit tests only (`test/weather_plugin.test.js`). The phone's log loses one trailing character per `°` in a line (`wind=m/` for `m/s`); the values are unaffected |
+
+### Plugin storage keys
+The plugin and the face have different uuids, so each has its own localStorage; nothing is shared.
+
+Plugin (Rat Scout Glucose):
+
+| Key | Writer | Contents |
+|---|---|---|
+| `ratscout.settings.login`, `ratscout.settings.region`, `ratscout.settings.units` | settings page (`settings.js`) | Dexcom login, region (`ous`/`us`/`jp`), units (`mg/dL`/`mmol/L`) |
+| `ratscout.settings.credVersion` | settings page | Counter bumped when a new password is saved (absent = 0); part of `credKey` |
+| `dexcom.password` (in `Pebble.secureStorage`, not localStorage) | settings page | Dexcom password; never returned to the page |
+| `accountId`, `sessionId` | plugin | Dexcom session; removed on settings save |
+| `ratscout.plugin.lastReading` | plugin | `{credKey, value, delta, trend, arrow, ts}`, raw mg/dL |
+| `ratscout.plugin.lastAttempt` | plugin | Epoch ms of the last Dexcom call; removed on settings save |
+| `ratscout.auth.inflight` | plugin | `{owner, at}` login lock, TTL 45 s |
+| `ratscout.auth.badcreds` | plugin | `{credKey, until}`: no login for 15 min after a refused login (60 min after Dexcom's lockout answer), unless the credentials change |
+| `ratscout.auth.sessionCredKey` | plugin | credKey of the stored session; a mismatch forces a new login (no key = trusted) |
+
+`credKey` is a djb2 hash of `login|region|credVersion`: a change detector, not security. It holds nothing derived from the password (before 2026-11-02 it hashed the password; the first run after the update sees a different key and logs in once). A login pause (`badcreds`) longer than 60 min means the clock went back and is cut to 60 min from now; a login lock dated in the future is ignored.
+
+Watchface: `clay-settings` (Clay; no Dexcom fields) and the astronomy cache keys (`index.js` `CONFIG.TIME_CACHE_KEYS`: data, fetch time, `lastAstronomyLocation`, `lastAstronomyFailTime`). Weather keeps nothing in localStorage. On `ready`, `legacy_cleanup.js` deletes `DEX_LOGIN`/`DEX_PASSWORD`/`DEX_REGION` from `clay-settings`, and the session/plugin/guard keys above if an older version left them in the face's store.
+
+### Login guard (`src/plugin-src/dexcom_guard.js`)
+- Used by the plugin only (owner `plugin`); the watchface no longer logs in to Dexcom. The lock still guards against overlapping plugin runs.
+- A login is needed when there is no usable session. Before it: skip if `badcreds` matches, or if a lock younger than 45 s exists; otherwise take the lock. The lock is released (by its owner only) in both outcomes.
+- Rejections, mapped by dexcom.js `loginErrorMessage()` from the login steps' HTTP 500 `{Code, Message}` body (codes as in pydexcom):
+  - `Invalid credentials`: `AccountPasswordInvalid`, `SSO_InternalError` "Cannot Authenticate by Account…", or a zero account GUID. 15 min pause.
+  - `Login failed`: zero session GUID. 15 min pause.
+  - `Max authentication attempts exceeded`: `SSO_AuthenticateMaxAttemptsExceeded`, Dexcom's own lockout answer. 60 min pause (`LOCKOUT_PAUSE_MS`), since the lockout's duration is unknown.
+- Everything else is transient and never pauses: other HTTP errors (`Error fetching account|session ID: <status>`), network errors and timeouts. They retry at the plugin's normal cadence (throttle 55 s without a session, host poll about every 60 s), the rate the face's old direct path ran against Dexcom for over a year.
+- Both login steps time out after 15 s (`src/plugin-src/dexcom.js`), so a login takes at most about 30 s, inside the 45 s lock. In the plugin the timeout needs `setTimeout` (UNVERIFIED on the phone); without it the host's request TIMEOUT is the bound.
+- Session-error re-authentication inside dexcom.js is not guarded (one re-login per run, as pydexcom).
+- Dexcom's lockout and rate-limit thresholds are permanently UNVERIFIED: wrong passwords and failed logins are never tried against the real service. The guard is deliberately conservative and verified only by unit tests with a mocked fetch (`test/dexcom_guard.test.js`, `test/helpers/plugin_host.js`).
+
+### Build
+- `node scripts/build-plugin.js` regenerates `plugin/plugin.js` from `src/plugin-src/main.js` and its requires (`src/pkjs/glucose.js` included; modules in a small IIFE module table); `--check` fails if it is stale, and `test/plugin.test.js` checks the same.
+- SDK 4.44 copies the `pebble` block, including `usesPermissions` and `plugin`, into `appinfo.json` and marks pbws `manifestVersion: 2` by default; `manifestVersion: 1` together with `plugin`, `usesPermissions` or `configPage` fails the build (SDK 4.44 changelog). Warnings seen and harmless: the linker's "LOAD segment with RWX permissions" (SDK 4.33.1 printed it too) and, in `plugin/`, "feature 'message_keys' does not exist".
+- Toolchain: pebble-tool 5.1.2 on Python 3.13, SDK 4.44 (the only SDK installed; 4.33.1 removed 2026-11-05). pebble-tool and the SDK venv must share a Python minor version (README, "Building").
 
 ## Message Types (C ↔ JS)
 | Value | Constant              | Direction  | Handler                   |
@@ -75,6 +312,7 @@ aplite, basalt, diorite, emery, flint
 ## Persist Key Ranges
 - 100–112: Data cache (BG reading, delta, sun/moon times, weather, moon phase, vibe/umbrella flags, garbage bag, timestamp)
 - 113–117: Settings (overlay enable/duration, BG low/high sound, hourly sound)
+- 118: BG alert state (zone)
 - Key 100: PERSIST_KEY_BG
 - Key 112: PERSIST_KEY_TIMESTAMP
 - Key 113: PERSIST_KEY_OVERLAY_ENABLE
@@ -82,31 +320,48 @@ aplite, basalt, diorite, emery, flint
 - Key 115: PERSIST_KEY_BG_LOW_SOUND
 - Key 116: PERSIST_KEY_BG_HIGH_SOUND
 - Key 117: PERSIST_KEY_HOURLY_SOUND
+- Key 118: PERSIST_KEY_BG_ZONE (normal/high/low; deleted when normal, and when readings older than 60 min are wiped)
 
 ## Data Flow
 ```
 Phone JS:
-  Pebble ready → getSettings() → sendSettings() + fetchAllData()
-  webviewclosed → clay.getSettings() → sendSettings() [then test command if flagged]
+  Pebble ready → purgeLegacyDexcomData() → getSettings() → sendSettings() → glucoseSource.start() → weatherSource.start() → fetchAllData()
+  webviewclosed → clay.getSettings() → sendSettings() → glucoseSource.onSettingsChanged() → weatherSource.onSettingsChanged() [then test command if flagged]
+  weather/location or preferences/units onData → convert to the user's units → MSG_TYPE_WEATHER (sent only if changed)
+  plugin subscription onData → envelope → gate → MSG_TYPE_GLUCOSE (switches the mode to plugin)
+  plugin onError / 30 s grace expiry / stall → unavailable → "---" through the gate (INVALID_REQUEST also unsubscribes)
 
   fetchAllData():
-    Glucose.fetchGlucoseReading() → MSG_TYPE_GLUCOSE
-    fetchAndSendWeather()         → MSG_TYPE_WEATHER  (cached per interval)
-    fetchAndSendAstronomy()       → MSG_TYPE_ASTRONOMY (cached daily)
+    glucoseSource.checkStall()
+    glucoseSource.retryUnsent()   → resend a glucose message whose send failed
+    glucoseSource.recheck()       → subscribe if the plugin appeared (unavailable, no subscription)
+    glucoseSource.recoverIfStuck()  → resubscribe from unavailable with a kept subscription (every 5 min, not PERMISSION_DENIED)
+    glucoseSource.refreshIfOverdue() → resubscribe if the reading is due (plugin mode; at most every 12 s up to ts + 435 s, then every 55 s)
+    refreshTimedSettings()        → MSG_TYPE_SETTINGS again when night thresholds or garbage bag changed
+    weatherSource.recheck()       → subscribe to a weather/units source that had no plugin; MSG_TYPE_WEATHER again (sent only if changed)
+    fetchAndSendAstronomy()       → MSG_TYPE_ASTRONOMY (cached daily; dropped on a >5 km move; 15 min backoff after failures; sent only if changed)
+
+Plugin (Rat Scout Glucose, started fresh per request):
+  source request → Settings.load() → cache / throttle / guard → Dexcom → envelope (validUntilMs)
+  settings page → Pebble.sendMessage('plugin', load|save) → handleConfigMessage → Pebble.refreshSources on save
 
 Watch C:
   ready → main_window_load → overlay_init (last, top z-order)
   tick_handler (every minute):
     → update_time, update_delta_display, update_steps (every 5 min)
     → hourly vibe + sound + overlay_show at tm_min==0 (each gated by its own toggle)
-    → outbound ping to trigger JS fetch when s_next_fetch_time reached
+    → outbound ping (messaging_request_fetch) when s_next_fetch_time reached (reading ts + 380 s),
+      then every minute until ts + 600 s, then every 5 min (tm_min % 5) until a newer reading
+  due ping timer (messaging.c, set by each glucose message): one ping at ts + 320 s
+  pebble_app_connection_handler (messaging.c): one ping when the phone's Pebble app reconnects;
+    no pings at all while it is disconnected
   inbox_received_callback → dispatch by MSG_TYPE
 ```
 
 ## Sound Alerts — sounds.c
 - Speaker API: `speaker_play_tracks(SpeakerTrack[], num_tracks, volume)`
 - Audible only on platforms with a built-in speaker (Emery, Flint). On aplite/basalt/diorite the SDK calls are silent no-ops, so toggles are harmless.
-- `speaker_stop()` is called before each `speaker_play_tracks()` to ensure `prv_sound_finish_cb` fires synchronously before new playback begins. `speaker_play_tracks()` is also self-preempting in PebbleOS, so no idle-status guard is needed.
+- `speaker_stop()` is called before each `speaker_play_tracks()` (project rule; `prv_sound_finish_cb` does nothing, so nothing depends on when it runs). `speaker_play_tracks()` is also self-preempting in PebbleOS, so no idle-status guard is needed.
 - All alert tracks wrap their notes in a leading **and** trailing `SILENCE_BUF` (350 ms, midi=0, triangle) to absorb DA7212 cold-start ramp-up on flint/emery.
 - High BG alert (ascending B minor arpeggio): single track, `SpeakerWaveformTriangle`
   - B3(125ms)–D4(125ms)–F#4(125ms) | 250ms pause | B3(125ms)–D4(125ms)–F#4(250ms)
@@ -128,11 +383,15 @@ Watch C:
 - handle_overlay_test() always shows regardless of s_overlay_enabled
 
 ## Clay Settings Structure (config.json sections)
-1. Dexcom Account (login, password)
-2. Display (units, show delta, show time delta, date format)
-3. Notifications (hourly vibe + sound, BG vibe + low/high sounds, thresholds, night window)
-4. Quick View Alerts (enable toggle, duration select: 3/10/20 s, test button → MSG_TYPE_OVERLAY_TEST)
-5. Vibration Test (3 buttons → MSG_TYPE_VIBE_TEST)
-6. Sound Test (3 buttons → MSG_TYPE_SOUND_TEST)
-7. Astronomy (ipgeolocation.io API key)
-8. Weather (OWM API key, units, update interval)
+1. Glucose (text only: the Dexcom account is set on the Rat Scout Glucose plugin's settings page)
+2. Blood Glucose (units, show delta, show time delta, BG vibe, low/high sounds, thresholds, night thresholds + window)
+3. Watchface (date format, hourly vibe, hourly sound)
+4. Astronomy (ipgeolocation.io API key)
+5. Garbage Collection (pickup hour, organic/grey/black days)
+6. Quick View Alerts (enable toggle, duration select: 3/10/20 s, test button → MSG_TYPE_OVERLAY_TEST)
+7. Vibration Test (3 buttons → MSG_TYPE_VIBE_TEST)
+8. Sound Test (3 buttons → MSG_TYPE_SOUND_TEST)
+
+Weather has no Clay section: provider and units come from the phone app (see [Weather source](#weather-source-srcpkjsweather_pluginjs)).
+
+Key-by-key reference: `scripts/settings.md`.

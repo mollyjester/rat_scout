@@ -8,7 +8,7 @@
  * @returns {number|null} Minutes since midnight or null if invalid
  */
 function timeToMinutes(timeStr) {
-    if (!timeStr || timeStr.includes('N/A')) {
+    if (!timeStr || String(timeStr).indexOf('N/A') !== -1) {
         return null;
     }
     
@@ -76,29 +76,32 @@ function getNextSunEvent(sunrise, sunset) {
  * Handles both normal order (rise before set) and inverted order (set before rise).
  * @param {string} moonrise - Moonrise time (HH:MM or N/A)
  * @param {string} moonset - Moonset time (HH:MM or N/A)
- * @returns {Object} { time: string, needsTomorrowData: boolean }
+ * @param {number} nowMinutes - Optional: minutes since midnight (default: now)
+ * @returns {Object} { time: string, needsTomorrowData: boolean, isRising: boolean }
  */
-function getNextMoonEvent(moonrise, moonset) {
+function getNextMoonEvent(moonrise, moonset, nowMinutes) {
     var moonriseMinutes = timeToMinutes(moonrise);
     var moonsetMinutes = timeToMinutes(moonset);
-    var currentMinutes = getCurrentTimeInMinutes();
+    var currentMinutes = typeof nowMinutes === 'number' ? nowMinutes : getCurrentTimeInMinutes();
     
     if (moonriseMinutes === null && moonsetMinutes === null) {
         return { time: moonset, needsTomorrowData: true, isRising: false };
     }
     
+    // Only a moonrise today: after it the moon is up, so the next event is tomorrow's moonset.
     if (moonriseMinutes !== null && moonsetMinutes === null) {
         if (currentMinutes < moonriseMinutes) {
             return { time: moonrise, needsTomorrowData: false, isRising: true };
         }
-        return { time: moonrise, needsTomorrowData: true, isRising: true };
+        return { time: moonrise, needsTomorrowData: true, isRising: false };
     }
     
+    // Only a moonset today: after it the moon is down, so the next event is tomorrow's moonrise.
     if (moonriseMinutes === null && moonsetMinutes !== null) {
         if (currentMinutes < moonsetMinutes) {
             return { time: moonset, needsTomorrowData: false, isRising: false };
         }
-        return { time: moonset, needsTomorrowData: true, isRising: false };
+        return { time: moonset, needsTomorrowData: true, isRising: true };
     }
     
     // Both times available
@@ -193,8 +196,8 @@ function getTomorrowDateString() {
     tomorrow.setDate(tomorrow.getDate() + 1);
     
     var year = tomorrow.getFullYear();
-    var month = String(tomorrow.getMonth() + 1).padStart(2, '0');
-    var day = String(tomorrow.getDate()).padStart(2, '0');
+    var month = ('0' + (tomorrow.getMonth() + 1)).slice(-2);
+    var day = ('0' + tomorrow.getDate()).slice(-2);
     
     return year + '-' + month + '-' + day;
 }
@@ -210,11 +213,13 @@ function determineTomorrowMoonEvent(moonrise, moonset) {
     var moonriseMinutes = timeToMinutes(moonrise);
     var moonsetMinutes = timeToMinutes(moonset);
     
+    // Rise-only day: after the moonrise the next event is tomorrow's moonset.
     if (moonriseMinutes !== null && moonsetMinutes === null) {
-        return { needMoonrise: true, needMoonset: false };
-    }
-    if (moonriseMinutes === null && moonsetMinutes !== null) {
         return { needMoonrise: false, needMoonset: true };
+    }
+    // Set-only day: after the moonset the next event is tomorrow's moonrise.
+    if (moonriseMinutes === null && moonsetMinutes !== null) {
+        return { needMoonrise: true, needMoonset: false };
     }
     if (moonriseMinutes !== null && moonsetMinutes !== null) {
         if (moonriseMinutes < moonsetMinutes) {

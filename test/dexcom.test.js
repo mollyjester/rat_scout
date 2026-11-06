@@ -32,7 +32,7 @@ global.XMLHttpRequest = function() { return new FakeXHR(); };
 global.setTimeout = global.setTimeout; // already available
 global.clearTimeout = global.clearTimeout;
 
-var Dexcom = require('../src/pkjs/dexcom');
+var Dexcom = require('../src/plugin-src/dexcom');
 
 var passed = 0;
 var failed = 0;
@@ -93,6 +93,39 @@ function runTests() {
             done();
         }, 50);
     })();
+
+    // Login-step error mapping (recorded Dexcom answers, see pydexcom cassettes)
+    function loginErrorCase(title, step, opts, expected) {
+        pending++;
+        (function() {
+            console.log('Test: ' + title);
+            setNextXHR(opts);
+            var got = null;
+            var dex = new Dexcom('user', 'pass', function() {}, 'us', function(err) { got = err; });
+            dex.accountId = 'test-account-id';
+            var run = step === 'account' ? dex._getAccountId : dex._getSessionId;
+            run.call(dex, function() { assert(false, title + ': callback must not run'); });
+            setTimeout(function() {
+                assert(got === expected, title + ': onError("' + expected + '"), got "' + got + '"');
+                done();
+            }, 50);
+        })();
+    }
+    var PASSWORD_INVALID = JSON.stringify({ Code: 'AccountPasswordInvalid', Message: 'Publisher account password failed' });
+    loginErrorCase('account 500 AccountPasswordInvalid', 'account', { status: 500, responseText: PASSWORD_INVALID }, 'Invalid credentials');
+    loginErrorCase('session 500 AccountPasswordInvalid', 'session', { status: 500, responseText: PASSWORD_INVALID }, 'Invalid credentials');
+    loginErrorCase('account 500 SSO_InternalError Cannot Authenticate', 'account',
+        { status: 500, responseText: JSON.stringify({ Code: 'SSO_InternalError', Message: 'Cannot Authenticate by AccountName' }) },
+        'Invalid credentials');
+    loginErrorCase('account 500 SSO_InternalError other', 'account',
+        { status: 500, responseText: JSON.stringify({ Code: 'SSO_InternalError', Message: 'Something else' }) },
+        'Error fetching account ID: 500');
+    loginErrorCase('account 500 SSO_AuthenticateMaxAttemptsExceeded', 'account',
+        { status: 500, responseText: JSON.stringify({ Code: 'SSO_AuthenticateMaxAttemptsExceeded', Message: 'x' }) },
+        'Max authentication attempts exceeded');
+    loginErrorCase('account 500 non-JSON body', 'account', { status: 500, responseText: '<html>' }, 'Error fetching account ID: 500');
+    loginErrorCase('account network error', 'account', { trigger: 'onerror' }, 'Network error fetching account ID');
+    loginErrorCase('account timeout', 'account', { trigger: 'ontimeout' }, 'Timeout fetching account ID');
 
     // Test 2: _getAccountId with zero UUID calls onError
     pending++;
@@ -240,7 +273,7 @@ function runTests() {
         var dex = new Dexcom('user', 'pass', function() {}, 'us', function(err) {
             errorCalled = true;
         });
-        dex.retryCount = 2; // Already at max
+        dex.retryCount = 1; // Already at max (one re-login per run)
         try {
             dex._handleServerError({ Code: 'SessionIdNotFound', Message: 'Session not found' });
         } catch (e) {

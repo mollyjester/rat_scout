@@ -109,12 +109,16 @@ function fetchAstronomyData(apiKey, latOrCallback, lonOrCallback, dateOrCallback
     
     var xhr = new XMLHttpRequest();
     var timeoutHandle = null;
+    // Set by whichever of onload / onerror / ontimeout / the fallback timer comes first.
+    var finished = false;
     
     // Set 20 second timeout for astronomy API (slightly longer due to geolocation lookups)
     xhr.timeout = 20000;
     
     xhr.onload = function() {
         if (timeoutHandle) clearTimeout(timeoutHandle);
+        if (finished) return;
+        finished = true;
         
         if (xhr.status === 200) {
             try {
@@ -142,6 +146,8 @@ function fetchAstronomyData(apiKey, latOrCallback, lonOrCallback, dateOrCallback
     
     xhr.onerror = function() {
         if (timeoutHandle) clearTimeout(timeoutHandle);
+        if (finished) return;
+        finished = true;
         console.error('Network error fetching astronomy data');
         if (onError) {
             onError('Network error');
@@ -150,17 +156,23 @@ function fetchAstronomyData(apiKey, latOrCallback, lonOrCallback, dateOrCallback
     
     xhr.ontimeout = function() {
         if (timeoutHandle) clearTimeout(timeoutHandle);
+        if (finished) return;
+        finished = true;
         console.error('Timeout fetching astronomy data (20s)');
         if (onError) {
             onError('Astronomy API request timeout');
         }
     };
     
-    // Fallback timeout using setTimeout for better compatibility
+    // Fallback timeout using setTimeout for better compatibility. abort() fires an "abort"
+    // event, not error or timeout (XHR spec; the PKJS XHR wasn't checked), so the failure is
+    // reported here.
     timeoutHandle = setTimeout(function() {
-        if (xhr.readyState !== 4) {
+        if (xhr.readyState !== 4 && !finished) {
+            finished = true;
             console.error('Request timeout: astronomy data fetch took too long');
             xhr.abort();
+            if (onError) onError('Astronomy API request timeout');
         }
     }, 20000);
     

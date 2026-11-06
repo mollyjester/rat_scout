@@ -27,10 +27,11 @@ function daysToBitmask(days) {
  * Compute which garbage bag icon to show based on current time and settings.
  * After the configured pickup hour, shows the next day's collection type.
  * @param {Object} settings - App settings with GARBAGE_PICKUP_TIME, GARBAGE_ORGANIC_DAYS, etc.
+ * @param {Date} now - Optional: the time to compute for (default: now)
  * @returns {number} GARBAGE_BAG_NONE/ORGANIC/GREY/BLACK
  */
-function computeGarbageBag(settings) {
-    var now = new Date();
+function computeGarbageBag(settings, now) {
+    now = now || new Date();
     var wday = (now.getDay() + 6) % 7;
     var pickupHour = parseInt(settings.GARBAGE_PICKUP_TIME, 10);
     if (isNaN(pickupHour)) pickupHour = 9;

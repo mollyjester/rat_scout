@@ -7,7 +7,7 @@
 Rat Scout puts your Dexcom glucose readings front and center on your Pebble watch, surrounded by useful at-a-glance information:
 
 - **Blood Glucose** — Current reading, delta (rate of change), and minutes since last update. Supports mg/dL and mmol/L. Configurable vibration alerts for high and low thresholds, with optional separate night thresholds and a configurable night time window. Optional polyphonic sound alerts for low and high BG thresholds (Emery speaker only).
-- **Weather** — Temperature, wind speed, and an umbrella indicator that lights up when rain or snow is expected today.
+- **Weather** — Temperature, wind speed, and an umbrella indicator that lights up when rain or snow is expected today, from the Pebble app's weather plugin in the app's units.
 - **Astronomy** — Next sunrise/sunset and moonrise/moonset times with a moon phase icon.
 - **Daily Info** — Time, date, week number, step count, battery level, and a garbage collection reminder. Optional hourly chime (vibration and/or sound).
 
@@ -15,8 +15,8 @@ Rat Scout puts your Dexcom glucose readings front and center on your Pebble watc
 
 1. Install the watchface on your Pebble via the Pebble app store.
 2. Open Settings and enter your **Dexcom Share** login credentials.
-3. *(Optional)* Add API keys for weather ([OpenWeatherMap](https://openweathermap.org/api), free) and astronomy ([ipgeolocation.io](https://ipgeolocation.io/), free).
-4. Customize your BG units, alert thresholds, and weather preferences.
+3. *(Optional)* Add an API key for astronomy ([ipgeolocation.io](https://ipgeolocation.io/), free).
+4. Customize your BG units and alert thresholds. Weather needs no setup: choose the weather plugin and units in the Pebble app.
 
 ## Compatibility
 

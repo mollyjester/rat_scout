@@ -41,8 +41,13 @@ enum PersistKeys {
     PERSIST_KEY_OVERLAY_DURATION = 114,
     PERSIST_KEY_BG_LOW_SOUND = 115,
     PERSIST_KEY_BG_HIGH_SOUND = 116,
-    PERSIST_KEY_HOURLY_SOUND = 117
+    PERSIST_KEY_HOURLY_SOUND = 117,
+    PERSIST_KEY_BG_ZONE = 118           // BG alert zone (normal/high/low), so a relaunch doesn't re-alert
 };
+
+// Quick View Alerts duration, seconds (Clay offers 3/10/20)
+#define OVERLAY_DURATION_MIN_S 1
+#define OVERLAY_DURATION_MAX_S 20
 
 // ===== Layout Constants (defined in layout.c) =====
 extern const GRect RECT_TIME_LAYER;
@@ -82,7 +87,15 @@ extern const int STATUS_BLACK_X;
 #define BATTERY_SEGMENT_HEIGHT  7
 #define FETCH_INTERVAL_SECONDS 300
 #define FETCH_INTERVAL_JITTER    5
+// One ping per reading, timed to the second (an AppTimer, messaging.c) rather than the next
+// minute tick: Dexcom usually has the next reading 300 + 5..20 s after the last one. If it is
+// still missing, the tick handler pings each minute from DUE_PING_SECONDS + 60 (see
+// OVERDUE_PING_WINDOW_SECONDS), as before. No faster cadence: every ping costs watch battery.
+#define DUE_PING_SECONDS 320
 #define FALLBACK_FETCH_MINUTES   5
+// Ping JS every minute until this long after the last reading (two reading intervals), then
+// fall back to FALLBACK_FETCH_MINUTES: each overdue ping lets JS resubscribe to the plugin.
+#define OVERDUE_PING_WINDOW_SECONDS 600
 #define STEPS_UPDATE_INTERVAL    5
 #define APPMESSAGE_INBOX      1024
 #define APPMESSAGE_OUTBOX      512
@@ -187,7 +200,8 @@ void battery_state_handler(BatteryChargeState charge_state);
 
 // glucose.c
 void update_delta_display(time_t current_time);
-void check_bg_threshold_vibration(const char *bg_str);
+void check_bg_threshold_vibration(const char *bg_str, time_t reading_ts);
+void glucose_restore_zone(void);
 
 // rat_scout.c
 void update_time(struct tm *tick_time, bool force_date);
@@ -195,7 +209,7 @@ void update_moon_icon(int phase);
 void update_garbage_bag(int garbage_bag);
 
 // overlay.c
-void overlay_init(Layer *parent_layer);
+void overlay_init(Layer *parent_layer, GFont font);
 void overlay_deinit(void);
 void overlay_show(AlertKind kind, const char *msg);
 void overlay_hide(void);
@@ -205,6 +219,9 @@ void inbox_received_callback(DictionaryIterator *iterator, void *context);
 void inbox_dropped_callback(AppMessageResult reason, void *context);
 void outbox_failed_callback(DictionaryIterator *iterator, AppMessageResult reason, void *context);
 void outbox_sent_callback(DictionaryIterator *iterator, void *context);
+void messaging_init(void);
+void messaging_request_fetch(void);
+void messaging_deinit(void);
 
 // sounds.c
 void sounds_init(void);

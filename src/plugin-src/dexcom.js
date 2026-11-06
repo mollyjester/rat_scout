@@ -14,6 +14,14 @@ var DEXCOM_AUTHENTICATE_ENDPOINT = "General/AuthenticatePublisherAccount";
 var DEXCOM_LOGIN_ID_ENDPOINT = "General/LoginPublisherAccountById";
 var DEXCOM_GLUCOSE_READINGS_ENDPOINT = "Publisher/ReadPublisherLatestGlucoseValues";
 
+// Dexcom Share error codes that mean the credentials were refused, and the
+// account-lockout code. Taken from pydexcom (dexcom.py _handle_error_code);
+// its recorded traffic shows a wrong password as HTTP 500 with
+// Code "AccountPasswordInvalid" at both login steps (tests/cassettes).
+var DEXCOM_ERROR_PASSWORD_INVALID = 'AccountPasswordInvalid';
+var DEXCOM_ERROR_MAX_ATTEMPTS = 'SSO_AuthenticateMaxAttemptsExceeded';
+var DEXCOM_ERROR_SSO_INTERNAL = 'SSO_InternalError';
+
 var Regions = {
     US: 'us',
     OUS: 'ous',
@@ -63,7 +71,8 @@ Dexcom.prototype.xhr = function(method, url) {
     req.open(method, url, true);
     req.setRequestHeader('Content-Type', 'application/json');
     req.setRequestHeader('Accept', 'application/json');
-    req.setRequestHeader('User-Agent', 'Dexcom Share/3.0.2.11');
+    // No custom User-Agent: pydexcom's recorded Dexcom traffic logs in and
+    // reads with the client's default agent.
     return req;
 };
 
@@ -82,8 +91,9 @@ Dexcom.prototype.trimQuotes = function(str) {
  * @returns {Object} Formatted reading
  */
 Dexcom.prototype.formatReading = function(reading) {
+    // As pydexcom const.py TREND_ARROWS (indexed by DEXCOM_TREND_DIRECTIONS).
     var TREND_ARROWS = {
-        None: '→',
+        None: '',
         DoubleUp: '↑↑',
         SingleUp: '↑',
         FortyFiveUp: '↗',
@@ -92,7 +102,7 @@ Dexcom.prototype.formatReading = function(reading) {
         SingleDown: '↓',
         DoubleDown: '↓↓',
         NotComputable: '?',
-        RateOutOfRange: '⚠️'
+        RateOutOfRange: '-'
     };
 
     return {
@@ -105,37 +115,9 @@ Dexcom.prototype.formatReading = function(reading) {
         },
         _value: reading.Value,
         _trend_direction: reading.Trend,
-        _trend_arrow: TREND_ARROWS[reading.Trend] || '?',
-        _datetime: new Date(parseInt(reading.WT.match(/\d+/)[0])),
-        _status: this.getGlucoseStatus(reading.Value)
+        _trend_arrow: TREND_ARROWS.hasOwnProperty(reading.Trend) ? TREND_ARROWS[reading.Trend] : '?',
+        _datetime: new Date(parseInt(reading.WT.match(/\d+/)[0]))
     };
-};
-
-/**
- * Get glucose status
- * @param {number} value - BG value
- * @returns {string} Status (LOW, HIGH, IN RANGE)
- */
-Dexcom.prototype.getGlucoseStatus = function(value) {
-    if (value < 70) return 'LOW';
-    if (value > 180) return 'HIGH';
-    return 'IN RANGE';
-};
-
-/**
- * Get trend description from delta
- * @param {number} delta - BG delta value
- * @returns {string} Trend description
- */
-Dexcom.prototype.getTrendDescription = function(delta) {
-    if (delta === null) return 'Unknown';
-    if (delta > 15) return 'Rising quickly';
-    if (delta > 7) return 'Rising';
-    if (delta > 3) return 'Rising slowly';
-    if (delta >= -3) return 'Stable';
-    if (delta >= -7) return 'Dropping slowly';
-    if (delta >= -15) return 'Dropping';
-    return 'Dropping quickly';
 };
 
 /**
@@ -162,6 +144,37 @@ Dexcom.prototype.parseResponse = function(status, responseText) {
         isServerError: false,
         status: status
     };
+};
+
+/**
+ * Map a failed login-step response to a dexcom.js error message.
+ * Dexcom answers a refused login with HTTP 500 and a JSON {Code, Message}
+ * body; anything else (or an unparsable body) is a plain HTTP error.
+ * @param {string} step - 'account' or 'session'
+ * @param {number} status - HTTP status
+ * @param {string} responseText - Response body
+ * @returns {string} 'Invalid credentials', 'Max authentication attempts exceeded'
+ *   or 'Error fetching <step> ID: <status>'
+ */
+Dexcom.prototype.loginErrorMessage = function(step, status, responseText) {
+    if (status === 500) {
+        var body = null;
+        try {
+            body = JSON.parse(responseText);
+        } catch (e) {
+            body = null;
+        }
+        var code = body && body.Code;
+        var message = String((body && body.Message) || '');
+        if (code === DEXCOM_ERROR_PASSWORD_INVALID ||
+            (code === DEXCOM_ERROR_SSO_INTERNAL && message.indexOf('Cannot Authenticate by Account') !== -1)) {
+            return 'Invalid credentials';
+        }
+        if (code === DEXCOM_ERROR_MAX_ATTEMPTS) {
+            return 'Max authentication attempts exceeded';
+        }
+    }
+    return 'Error fetching ' + step + ' ID: ' + status;
 };
 
 /**
@@ -199,13 +212,19 @@ Dexcom.prototype._getAccountId = function(callback) {
     var self = this;
     var authUrl = this.baseUrl + DEXCOM_AUTHENTICATE_ENDPOINT;
     var req = this.xhr('POST', authUrl);
+    var timeoutHandle = null;
+
+    // Set 15 second timeout for account ID fetch
+    req.timeout = 15000;
 
     req.onload = function() {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
         if (req.readyState !== 4) return;
 
         if (req.status === 200) {
             self.accountId = self.trimQuotes(req.responseText);
-            console.log('Account ID: ' + self.accountId);
+            // Never log the ID itself: logs are read from live phones (scripts/device-check.sh).
+            console.log('Account ID received');
 
             if (self.accountId === '00000000-0000-0000-0000-000000000000') {
                 self.onError('Invalid credentials');
@@ -214,9 +233,29 @@ Dexcom.prototype._getAccountId = function(callback) {
 
             callback.call(self);
         } else {
-            self.onError('Error fetching account ID: ' + req.status);
+            self.onError(self.loginErrorMessage('account', req.status, req.responseText));
         }
     };
+
+    req.onerror = function() {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        console.error('Network error fetching account ID');
+        self.onError('Network error fetching account ID');
+    };
+
+    req.ontimeout = function() {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        console.error('Timeout fetching account ID (15s)');
+        self.onError('Timeout fetching account ID');
+    };
+
+    // Fallback timeout using setTimeout for better compatibility
+    timeoutHandle = setTimeout(function() {
+        if (req.readyState !== 4) {
+            console.error('Request timeout: account ID fetch took too long');
+            req.abort();
+        }
+    }, 15000);
 
     req.send(JSON.stringify({
         accountName: this.username,
@@ -244,7 +283,7 @@ Dexcom.prototype._getSessionId = function(callback) {
 
         if (loginReq.status === 200) {
             self.sessionId = self.trimQuotes(loginReq.responseText);
-            console.log('Session ID: ' + self.sessionId);
+            console.log('Session ID received');
 
             if (self.sessionId === '00000000-0000-0000-0000-000000000000') {
                 self.onError('Login failed');
@@ -253,7 +292,7 @@ Dexcom.prototype._getSessionId = function(callback) {
 
             callback.call(self);
         } else {
-            self.onError('Error fetching session ID: ' + loginReq.status);
+            self.onError(self.loginErrorMessage('session', loginReq.status, loginReq.responseText));
         }
     };
 
@@ -386,12 +425,10 @@ Dexcom.prototype._handleGlucoseResponse = function(readings) {
         _trend_direction: current._trend_direction,
         _trend_arrow: current._trend_arrow,
         _datetime: current._datetime,
-        _status: current._status,
         _delta: delta,
         _delta_time: deltaTime,
         _previous_value: previous ? previous._value : null,
-        _rate_of_change: deltaTime ? (delta / deltaTime) : null,
-        _trend_description: this.getTrendDescription(delta)
+        _rate_of_change: deltaTime ? (delta / deltaTime) : null
     };
 
     this.onResults({
@@ -414,7 +451,8 @@ Dexcom.prototype._handleServerError = function(error) {
     
     if (error.Code === 'SessionIdNotFound' || error.Code === 'SessionNotValid') {
         // Limit retries to prevent infinite loop
-        if (this.retryCount < 2) {
+        // One re-login per run, as pydexcom get_glucose_readings does.
+        if (this.retryCount < 1) {
             this.retryCount++;
             console.log('Session error: ' + error.Code + ', re-authenticating (attempt ' + this.retryCount + ')...');
             this.sessionId = null;
@@ -429,7 +467,8 @@ Dexcom.prototype._handleServerError = function(error) {
         }
     } else {
         this.retryCount = 0;
-        throw new Error('Server error: ' + error.Message);
+        // The code only: Dexcom's free-text Message ends up in logs read from real phones.
+        throw new Error('Server error: ' + error.Code);
     }
 };
 

@@ -2,7 +2,7 @@
 
 ## Investigation discipline (READ FIRST)
 - **Never state technical behavior as fact without primary-source evidence.** Before claiming SDK semantics, hardware sharing, peripheral behavior, platform identity, or any other low-level fact, verify it against PebbleOS source (`/tmp/PebbleOS` or `https://github.com/coredevices/PebbleOS`), SDK headers, or board configs. If you cannot verify, say so explicitly. Cite file paths and line numbers when stating verified facts.
-- **Never assume the user's device platform.** Ask before debugging platform-specific issues; the 5 target platforms (aplite, basalt, diorite, emery, flint) have very different hardware.
+- **Never assume the user's device platform.** Ask before debugging platform-specific issues; the target platforms (flint and emery, per `package.json` `targetPlatforms`) have different hardware.
 - Verified flint/asterix hardware reference: speaker is DA7212 codec over I2S (`src/fw/board/boards/board_asterix.c` `AudioDevice`); vibe is DRV2604 via NRF5 GPIO pin 0,2 (`board_asterix.h` `BoardConfigActuator BOARD_CONFIG_VIBE`). They are independent peripherals.
 - Verified PebbleOS speaker behavior: `speaker_service_play_tracks` is self-preempting (`src/fw/services/speaker/speaker_service.c:513-518` calls `prv_stop_internal(SpeakerFinishReasonPreempted)` if not idle). Do NOT add `speaker_get_status()` idle guards before calling `speaker_play_tracks` — they block legitimate preemption.
 - Verified DA7212 codec mute behavior: `prv_codec_prepare()` clears the soft-mute bit (`DAC_FILTERS5 = 0x00`) on every cold start (`src/fw/drivers/nrf5/audio/audio.c:158`), so the codec is unmuted at 0 dB before samples flow. `audio_set_volume()` early-returns while `is_running == false`, which makes per-playback `speaker_set_volume()` calls a no-op on cold start. Set volume once in `sounds_init()` and rely on the `volume` argument to `speaker_play_tracks()` for per-playback level.
@@ -10,9 +10,9 @@
 - Clay test buttons must behave identically to the Save Settings button plus their specific test trigger. The mechanism in `src/pkjs/clay-config.js` is `attachFlagButton(id, flagKey, flagValue)`: on click it serializes the current form, sets the flag (`_vibeTest` / `_soundTest` / `_overlayTest`), and POSTs to `pebblejs://close#`. The `webviewclosed` handler in `src/pkjs/index.js` parses the flag, calls `clay.getSettings(e.response)` to persist all settings, calls `sendSettings()` to push them to the watch, then queues the test command. Always preserve this save-equivalent ordering when adding new test buttons.
 
 ## General
-- Language: C (Pebble SDK 4.x, tested with 4.33.1) + JavaScript (PebbleKit JS, ES5)
+- Language: C (Pebble SDK 4.x, SDK 4.44 or later for plugins; tested with 4.44 / pebble-tool 5.1.2 on Python 3.13) + JavaScript (PebbleKit JS, ES5; the plugin is ES5 + Promise)
 - Build: `pebble build` (waf). Clean build: `pebble clean && pebble build`. Always verify build is clean after changes.
-- Tests: `node test/*.test.js` — all suites must pass, no warnings. Run after any JS change.
+- Tests: `for f in test/*.test.js; do node "$f" || exit 1; done` — all suites must pass, no warnings. Run after any JS change. (`node test/*.test.js` runs only the first file: Node passes the rest as argv.)
 - **README.md must be updated whenever there is a functional change to the watchface** (new features, removed features, changed settings, changed platforms, changed architecture).
 
 ## C Conventions
@@ -88,6 +88,21 @@ Every non-trivial function gets a block comment:
 - `attachVibeButton(id, patternId)` and `attachSoundButton(id, patternId)` are wrappers around `attachFlagButton`
 - Every button registered in config.json must be registered in clay-config.test.js mocks
 
+## Plugin Conventions (src/plugin-src/)
+- ES5 plus `Promise`; no `require()` of anything outside the repo (the bundler only resolves relative paths).
+- Never edit `plugin/plugin.js`: change `src/plugin-src/` (or a bundled module such as `src/pkjs/glucose.js`) and run `node scripts/build-plugin.js`. Commit the regenerated file together with its sources; `test/plugin.test.js` fails if it is stale.
+- No state in variables: the plugin is started fresh for each request. Use the plugin's own localStorage (not shared with the watchface: different uuid) and document every new key in ARCHITECTURE.md "Plugin storage keys".
+- Plugin settings live only in the plugin (`src/plugin-src/settings.js`, page `plugin/config.html`, channel `Pebble.sendMessage('plugin', …)` → `handleConfigMessage`). Secrets go in `Pebble.secureStorage` and never back to the page (send `hasPassword`, not the password). Never add Dexcom fields to the watchface's Clay or Dexcom calls to `src/pkjs/`: the face is "plugin only".
+- Only use the runtime APIs the preview guide lists (quoted in the `src/plugin-src/xhr_shim.js` header: `fetch`, `localStorage`, `console`, `Pebble.*`, ...). Anything else (XHR, timers) goes through the bundle-scope bindings in `scripts/build-plugin.js`.
+- Never read a browser global in plugin code, not even with `typeof`: on Android `setTimeout`, `XMLHttpRequest`, `window`, `self` etc. are getters that throw, and the error is swallowed silently (ARCHITECTURE, "Verification status"). Host globals are probed only in `scripts/build-plugin.js`, inside try/catch.
+- Every property/shape the plugin emits must be declared in `plugin/package.json` `plugin.sources[].properties` (the phone drops undeclared shapes); `test/plugin.test.js` enforces this.
+- Never log credentials, Dexcom account or session IDs, API keys, or device coordinates: logs are read from live phones (`scripts/device-check.sh`). Log presence instead ("Session ID received").
+- Never try wrong passwords, failing logins or lockout against the real Dexcom service (emulator or phone). Dexcom's lockout thresholds are permanently UNVERIFIED by decision. Use the mocked fetch in `test/helpers/plugin_host.js`; `scripts/plugin-smoke.sh` uses fake credentials and blocks the network.
+- Keep `Internet` domains per pbw: Dexcom domains only in `plugin/package.json`, weather/astronomy only in `package.json`.
+- Publishing either pbw (`build/rat-scout.pbw`, `build/rat-scout-glucose.pbw`) is the owner's decision: never run `pebble publish` unless the owner asks. Sideload for testing. Status on 2026-11-05: Pebble announced plugins as live and invited uploads (x.com/ericmigi/status/2118415004076756997), while the plugins guide still says "Do not publish apps that use plugins to the appstore yet" and the appstore calls them a dev preview.
+- Timing constants that must agree across the watch, PKJS and the plugin (`rat_scout.h` `DUE_PING_SECONDS`, `glucose_plugin.js` `READING_DUE_SEC`/`PLUGIN_FRESH_SEC`/`FAST_*`, `main.js` `READING_FRESH_SEC`/`FAST_*`) are cross-checked in `test/glucose_plugin.test.js`; change them together. Don't add a faster watch ping cadence: every ping costs watch battery (owner's rule, 2026-11-05).
+- Design (modes, envelopes, localStorage keys, guard, verification status): `.github/ARCHITECTURE.md`, "Plugin (preview)". Build and packaging commands: README, "Plugin pbws".
+
 ## Testing Conventions
 - Test files: `test/*.test.js`, plain Node.js, no frameworks
 - Pattern: IIFE per test case, `assert(condition, message)`, results printed at end
@@ -106,4 +121,4 @@ Every non-trivial function gets a block comment:
 ## Persist Key Assignment
 - Check rat_scout.h before adding new keys to avoid collisions
 - Document new keys in rat_scout.h with inline comment stating their purpose
-- Current max used: 117 (PERSIST_KEY_HOURLY_SOUND)
+- Current max used: 118 (PERSIST_KEY_BG_ZONE)

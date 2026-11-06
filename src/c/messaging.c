@@ -1,6 +1,39 @@
 #include "rat_scout.h"
 
+// ===== Private State =====
+
+// The one timed ping for the current reading (DUE_PING_SECONDS); NULL when none is set.
+static AppTimer *s_due_ping_timer = NULL;
+
 // ===== Private Helpers =====
+
+/**
+ * Due ping timer: ask JS once for the reading that is due now.
+ * @param data - Unused
+ */
+static void due_ping_callback(void *data) {
+    s_due_ping_timer = NULL;
+    messaging_request_fetch();
+}
+
+/**
+ * Schedule the one timed ping for a reading, DUE_PING_SECONDS after it. Replaces the ping of an
+ * earlier reading. Nothing if that moment has passed: the tick handler's minute pings
+ * (s_next_fetch_time, set by the caller) cover it.
+ * @param reading_ts - Reading time, epoch seconds (0: none)
+ */
+static void schedule_due_ping(time_t reading_ts) {
+    if (s_due_ping_timer) {
+        app_timer_cancel(s_due_ping_timer);
+        s_due_ping_timer = NULL;
+    }
+    time_t now = time(NULL);
+    if (reading_ts <= 0 || now >= reading_ts + DUE_PING_SECONDS) {
+        return;
+    }
+    s_due_ping_timer = app_timer_register((uint32_t)(reading_ts + DUE_PING_SECONDS - now) * 1000,
+                                          due_ping_callback, NULL);
+}
 
 /**
  * Process vibration and threshold settings from incoming message
@@ -16,6 +49,24 @@ static void handle_settings(DictionaryIterator *iterator) {
                 layer_mark_dirty(s_status_bar_layer);
             }
         }
+    }
+
+    // Delta display flags: apply now, not only with the next reading.
+    bool delta_flags_changed = false;
+    Tuple *settings_showdelta_tuple = dict_find(iterator, MESSAGE_KEY_BG_SHOW_DELTA);
+    if (settings_showdelta_tuple) {
+        bool show = settings_showdelta_tuple->value->int8 == 1;
+        delta_flags_changed |= show != s_show_bg_delta;
+        s_show_bg_delta = show;
+    }
+    Tuple *settings_showtime_tuple = dict_find(iterator, MESSAGE_KEY_BG_SHOW_TIMEDELTA);
+    if (settings_showtime_tuple) {
+        bool show = settings_showtime_tuple->value->int8 == 1;
+        delta_flags_changed |= show != s_show_time_delta;
+        s_show_time_delta = show;
+    }
+    if (delta_flags_changed) {
+        update_delta_display(0);
     }
 
     Tuple *bg_vibe_tuple = dict_find(iterator, MESSAGE_KEY_BG_VIBRATION);
@@ -50,14 +101,18 @@ static void handle_settings(DictionaryIterator *iterator) {
 
     Tuple *overlay_enable_tuple = dict_find(iterator, MESSAGE_KEY_ALERT_OVERLAY_ENABLE);
     if (overlay_enable_tuple) {
-        s_overlay_enabled = overlay_enable_tuple->value->int8 == 1;
-        persist_write_bool(PERSIST_KEY_OVERLAY_ENABLE, s_overlay_enabled);
+        bool enabled = overlay_enable_tuple->value->int8 == 1;
+        if (enabled != s_overlay_enabled || !persist_exists(PERSIST_KEY_OVERLAY_ENABLE)) {
+            s_overlay_enabled = enabled;
+            persist_write_bool(PERSIST_KEY_OVERLAY_ENABLE, enabled);
+        }
     }
 
     Tuple *overlay_dur_tuple = dict_find(iterator, MESSAGE_KEY_ALERT_OVERLAY_DURATION);
     if (overlay_dur_tuple) {
         int dur = (int)overlay_dur_tuple->value->int32;
-        if (dur >= 1 && dur <= 20) {
+        if (dur >= OVERLAY_DURATION_MIN_S && dur <= OVERLAY_DURATION_MAX_S &&
+            (dur != s_overlay_duration_s || !persist_exists(PERSIST_KEY_OVERLAY_DURATION))) {
             s_overlay_duration_s = dur;
             persist_write_int(PERSIST_KEY_OVERLAY_DURATION, dur);
         }
@@ -65,20 +120,29 @@ static void handle_settings(DictionaryIterator *iterator) {
 
     Tuple *bg_low_sound_tuple = dict_find(iterator, MESSAGE_KEY_BG_LOW_SOUND);
     if (bg_low_sound_tuple) {
-        s_bg_low_sound = bg_low_sound_tuple->value->int8 == 1;
-        persist_write_bool(PERSIST_KEY_BG_LOW_SOUND, s_bg_low_sound);
+        bool on = bg_low_sound_tuple->value->int8 == 1;
+        if (on != s_bg_low_sound || !persist_exists(PERSIST_KEY_BG_LOW_SOUND)) {
+            s_bg_low_sound = on;
+            persist_write_bool(PERSIST_KEY_BG_LOW_SOUND, on);
+        }
     }
 
     Tuple *bg_high_sound_tuple = dict_find(iterator, MESSAGE_KEY_BG_HIGH_SOUND);
     if (bg_high_sound_tuple) {
-        s_bg_high_sound = bg_high_sound_tuple->value->int8 == 1;
-        persist_write_bool(PERSIST_KEY_BG_HIGH_SOUND, s_bg_high_sound);
+        bool on = bg_high_sound_tuple->value->int8 == 1;
+        if (on != s_bg_high_sound || !persist_exists(PERSIST_KEY_BG_HIGH_SOUND)) {
+            s_bg_high_sound = on;
+            persist_write_bool(PERSIST_KEY_BG_HIGH_SOUND, on);
+        }
     }
 
     Tuple *hourly_sound_tuple = dict_find(iterator, MESSAGE_KEY_HOURLY_SOUND);
     if (hourly_sound_tuple) {
-        s_hourly_sound = hourly_sound_tuple->value->int8 == 1;
-        persist_write_bool(PERSIST_KEY_HOURLY_SOUND, s_hourly_sound);
+        bool on = hourly_sound_tuple->value->int8 == 1;
+        if (on != s_hourly_sound || !persist_exists(PERSIST_KEY_HOURLY_SOUND)) {
+            s_hourly_sound = on;
+            persist_write_bool(PERSIST_KEY_HOURLY_SOUND, on);
+        }
     }
 }
 
@@ -93,19 +157,17 @@ static void handle_glucose_message(DictionaryIterator *iterator) {
     snprintf(s_bg_buffer, sizeof(s_bg_buffer), "%s", bgv_tuple->value->cstring);
     text_layer_set_text(s_glucose_layer, s_bg_buffer);
     persist_write_string_if_changed(PERSIST_KEY_BG, s_bg_buffer, sizeof(s_bg_buffer));
-    check_bg_threshold_vibration(s_bg_buffer);
     
-    // Update glucose delta display
+    // Update glucose delta display. The delta is kept even while it is hidden, so turning
+    // "Show BG Delta" on shows the current one, not one from before it was turned off.
     Tuple *showdelta_tuple = dict_find(iterator, MESSAGE_KEY_BG_SHOW_DELTA);
     if (showdelta_tuple) {
         s_show_bg_delta = showdelta_tuple->value->int8 == 1;
-        if (s_show_bg_delta) {
-            Tuple *bgdelta_tuple = dict_find(iterator, MESSAGE_KEY_BGDELTA);
-            if (bgdelta_tuple) {
-                snprintf(s_delta_raw_buffer, sizeof(s_delta_raw_buffer), "%s", bgdelta_tuple->value->cstring);
-                persist_write_string_if_changed(PERSIST_KEY_BG_DELTA, s_delta_raw_buffer, sizeof(s_delta_raw_buffer));
-            }
-        }
+    }
+    Tuple *bgdelta_tuple = dict_find(iterator, MESSAGE_KEY_BGDELTA);
+    if (bgdelta_tuple) {
+        snprintf(s_delta_raw_buffer, sizeof(s_delta_raw_buffer), "%s", bgdelta_tuple->value->cstring);
+        persist_write_string_if_changed(PERSIST_KEY_BG_DELTA, s_delta_raw_buffer, sizeof(s_delta_raw_buffer));
     }
 
     // Update time delta display
@@ -120,13 +182,20 @@ static void handle_glucose_message(DictionaryIterator *iterator) {
         s_last_reading_timestamp = timestamp_tuple->value->int32;
         persist_write_int(PERSIST_KEY_TIMESTAMP, s_last_reading_timestamp);
         if (s_last_reading_timestamp > 0) {
-            s_next_fetch_time = s_last_reading_timestamp + FETCH_INTERVAL_SECONDS + FETCH_INTERVAL_JITTER;
+            // One timed ping when the next reading is due; if it is still missing, the tick
+            // handler's minute pings from a minute later.
+            schedule_due_ping(s_last_reading_timestamp);
+            s_next_fetch_time = s_last_reading_timestamp + DUE_PING_SECONDS + 60;
         } else {
             // No valid timestamp — fall back to periodic fetch pattern
+            schedule_due_ping(0);
             s_next_fetch_time = 0;
         }
         update_delta_display(0);  // 0 = let function call time() internally
     }
+
+    // Alerts last: they need the reading's time (no alert for a stale reading).
+    check_bg_threshold_vibration(s_bg_buffer, timestamp_tuple ? (time_t)timestamp_tuple->value->int32 : 0);
 }
 
 /**
@@ -303,4 +372,55 @@ void outbox_failed_callback(DictionaryIterator *iterator, AppMessageResult reaso
 void outbox_sent_callback(DictionaryIterator *iterator, void *context)
 {
     // Intentionally silent — avoid flash I/O on every successful send
+}
+
+/**
+ * The Pebble app on the phone connected or disconnected. On connect, ping once: pings were
+ * skipped while it was away, and a reading may be due or overdue by now.
+ * @param connected - True if the Pebble app is connected now
+ */
+static void app_connection_handler(bool connected) {
+    if (connected) {
+        messaging_request_fetch();
+    }
+}
+
+// ===== Public API =====
+
+/**
+ * Ask JS for fresh data: an empty outbound message (key 0) that JS answers with fetchAllData().
+ * Skipped while the Pebble app on the phone is not connected (Bluetooth off, phone out of
+ * range): such a ping can't be delivered, and the reconnect ping (pebble_app_connection_handler
+ * below) catches up. Skipped if the outbox is busy; the next ping retries.
+ */
+void messaging_request_fetch(void) {
+    if (!connection_service_peek_pebble_app_connection()) {
+        return;
+    }
+    DictionaryIterator *iter;
+    AppMessageResult result = app_message_outbox_begin(&iter);
+    if (result == APP_MSG_OK && iter) {
+        dict_write_uint8(iter, 0, 0);
+        app_message_outbox_send();
+    }
+}
+
+/**
+ * Subscribe to Pebble app connection events (call after app_message_open).
+ */
+void messaging_init(void) {
+    connection_service_subscribe((ConnectionHandlers){
+        .pebble_app_connection_handler = app_connection_handler
+    });
+}
+
+/**
+ * Unsubscribe from connection events and cancel the due ping timer.
+ */
+void messaging_deinit(void) {
+    connection_service_unsubscribe();
+    if (s_due_ping_timer) {
+        app_timer_cancel(s_due_ping_timer);
+        s_due_ping_timer = NULL;
+    }
 }
