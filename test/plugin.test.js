@@ -134,6 +134,53 @@ test('cached session skips authentication', function() {
     });
 });
 
+test('temporary Dexcom failure: the last reading is served, marked stale', function() {
+    var ok = host.fakeDexcom();
+    var down = host.fakeDexcom({ fail: { readings: true, account: true, session: true } });
+    var useDown = false;
+    function fetch(url, o) { return (useDown ? down : ok)(url, o); }
+    var T = 1700000010000;
+    var h = host.load({ fetch: fetch, now: T, settings: settings(), storage: { accountId: 'a0', sessionId: 's0' } });
+    return h.request(REQ).then(function() {
+        useDown = true;
+        h.setNow(T + 400000);
+        return h.request(REQ);
+    }).then(function(r) {
+        var p = props(r);
+        assert(down.endpoints().indexOf('readings') !== -1, 'Dexcom was tried');
+        assert(p.glucose_mgdl.numericValue.value === 120 && p.reading_time.timestamp.value === 1700000000, 'last reading with its real time');
+        assert(p.status.shortText.text === 'stale', 'status stale');
+        assert(r.data.validUntilMs === T + 400000 + 60000, 'valid for a minute');
+    });
+});
+
+test('Dexcom refuses the login: no reading, even with a cached one', function() {
+    var ok = host.fakeDexcom();
+    var refused = host.fakeDexcom({ accountResponse: { status: 500, body: '{"Code":"AccountPasswordInvalid"}' } });
+    var useRefused = false;
+    function fetch(url, o) { return (useRefused ? refused : ok)(url, o); }
+    var T = 1700000010000;
+    var h = host.load({ fetch: fetch, now: T, settings: settings() });
+    return h.request(REQ).then(function() {
+        useRefused = true;
+        delete h.store.accountId;
+        delete h.store.sessionId;
+        h.setNow(T + 400000);
+        return h.request(REQ);
+    }).then(function(r) {
+        assert(refused.endpoints()[0] === 'account', 'a login was tried');
+        assert(r.data.instances.length === 0, 'no reading');
+    });
+});
+
+test('temporary failure without a cached reading: no reading', function() {
+    var down = host.fakeDexcom({ fail: { readings: true } });
+    var h = host.load({ fetch: down, settings: settings(), storage: { accountId: 'a0', sessionId: 's0' } });
+    return h.request(REQ).then(function(r) {
+        assert(r.data.instances.length === 0, 'no reading');
+    });
+});
+
 test('fresh cache: no fetch, validUntilMs from the reading', function() {
     var f = host.fakeDexcom();
     var h = host.load({ fetch: f, settings: settings() });

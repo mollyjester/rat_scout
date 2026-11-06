@@ -1156,12 +1156,17 @@ function buildInstance(reading, units) {
  * @param {Object} reading - Cached reading
  * @param {string} units - Units
  * @param {number} t - Now, epoch ms
+ * @param {boolean} [stale] - Dexcom failed: status "stale" instead of "ok"
  * @returns {Object} Envelope
  */
-function readingEnvelope(reading, units, t) {
+function readingEnvelope(reading, units, t, stale) {
+    var inst = buildInstance(reading, units);
+    if (stale) {
+        inst.properties.status = { shortText: { text: 'stale' }, longText: { text: 'Dexcom unavailable, last reading' } };
+    }
     return {
         validUntilMs: Math.max(t + EMPTY_VALID_MS, (reading.ts + READING_FRESH_SEC) * 1000),
-        instances: [buildInstance(reading, units)]
+        instances: [inst]
     };
 }
 
@@ -1326,7 +1331,16 @@ function answer(respond, env, settings) {
                 storage.removeItem(SESSION_ID_KEY);
                 guard.end(key, outcome.error);
             }
-            respond.data(emptyEnvelope(env.now()));
+            // A temporary failure (no answer, timeout, server error, no recent readings) keeps
+            // the last reading for these credentials, with its real time and status "stale":
+            // the watch ages it (value up to 20 min, then "---" with the age; glucose.c).
+            // Dexcom refusing the login gives no reading.
+            if (cacheOk && !DexcomGuard.isAuthRejection(outcome.error)) {
+                console.log('Serving the last reading (Dexcom unavailable)');
+                respond.data(readingEnvelope(cache, units, env.now(), true));
+            } else {
+                respond.data(emptyEnvelope(env.now()));
+            }
             return;
         }
         var cur = outcome.result.current;

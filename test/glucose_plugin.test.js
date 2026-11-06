@@ -302,6 +302,22 @@ console.log('\nonSettingsChanged');
     assert(h.sent.length === 2, 'gate cleared: the same reading is sent again (new units/delta apply)');
 })();
 
+// 7b. A stale envelope (Dexcom down, plugin serves its last reading) keeps the reading
+console.log('\nstale envelope');
+(function() {
+    var h = harness();
+    h.gp.start();
+    h.data(reading(120, 5, 1700000000));
+    var stale = reading(120, 5, 1700000000);
+    stale.instances[0].properties.status = { shortText: { text: 'stale' }, longText: { text: 'Dexcom unavailable, last reading' } };
+    h.data(stale);
+    assert(h.sent.length === 1 && h.sent[0].TIMESTAMP === 1700000000, 'same reading: skipped by the gate, no "---"');
+    var fresh = harness();
+    fresh.gp.start();
+    fresh.data(stale);
+    assert(fresh.sent.length === 1 && fresh.sent[0].BG !== '---' && fresh.sent[0].TIMESTAMP === 1700000000, 'face started during the failure: the last reading with its real time');
+})();
+
 // 8. Overdue reading: resubscribe so the host reads now
 console.log('\nrefreshIfOverdue');
 (function() {
